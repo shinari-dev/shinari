@@ -1,13 +1,13 @@
 ---
 title: Built-in providers
-description: Config and verb tables for docker, toxiproxy, net, http, and exec.
+description: Config and verb tables for docker, toxiproxy, net, http, sql, and exec.
 weight: 50
 ---
 
-Five providers compile into the binary — zero install. They split by
+Six providers compile into the binary — zero install. They split by
 **injection mechanism**: process control (`docker`), a proxy in the request
-path (`toxiproxy`), the DNS resolver (`net`), plus two primitives (`http`,
-`exec`).
+path (`toxiproxy`), the DNS resolver (`net`), plus three primitives (`http`,
+`sql`, `exec`).
 
 ## docker — lifecycle + process faults
 
@@ -92,6 +92,42 @@ providers:
 JSON responses decode into structured values — `read:`/`capture:` jq
 expressions work on them directly. Status ≥ 400 is a step failure.
 
+## sql — query + capture
+
+Runs real SQL against the system under test and returns structured rows. A
+native provider over `database/sql`.
+
+```yaml
+providers:
+  db:
+    source: sql
+    config:
+      driver: postgres   # or sqlite
+      dsn: "postgres://user:pass@localhost:5432/app?sslmode=disable"   # alias: url
+```
+
+| verb | kind | args |
+|---|---|---|
+| `query` | probe | `sql` (primary), `args?` (list, bind params) |
+| `exec` | action | `sql` (primary), `args?` (list, bind params) |
+| `ping` | probe | — |
+
+`query` returns a list of column-to-value rows; bind values through `args:`
+rather than string interpolation. `exec` returns `{rowsAffected, lastInsertId}`.
+`Configure` opens the pool lazily, so the database does not need to be up until
+the first verb runs (after `setup`).
+
+```yaml
+- run: db.query
+  with: "SELECT count(*) AS n FROM runs WHERE job_id=$1"
+  args: ["${job}"]
+  read: ".[0].n"
+  as: runs
+- run: assert
+  with: { of: "${runs}", equals: 1 }
+  desc: "exactly once"
+```
+
 ## exec — the escape hatch
 
 ```yaml
@@ -106,6 +142,24 @@ providers:
 Runs `sh -c cmd` from the project root. Stdout that parses as JSON becomes a
 structured value; otherwise the trimmed text. Non-zero exit is a failure with
 stderr in the message. Mark read-only scripts `kind: probe` on the step.
+
+## netem and resource — composed Pumba faults
+
+Two composed providers ship as examples (`examples/faults/providers/`) that
+drive [Pumba](https://github.com/alexei-led/pumba) for kernel-level network
+faults and resource exhaustion. They need the `pumba` binary on PATH and
+`NET_ADMIN` / privileged access on the target containers.
+
+| provider | verbs |
+|---|---|
+| `netem` | `delay` (`target`, `ms`), `loss` (`target`, `percent`), `rate` (`target`, `kbps`), `clear` (`target`) |
+| `resource` | `cpu` (`target`, `load`), `memory` (`target`, `bytes`), `io` (`target`, `workers`), `clear` (`target`) |
+
+Each fault verb runs Pumba under `background` and reverts on `clear` via
+`stop_background`. The `background` step declares `effect: degradation`, so the
+fault is tracked and the recovery check applies. `netem` complements
+`toxiproxy`: netem hits all traffic at the interface, with no proxy in the
+request path.
 
 ## Named instances
 
