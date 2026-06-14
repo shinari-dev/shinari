@@ -7,7 +7,28 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestRunKillsChildTreeOnCancel(t *testing.T) {
+	p := New()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		// The backgrounded `sleep` outlives the shell and inherits the
+		// stdout pipe. Without killing the whole process group on cancel,
+		// cmd.Wait blocks until the sleep exits (30s).
+		_, _ = p.Run(ctx, "run", map[string]any{"cmd": "sleep 30 & echo started; wait"})
+		close(done)
+	}()
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("exec.run did not return promptly after cancel; child process group not killed")
+	}
+}
 
 func TestRunCapturesStdout(t *testing.T) {
 	p := New()

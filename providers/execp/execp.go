@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/shinari-dev/shinari/sdk"
 )
@@ -55,6 +57,20 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	}
 	cmdStr, _ := args["cmd"].(string)
 	cmd := exec.CommandContext(ctx, "sh", "-c", cmdStr)
+	// Run in its own process group so cancellation kills the whole tree, not
+	// just the shell. A backgrounded command (via the `background` builtin)
+	// often spawns children (e.g. a fault tool's helper) that would otherwise
+	// outlive the shell, inherit its stdout pipe, and block cmd.Wait forever.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	// Backstop: if a child still holds a pipe after the process exits, do not
+	// wait on it indefinitely.
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = p.dir
 	if d, ok := args["dir"].(string); ok && d != "" {
 		cmd.Dir = d
