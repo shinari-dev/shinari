@@ -16,6 +16,9 @@ method:
     steps:
       - run: netem.delay
         with: { target: api, ms: 300 }
+      - run: sleep
+        with: { seconds: 8 }
+        desc: "let Pumba attach and apply the netem rule"
       - run: http.get
         with: "http://localhost:5678/"
         desc: "still answers under delay"
