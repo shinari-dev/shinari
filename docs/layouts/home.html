@@ -1,0 +1,129 @@
+{{ define "main" }}
+<main class="home">
+
+  <section class="hero">
+    <div class="wrap">
+      <p class="hero-kicker">// RESILIENCE TESTING FRAMEWORK</p>
+      <h1 class="hero-title">RESILIENCE TESTING<br>FOR EVERY ENGINEER<span class="vermilion">.</span></h1>
+      <p class="hero-sub">
+        Chaos engineering, made deterministic — no platform, no specialists. Just a
+        binary and a YAML file you run on your laptop or in CI, anytime. Shinari
+        brings up a real system, hits it with controlled faults — kill a process,
+        partition the network, poison DNS — and keeps a living ledger of
+        <em>how it fails</em>.<br>
+        <strong>Every failure documented. Every fix detected.</strong>
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="{{ "/tutorials/getting-started/" | relURL }}">Get started →</a>
+        <a class="btn btn-ghost" href="{{ "/concepts/findings-ledger/" | relURL }}">Why a findings ledger?</a>
+      </div>
+      <pre class="hero-install"><code>$ go build -o shinari ./cli && shinari run</code></pre>
+    </div>
+  </section>
+
+  <section class="demo">
+    <div class="wrap">
+      <h2 class="section-title">A crash is a test case</h2>
+      <p class="section-sub">The whole harness is one YAML file. Write the failure you fear on the left —
+      Shinari runs it for real on the right.</p>
+      <div class="showcase">
+        <div class="code-panel">
+          <div class="code-panel-bar"><em>scenarios/resilience/cache-outage.yml</em></div>
+<pre><code><span class="y-k">kind:</span> Scenario
+<span class="y-k">name:</span> checkout-survives-cache-outage
+
+<span class="y-k">steadyState:</span>            <span class="y-c"># only test a healthy system</span>
+  - <span class="y-k">run:</span> http.get
+    <span class="y-k">with:</span> /health
+
+<span class="y-k">method:</span>
+  - <span class="y-k">phase:</span> <span class="y-s">"Kill the cache out from under the API"</span>
+    <span class="y-k">steps:</span>
+      - <span class="y-k">run:</span> docker.kill
+        <span class="y-k">with:</span> redis
+      - <span class="y-k">run:</span> http.get   <span class="y-c"># checkout must answer without it</span>
+        <span class="y-k">with:</span> /checkout/42
+        <span class="y-k">as:</span> rsp
+
+  - <span class="y-k">phase:</span> <span class="y-s">"Bring the cache back"</span>
+    <span class="y-k">steps:</span>
+      - <span class="y-k">run:</span> docker.start
+        <span class="y-k">with:</span> redis
+
+<span class="y-k">verify:</span>
+  - <span class="y-k">run:</span> assert
+    <span class="y-k">with:</span> { <span class="y-k">of:</span> <span class="y-s">"${rsp.total}"</span>, <span class="y-k">equals:</span> 19.90 }
+    <span class="y-k">desc:</span> <span class="y-s">"served from Postgres, priced correctly"</span>
+  - <span class="y-k">run:</span> http.get
+    <span class="y-k">with:</span> /metrics
+    <span class="y-k">as:</span> metrics
+  - <span class="y-k">run:</span> assert
+    <span class="y-k">with:</span> { <span class="y-k">of:</span> <span class="y-s">"${metrics.p99_ms}"</span>, <span class="y-k">lt:</span> 200 }
+    <span class="y-k">desc:</span> <span class="y-s">"p99 back under 200ms"</span>
+    <span class="y-f">finding:</span> <span class="y-s">"cold cache — p99 spikes for ~30s after restart"</span></code></pre>
+        </div>
+        <div class="terminal">
+          <div class="terminal-bar"><span></span><span></span><span></span><em>shinari run</em></div>
+<pre><code><span class="t-dim">$</span> shinari run
+
+=== checkout-survives-cache-outage
+  ✓ steady state: http.get /health
+  -- Kill the cache out from under the API
+  ⚡ fault injected: docker.kill redis
+  ✓ http.get /checkout/42
+  -- Bring the cache back
+  ✓ docker.start redis
+  ✓ steady state recovered: http.get /health
+  ✓ served from Postgres, priced correctly
+  <span class="t-finding">◆ FINDING p99 back under 200ms</span>
+  => <span class="t-pass">PASSED</span>
+
+1 scenario(s): 1 passed — <span class="t-finding">1 finding(s) held</span>
+<span class="t-dim">reports: shinari-out/ — results.json · junit.xml</span>
+<span class="t-dim">exit 0 · CI stays green</span></code></pre>
+        </div>
+      </div>
+      <p class="demo-caption">That <code>finding:</code> is the differentiator: a <em>known</em> gap stays
+      documented, asserted, and <strong>green</strong> — the day someone fixes it, the run flips red and says
+      <em>promote this to a hard assertion</em>.</p>
+    </div>
+  </section>
+
+  <section class="verbs">
+    <div class="wrap">
+      <h2 class="section-title">What you can break</h2>
+      <p class="section-sub">Every capability is a namespaced verb. Five native providers ship in the binary —
+      and you compose your own vocabulary in YAML, zero Go.</p>
+      <div class="verb-grid">
+        <div class="verb"><code>docker.kill</code><p>drop a container mid-flight</p></div>
+        <div class="verb"><code>toxiproxy.partition</code><p>sever the link between two services</p></div>
+        <div class="verb"><code>net.nxdomain</code><p>poison DNS for one hostname</p></div>
+        <div class="verb"><code>toxiproxy.latency</code><p>add lag, watch the timeouts cascade</p></div>
+        <div class="verb"><code>http.get</code> · <code>exec.run</code><p>probe real APIs, run any script</p></div>
+        <div class="verb"><code>queue.poison_message</code><p>your domain verbs, composed in YAML</p></div>
+      </div>
+      <p class="verbs-more"><a href="{{ "/reference/providers/" | relURL }}">Browse all providers →</a></p>
+    </div>
+  </section>
+
+  <section class="diataxis">
+    <div class="wrap">
+      <h2 class="section-title">Field manual</h2>
+      <p class="section-sub">Tutorials to learn, how-to guides to solve, reference to look up, concepts to understand — and a developers track to extend.</p>
+      <div class="grid-4">
+        {{ range site.Menus.main }}
+        {{ with site.GetPage .PageRef }}
+        <a class="dia-card" href="{{ .RelPermalink }}">
+          <span class="dia-num">{{ .Params.code }}</span>
+          <h3>{{ .Title }}</h3>
+          <p>{{ .Description }}</p>
+          <span class="dia-go">EXPLORE →</span>
+        </a>
+        {{ end }}
+        {{ end }}
+      </div>
+    </div>
+  </section>
+
+</main>
+{{ end }}

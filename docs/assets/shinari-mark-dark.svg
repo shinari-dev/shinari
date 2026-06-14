@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Shinari mark — the line that bends around the fault but never breaks.
+       Palette: warm white #eceae6, ember #ff4f2b, canvas #0a0b0e -->
+  <rect width="512" height="512" fill="#0a0b0e"/>
+
+  <!-- hexagon containment, interrupted where the line crosses -->
+  <g stroke="#eceae6" stroke-width="13" fill="none" stroke-linecap="round">
+    <path d="M 91.5 214 L 91.5 185 Q 91.5 161 112.3 149 L 235.2 78 Q 256 66 276.8 78 L 399.7 149 Q 420.5 161 420.5 185 L 420.5 214"/>
+    <path d="M 420.5 298 L 420.5 327 Q 420.5 351 399.7 363 L 276.8 434 Q 256 446 235.2 434 L 112.3 363 Q 91.5 351 91.5 327 L 91.5 298"/>
+  </g>
+
+  <!-- the fault -->
+  <circle cx="256" cy="244" r="40" fill="#ff4f2b"/>
+
+  <!-- the system: one unbroken line, deflects around the fault, recovers -->
+  <path d="M 61.5 250 L 148 250 C 200 250 204 318 256 318 C 308 318 312 250 364 250 L 450.5 250"
+        stroke="#eceae6" stroke-width="28" fill="none" stroke-linecap="round"/>
+</svg>
