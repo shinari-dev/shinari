@@ -1,0 +1,7 @@
+/shinari
+/shinari-out/
+.jobstore/
+docs/superpowers/
+docs/public/
+docs/resources/
+.hugo_build.lock

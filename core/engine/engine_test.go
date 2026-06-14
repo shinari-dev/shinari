@@ -1,0 +1,516 @@
+// SPDX-FileCopyrightText: 2026 The Shinari Authors
+// SPDX-License-Identifier: Apache-2.0
+
+package engine
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/shinari-dev/shinari/core/discover"
+	"github.com/shinari-dev/shinari/core/model"
+	"github.com/shinari-dev/shinari/core/registry"
+	"github.com/shinari-dev/shinari/sdk"
+)
+
+// fakeSUT is a scriptable system under test: a lifecycle provider plus a
+// scriptable probe whose successive values are programmed per test.
+type fakeSUT struct {
+	mu     sync.Mutex
+	calls  []string
+	script map[string][]any // verb -> successive Values (last repeats)
+	fails  map[string]error // verb -> permanent failure
+}
+
+func (f *fakeSUT) Type() string                   { return "fakesut" }
+func (f *fakeSUT) Configure(map[string]any) error { return nil }
+func (f *fakeSUT) Verbs() []sdk.VerbSpec {
+	return []sdk.VerbSpec{
+		{Name: "up", Kind: sdk.KindAction, SideEffects: true, Primary: "services"},
+		{Name: "down", Kind: sdk.KindAction, SideEffects: true},
+		{Name: "kill", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service"},
+		{Name: "submit", Kind: sdk.KindAction, SideEffects: true, Primary: "job"},
+		{Name: "status", Kind: sdk.KindProbe, Primary: "of"},
+		{Name: "count", Kind: sdk.KindProbe, Primary: "job"},
+		{Name: "smoke", Kind: sdk.KindAssertion},
+	}
+}
+func (f *fakeSUT) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, verb)
+	if err, ok := f.fails[verb]; ok && err != nil {
+		return sdk.VerbResult{}, err
+	}
+	if vals, ok := f.script[verb]; ok && len(vals) > 0 {
+		v := vals[0]
+		if len(vals) > 1 {
+			f.script[verb] = vals[1:]
+		}
+		return sdk.VerbResult{Value: v}, nil
+	}
+	return sdk.VerbResult{Value: "ok"}, nil
+}
+func (f *fakeSUT) callCount(verb string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.calls {
+		if c == verb {
+			n++
+		}
+	}
+	return n
+}
+
+// currentSUT is the provider the "fakesut" type resolves to. Registration
+// happens once (sdk.Register panics on a duplicate); tests vary behavior by
+// setting this before building the registry, which constructs the instance.
+var currentSUT sdk.Provider
+
+func init() { sdk.Register("fakesut", func() sdk.Provider { return currentSUT }) }
+
+func newWorld(t *testing.T, scenarioYAML string) (*fakeSUT, *model.Scenario, *registry.Registry) {
+	t.Helper()
+	sut := &fakeSUT{script: map[string][]any{}, fails: map[string]error{}}
+	currentSUT = sut
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "project.yml"),
+		[]byte("apiVersion: shinari/v1\nkind: Project\nname: t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	set, err := discover.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := registry.New(set, map[string]model.ProviderConfig{
+		"sut": {Source: "fakesut"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, err := model.ParseScenario([]byte(scenarioYAML), "s.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sut, sc, reg
+}
+
+func run(t *testing.T, sut *fakeSUT, sc *model.Scenario, reg *registry.Registry) (ScenarioResult, *Recorder) {
+	t.Helper()
+	rec := &Recorder{}
+	res := RunScenario(context.Background(), sc, nil, reg, rec, Options{})
+	return res, rec
+}
+
+const passingScenario = `
+apiVersion: shinari/v1
+kind: Scenario
+name: happy
+vars: { n: 1 }
+setup:
+  - { run: sut.up, with: [app] }
+steadyState:
+  - { run: sut.smoke }
+method:
+  - phase: "inject"
+    steps:
+      - { run: sut.submit, with: sleep, as: job }
+      - { run: sut.kill, with: app }
+verify:
+  - { run: sut.count, with: sleep, as: total }
+  - { run: assert, with: { of: "${total}", equals: "${vars.n}" }, desc: "exactly once" }
+`
+
+func TestPassedScenario(t *testing.T) {
+	sut, sc, reg := newWorld(t, passingScenario)
+	sut.script["count"] = []any{1}
+	res, rec := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+	// default teardown ran (sut is the lifecycle provider)
+	if sut.callCount("down") != 1 {
+		t.Errorf("default teardown must call down once, got %d", sut.callCount("down"))
+	}
+	// steadyState ran twice: gate + recovery
+	if sut.callCount("smoke") != 2 {
+		t.Errorf("steadyState must run before AND after method, got %d", sut.callCount("smoke"))
+	}
+	// fault.injected emitted for kill in method
+	found := false
+	for _, e := range rec.Events {
+		if e.Type == EvFaultInjected && e.Verb == "sut.kill" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("missing fault.injected event for sut.kill")
+	}
+	if len(res.Held) == 0 || res.Held[0] != "sut.smoke" {
+		t.Errorf("held = %v", res.Held)
+	}
+}
+
+func TestFailedOnVerifyRegression(t *testing.T) {
+	sut, sc, reg := newWorld(t, passingScenario)
+	sut.script["count"] = []any{2} // duplicate: regression
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioFailed {
+		t.Fatalf("verdict = %s", res.Verdict)
+	}
+	if !strings.Contains(res.Reason, "exactly once") {
+		t.Errorf("reason should name the failed check: %s", res.Reason)
+	}
+	if sut.callCount("down") != 1 {
+		t.Error("teardown must still run on failure")
+	}
+}
+
+func TestErroredOnSetupFailure(t *testing.T) {
+	sut, sc, reg := newWorld(t, passingScenario)
+	sut.fails["up"] = fmt.Errorf("compose exploded")
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioErrored {
+		t.Fatalf("verdict = %s", res.Verdict)
+	}
+	if sut.callCount("submit") != 0 {
+		t.Error("method must not run after setup failure")
+	}
+	if sut.callCount("down") != 1 {
+		t.Error("teardown must run after setup failure")
+	}
+}
+
+func TestInconclusiveOnSteadyStateGate(t *testing.T) {
+	sut, sc, reg := newWorld(t, passingScenario)
+	sut.fails["smoke"] = fmt.Errorf("system not healthy")
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioInconclusive {
+		t.Fatalf("verdict = %s", res.Verdict)
+	}
+	if sut.callCount("submit") != 0 {
+		t.Error("method must not run when never healthy")
+	}
+}
+
+func TestFailedOnSteadyStateRecovery(t *testing.T) {
+	sut, sc, _ := newWorld(t, passingScenario)
+	// smoke passes the gate once, then fails on the recovery re-run
+	sutWrap := &flipFail{inner: sut, failAfter: 1, verb: "smoke"}
+	currentSUT = sutWrap
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "project.yml"), []byte("apiVersion: shinari/v1\nkind: Project\nname: t\n"), 0o644)
+	set, _ := discover.Load(dir)
+	reg2, err := registry.New(set, map[string]model.ProviderConfig{"sut": {Source: "fakesut"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sut.script["count"] = []any{1}
+	res, _ := run(t, sut, sc, reg2)
+	if res.Verdict != ScenarioFailed || !strings.Contains(res.Reason, "recover") {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+}
+
+// flipFail passes a verb N times then fails it.
+type flipFail struct {
+	inner     *fakeSUT
+	verb      string
+	failAfter int
+	count     int
+}
+
+func (f *flipFail) Type() string                     { return f.inner.Type() }
+func (f *flipFail) Configure(c map[string]any) error { return f.inner.Configure(c) }
+func (f *flipFail) Verbs() []sdk.VerbSpec            { return f.inner.Verbs() }
+func (f *flipFail) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
+	if verb == f.verb {
+		f.count++
+		if f.count > f.failAfter {
+			return sdk.VerbResult{}, fmt.Errorf("%s degraded after fault", verb)
+		}
+	}
+	return f.inner.Run(ctx, verb, args)
+}
+
+const findingScenario = `
+apiVersion: shinari/v1
+kind: Scenario
+name: gap
+setup:
+  - { run: sut.up, with: [app] }
+verify:
+  - { run: sut.count, with: sleep, as: total }
+  - { run: assert, with: { of: "${total}", equals: 1 }, desc: "exactly once",
+      finding: "duplicates occur after a crash; operator dedupes manually" }
+`
+
+func TestFindingKeepsScenarioGreen(t *testing.T) {
+	sut, sc, reg := newWorld(t, findingScenario)
+	sut.script["count"] = []any{2} // the known gap: duplicates
+	res, rec := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("a failing finding must keep the scenario PASSED, got %s (%s)", res.Verdict, res.Reason)
+	}
+	var step *StepResult
+	for i := range res.Steps {
+		if res.Steps[i].Finding != "" || res.Steps[i].Verdict == CheckFinding {
+			step = &res.Steps[i]
+		}
+	}
+	if step == nil || step.Verdict != CheckFinding {
+		t.Fatalf("check verdict must be FINDING: %+v", res.Steps)
+	}
+	if len(res.Findings) != 1 || res.Findings[0].NowPasses {
+		t.Fatalf("findings = %+v", res.Findings)
+	}
+	found := false
+	for _, e := range rec.Events {
+		if e.Type == EvFindingRecorded {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("missing finding.recorded event")
+	}
+}
+
+func TestFindingThatPassesFailsTheRun(t *testing.T) {
+	sut, sc, reg := newWorld(t, findingScenario)
+	sut.script["count"] = []any{1} // the gap was fixed!
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioFailed {
+		t.Fatalf("a passing finding must FAIL the scenario (promote it), got %s", res.Verdict)
+	}
+	if !strings.Contains(res.Reason, "promote") {
+		t.Errorf("reason must say promote: %s", res.Reason)
+	}
+	if len(res.Findings) != 1 || !res.Findings[0].NowPasses {
+		t.Fatalf("findings = %+v", res.Findings)
+	}
+}
+
+func TestWaitUntilGatesOnObservedEvent(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: gated
+method:
+  - phase: "wait for RUNNING"
+    steps:
+      - { run: wait_until, with: { probe: { run: sut.status, with: j1 }, in: [RUNNING], timeout: 5, interval: 0.01 } }
+verify:
+  - { run: assert, with: { of: 1, equals: 1 } }
+`)
+	sut.script["status"] = []any{"PENDING", "PENDING", "RUNNING"}
+	res, rec := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+	if got := sut.callCount("status"); got != 3 {
+		t.Errorf("probe should be polled exactly until observed: %d calls", got)
+	}
+	gated := false
+	for _, e := range rec.Events {
+		if e.Type == EvGateObserved {
+			gated = true
+			if e.Payload["observed"] != "RUNNING" {
+				t.Errorf("payload = %v", e.Payload)
+			}
+		}
+	}
+	if !gated {
+		t.Error("missing gate.observed event")
+	}
+}
+
+func TestWaitUntilTimeoutNamesLastObserved(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: gated
+verify:
+  - { run: wait_until, with: { probe: { run: sut.status, with: j1 }, equals: RUNNING, timeout: 0.05, interval: 0.01 } }
+`)
+	sut.script["status"] = []any{"PENDING"}
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioFailed {
+		t.Fatalf("verdict = %s", res.Verdict)
+	}
+	if !strings.Contains(res.Reason, "PENDING") {
+		t.Errorf("timeout error must name last observed value: %s", res.Reason)
+	}
+}
+
+func TestCapturesAreScenarioGlobalAndLastWriteWins(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: caps
+setup:
+  - { run: sut.submit, with: a, as: x }
+method:
+  - phase: p
+    steps:
+      - { run: sut.submit, with: b, as: x }
+verify:
+  - { run: assert, with: { of: "${x}", equals: second }, desc: "last write wins" }
+`)
+	sut.script["submit"] = []any{"first", "second"}
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+}
+
+func TestOnAbsentSkip(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: skipper
+verify:
+  - { run: ghost.poke, onAbsent: skip, skipReason: "ghost not configured" }
+  - { run: assert, with: { of: 1, equals: 1 } }
+`)
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+	if res.Steps[0].Verdict != CheckSkip || res.Steps[0].SkipReason != "ghost not configured" {
+		t.Fatalf("step = %+v", res.Steps[0])
+	}
+}
+
+func TestKeepUpSkipsTeardown(t *testing.T) {
+	sut, sc, reg := newWorld(t, passingScenario)
+	sut.script["count"] = []any{1}
+	rec := &Recorder{}
+	RunScenario(context.Background(), sc, nil, reg, rec, Options{KeepUp: true})
+	if sut.callCount("down") != 0 {
+		t.Error("KEEP_UP must skip teardown")
+	}
+}
+
+func TestExplicitTeardownReplacesDefault(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: custom-td
+verify:
+  - { run: assert, with: { of: 1, equals: 1 } }
+teardown:
+  - { run: sut.kill, with: leftover }
+`)
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s", res.Verdict)
+	}
+	if sut.callCount("down") != 0 {
+		t.Error("explicit teardown must replace the default docker.down")
+	}
+	if sut.callCount("kill") != 1 {
+		t.Error("explicit teardown step must run")
+	}
+}
+
+func TestBackgroundAndStopBackground(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: bg
+method:
+  - phase: load
+    steps:
+      - { run: background, with: { name: load, step: { run: sut.status, with: x } } }
+      - { run: stop_background, with: load, as: loadResult }
+verify:
+  - { run: assert, with: { of: "${loadResult}", equals: ok } }
+`)
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+}
+
+func TestDryRunSkipsActions(t *testing.T) {
+	sut, sc, reg := newWorld(t, passingScenario)
+	sut.script["count"] = []any{1}
+	rec := &Recorder{}
+	RunScenario(context.Background(), sc, nil, reg, rec, Options{DryRun: true, KeepUp: true})
+	if sut.callCount("kill") != 0 || sut.callCount("up") != 0 {
+		t.Error("dry-run must skip actions")
+	}
+	if sut.callCount("count") == 0 {
+		t.Error("dry-run must still run probes")
+	}
+}
+
+func TestEventStreamReducesToResult(t *testing.T) {
+	sut, sc, reg := newWorld(t, passingScenario)
+	sut.script["count"] = []any{1}
+	rec := &Recorder{}
+	res := RunScenario(context.Background(), sc, nil, reg, rec, Options{})
+	reduced := Reduce(rec.Events)
+	if len(reduced.Scenarios) != 1 {
+		t.Fatalf("reduced %d scenarios", len(reduced.Scenarios))
+	}
+	got := reduced.Scenarios[0]
+	if got.Name != res.Name || got.Verdict != res.Verdict {
+		t.Errorf("reduced %s/%s, want %s/%s", got.Name, got.Verdict, res.Name, res.Verdict)
+	}
+	if len(got.Steps) != len(res.Steps) {
+		t.Errorf("reduced %d steps, want %d", len(got.Steps), len(res.Steps))
+	}
+	for i := range got.Steps {
+		if got.Steps[i].Verdict != res.Steps[i].Verdict {
+			t.Errorf("step %d verdict %s != %s", i, got.Steps[i].Verdict, res.Steps[i].Verdict)
+		}
+	}
+}
+
+func TestRunTargets(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"project.yml":               "apiVersion: shinari/v1\nkind: Project\nname: t\nproviders:\n  sut: { source: fakesut }\n",
+		"scenarios/data-loss/a.yml": "apiVersion: shinari/v1\nkind: Scenario\nname: a\nverify:\n  - { run: assert, with: { of: 1, equals: 1 } }\n",
+		"scenarios/data-loss/b.yml": "apiVersion: shinari/v1\nkind: Scenario\nname: b\nverify:\n  - { run: assert, with: { of: 1, equals: 1 } }\n",
+		"scenarios/net/c.yml":       "apiVersion: shinari/v1\nkind: Scenario\nname: c\nverify:\n  - { run: assert, with: { of: 1, equals: 1 } }\n",
+	}
+	sut := &fakeSUT{script: map[string][]any{}, fails: map[string]error{}}
+	currentSUT = sut
+	for rel, content := range files {
+		path := filepath.Join(dir, rel)
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		_ = os.WriteFile(path, []byte(content), 0o644)
+	}
+	set, err := discover.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := Run(context.Background(), set, nil, nil, Options{})
+	if err != nil || len(all.Scenarios) != 3 {
+		t.Fatalf("all: %d scenarios, %v", len(all.Scenarios), err)
+	}
+	bySuite, err := Run(context.Background(), set, []string{"data-loss"}, nil, Options{})
+	if err != nil || len(bySuite.Scenarios) != 2 {
+		t.Fatalf("suite: %d scenarios, %v", len(bySuite.Scenarios), err)
+	}
+	byName, err := Run(context.Background(), set, []string{"c"}, nil, Options{})
+	if err != nil || len(byName.Scenarios) != 1 || byName.Scenarios[0].Name != "c" {
+		t.Fatalf("name: %+v, %v", byName.Scenarios, err)
+	}
+	if _, err := Run(context.Background(), set, []string{"zzz"}, nil, Options{}); err == nil || !strings.Contains(err.Error(), "zzz") {
+		t.Fatalf("unknown target must error listing known: %v", err)
+	}
+	if all.Verdict() != ScenarioPassed {
+		t.Errorf("run verdict = %s", all.Verdict())
+	}
+}
