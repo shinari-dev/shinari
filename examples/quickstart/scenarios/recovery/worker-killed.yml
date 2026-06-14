@@ -1,0 +1,62 @@
+apiVersion: shinari/v1
+kind: Scenario
+name: worker-killed-mid-task
+description: >
+  A worker dies mid-task and a peer recovers the job. Today the recovery
+  re-runs the whole job — a known duplicate-work gap, tracked as a finding.
+
+setup:
+  - run: jobstore.reset
+
+steadyState:
+  - run: jobstore.healthy
+
+method:
+  - phase: "Submit a job and observe it RUNNING"
+    steps:
+      - run: jobstore.submit
+        with: "${vars.job}"
+      - run: wait_until
+        with:
+          probe:
+            run: jobstore.status
+            with: "${vars.job}"
+          equals: RUNNING
+          timeout: 5
+          interval: 0.1
+  - phase: "The worker crashes; a peer picks the job up"
+    steps:
+      - run: jobstore.crash_worker
+        with: "${vars.job}"
+      - run: jobstore.recover
+        with: "${vars.job}"
+
+verify:
+  - run: wait_until
+    with:
+      probe:
+        run: jobstore.status
+        with: "${vars.job}"
+      in: [SUCCESS, FAILED]
+      timeout: 5
+      interval: 0.1
+  - run: jobstore.status
+    with: "${vars.job}"
+    as: state
+  - run: assert
+    with:
+      of: "${state}"
+      equals: SUCCESS
+    desc: "job completed after the crash"
+  - run: jobstore.runs
+    with: "${vars.job}"
+    as: total
+  - run: assert
+    with:
+      of: "${total}"
+      equals: 1
+    desc: "no duplicate run (exactly once)"
+    finding: "recovery re-runs the whole job — duplicate work until idempotent replay ships; operators dedupe downstream today"
+
+teardown:
+  - run: jobstore.reset

@@ -1,0 +1,9 @@
+version: 1
+providers:
+    exec:
+        kind: builtin
+        version: 0.1.0
+    jobstore:
+        kind: local
+        source: ./providers/jobstore
+        checksum: sha256:c92a7ae39e1bf159018791753b8e88e0fcf6ff95f5698777582a4ab1894d21de
