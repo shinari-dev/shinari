@@ -10,3 +10,5 @@ providers:
     composeFiles: [compose.yml]
   netem:
     use: ./providers/netem
+  resource:
+    use: ./providers/resource
