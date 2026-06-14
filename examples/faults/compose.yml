@@ -1,0 +1,6 @@
+services:
+  api:
+    image: hashicorp/http-echo
+    command: ["-text=ok"]
+    ports:
+      - "5678:5678"
