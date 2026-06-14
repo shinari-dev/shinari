@@ -1,0 +1,15 @@
+{{ define "main" }}
+<main class="docs wrap">
+  {{ partial "sidebar.html" . }}
+  <article class="doc-body">
+    <p class="doc-kicker">{{ .FirstSection.Params.code }} // {{ .FirstSection.Title | upper }}</p>
+    <h1>{{ .Title }}</h1>
+    {{ with .Description }}<p class="doc-desc">{{ . }}</p>{{ end }}
+    {{ .Content }}
+    <nav class="doc-pager">
+      {{ with .PrevInSection }}<a class="pager-prev" href="{{ .RelPermalink }}">← {{ .Title }}</a>{{ end }}
+      {{ with .NextInSection }}<a class="pager-next" href="{{ .RelPermalink }}">{{ .Title }} →</a>{{ end }}
+    </nav>
+  </article>
+</main>
+{{ end }}

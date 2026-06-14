@@ -1,0 +1,15 @@
+<header class="site-header">
+  <nav class="wrap">
+    <a class="brand" href="{{ "/" | relURL }}">
+      {{ partial "logo.html" . }}
+      <span class="brand-name">SHINARI</span>
+    </a>
+    <ul class="nav-links">
+      {{ $current := . }}
+      {{ range site.Menus.main }}
+      <li><a href="{{ .URL }}" {{ if or ($current.IsMenuCurrent "main" .) ($current.HasMenuCurrent "main" .) }}class="active"{{ end }}>{{ .Name }}</a></li>
+      {{ end }}
+      <li><a class="gh" href="{{ site.Params.github }}" rel="noopener">GitHub ↗</a></li>
+    </ul>
+  </nav>
+</header>

@@ -1,0 +1,42 @@
+baseURL = 'https://shinari.dev/'
+locale = 'en-US'
+title = 'Shinari'
+
+enableRobotsTXT = true
+disableHugoGeneratorInject = true
+disableKinds = ['taxonomy', 'term']
+
+[params]
+  tagline = 'Resilience testing for every engineer.'
+  description = 'Resilience testing for every engineer — chaos engineering, made deterministic. Shinari is a single Go binary that turns fault injection into a YAML test you run on your laptop or in CI, with a living ledger of how your system fails.'
+  github = 'https://github.com/shinari-dev/shinari'
+
+[markup]
+  [markup.highlight]
+    style = 'github-dark'
+    noClasses = true
+    lineNos = false
+  [markup.goldmark.renderer]
+    unsafe = true
+
+[menus]
+  [[menus.main]]
+    name = 'Tutorials'
+    pageRef = '/tutorials'
+    weight = 10
+  [[menus.main]]
+    name = 'How-to'
+    pageRef = '/how-to'
+    weight = 20
+  [[menus.main]]
+    name = 'Reference'
+    pageRef = '/reference'
+    weight = 30
+  [[menus.main]]
+    name = 'Concepts'
+    pageRef = '/concepts'
+    weight = 40
+  [[menus.main]]
+    name = 'Developers'
+    pageRef = '/developers'
+    weight = 50

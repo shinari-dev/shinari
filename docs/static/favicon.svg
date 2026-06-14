@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Shinari favicon — dot + line only; the hexagon is dropped for 16px legibility.
+       Palette: warm white #eceae6, ember #ff4f2b, canvas #0a0b0e -->
+  <rect width="512" height="512" rx="96" fill="#0a0b0e"/>
+
+  <circle cx="256" cy="220" r="72" fill="#ff4f2b"/>
+
+  <path d="M 32 264 L 150 264 C 205 264 200 340 256 340 C 312 340 307 264 362 264 L 480 264"
+        stroke="#eceae6" stroke-width="48" fill="none" stroke-linecap="round"/>
+</svg>

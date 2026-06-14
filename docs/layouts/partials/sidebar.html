@@ -1,0 +1,37 @@
+{{ $current := . }}
+{{ $section := .FirstSection }}
+<aside class="sidebar">
+  <p class="sidebar-title"><a href="{{ $section.RelPermalink }}">{{ $section.Title }}</a></p>
+  <ul>
+    {{ range $section.RegularPages.ByWeight }}
+    {{ $page := . }}
+    {{ $headings := slice }}
+    {{ range .Fragments.Headings }}{{/* level-0 root wraps the document */}}
+      {{ if eq .Level 2 }}{{ $headings = $headings | append . }}
+      {{ else }}{{ range where .Headings "Level" 2 }}{{ $headings = $headings | append . }}{{ end }}{{ end }}
+    {{ end }}
+    <li>
+      {{ if $headings }}
+      <details {{ if eq $page $current }}open{{ end }}>
+        <summary><a href="{{ .RelPermalink }}" {{ if eq $page $current }}class="active"{{ end }}>{{ .Title }}</a></summary>
+        <ul class="sub">
+          {{ range $headings }}
+          <li><a href="{{ $page.RelPermalink }}#{{ .ID }}">{{ .Title | plainify }}</a></li>
+          {{ end }}
+        </ul>
+      </details>
+      {{ else }}
+      <a href="{{ .RelPermalink }}" {{ if eq $page $current }}class="active"{{ end }}>{{ .Title }}</a>
+      {{ end }}
+    </li>
+    {{ end }}
+  </ul>
+  <p class="sidebar-title">Elsewhere</p>
+  <ul class="sidebar-dim">
+    {{ range site.Menus.main }}
+    {{ with site.GetPage .PageRef }}
+    {{ if ne . $section }}<li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>{{ end }}
+    {{ end }}
+    {{ end }}
+  </ul>
+</aside>

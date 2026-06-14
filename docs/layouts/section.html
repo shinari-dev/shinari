@@ -1,0 +1,18 @@
+{{ define "main" }}
+<main class="docs wrap">
+  {{ partial "sidebar.html" . }}
+  <article class="doc-body">
+    <p class="doc-kicker">{{ .Params.code }} // {{ .Title | upper }}</p>
+    <h1>{{ .Params.headline | default .Title }}</h1>
+    <div class="doc-lede">{{ .Content }}</div>
+    <div class="toc-cards">
+      {{ range .RegularPages.ByWeight }}
+      <a class="toc-card" href="{{ .RelPermalink }}">
+        <h3>{{ .Title }}</h3>
+        <p>{{ .Description }}</p>
+      </a>
+      {{ end }}
+    </div>
+  </article>
+</main>
+{{ end }}

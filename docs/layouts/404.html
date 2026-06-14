@@ -1,0 +1,18 @@
+{{ define "main" }}
+<main class="home">
+  <section class="hero notfound">
+    <div class="wrap">
+      <p class="hero-kicker">// 404 — PAGE NOT FOUND</p>
+      <h1 class="hero-title">THIS PAGE<br>DID NOT<br>SURVIVE<span class="vermilion">.</span></h1>
+      <p class="hero-sub">
+        The link you followed points at nothing — a genuine fault, not an injected one.
+        Head back to safety or start from the docs.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="{{ "/" | relURL }}">Back to home →</a>
+        <a class="btn btn-ghost" href="{{ "/tutorials/getting-started/" | relURL }}">Get started</a>
+      </div>
+    </div>
+  </section>
+</main>
+{{ end }}
