@@ -1,6 +1,9 @@
 services:
   api:
     image: hashicorp/http-echo
+    # Pumba matches container names, not compose service names. Pin the
+    # container name so netem/resource targets (target: api) resolve.
+    container_name: api
     command: ["-text=ok"]
     ports:
       - "5678:5678"
