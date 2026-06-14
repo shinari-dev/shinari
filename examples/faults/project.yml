@@ -1,0 +1,12 @@
+apiVersion: shinari/v1
+kind: Project
+name: faults
+description: Demonstrates the netem and resource composed fault providers (requires docker + pumba).
+
+providers:
+  exec: {}
+  http: {}
+  docker:
+    composeFiles: [compose.yml]
+  netem:
+    use: ./providers/netem

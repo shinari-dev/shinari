@@ -1,0 +1,28 @@
+apiVersion: shinari/v1
+kind: Scenario
+name: api-survives-slow-network
+description: The api keeps answering when its network is delayed, and recovers when cleared.
+
+setup:
+  - run: docker.up
+    with: [api]
+
+steadyState:
+  - run: http.get
+    with: "http://localhost:5678/"
+
+method:
+  - phase: "Delay the api network"
+    steps:
+      - run: netem.delay
+        with: { target: api, ms: 300 }
+      - run: http.get
+        with: "http://localhost:5678/"
+        desc: "still answers under delay"
+  - phase: "Clear the fault"
+    steps:
+      - run: netem.clear
+        with: api
+
+teardown:
+  - run: docker.down
