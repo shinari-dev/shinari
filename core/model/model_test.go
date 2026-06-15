@@ -27,8 +27,8 @@ steadyState:
 method:
   - phase: "Submit a long job and confirm it is RUNNING on worker-a"
     steps:
-      - { run: app.submit, with: { job: sleep, inputs: { seconds: "${vars.sleepSecs}" } }, as: job }
-      - { run: app.await_state, with: { of: "${job}", state: RUNNING, timeout: 30 }, desc: "job RUNNING before crash" }
+      - { run: app.submit, with: { job: sleep, inputs: { seconds: "${.sleepSecs}" } }, as: job }
+      - { run: app.await_state, with: { of: "${.job}", state: RUNNING, timeout: 30 }, desc: "job RUNNING before crash" }
   - phase: "SIGKILL worker-a; a peer recovers the job"
     steps:
       - { run: docker.up, with: [worker-b] }
@@ -36,10 +36,10 @@ method:
       - { run: sleep, with: 50 }
 
 verify:
-  - { run: app.await, with: { of: "${job}", timeout: 420 } }
-  - { run: app.succeeded, with: { of: "${job}" }, desc: "job completed after the crash" }
+  - { run: app.await, with: { of: "${.job}", timeout: 420 } }
+  - { run: app.succeeded, with: { of: "${.job}" }, desc: "job completed after the crash" }
   - { run: app.count, with: { job: sleep }, as: total }
-  - { run: assert, with: { of: "${total}", equals: 1 }, desc: "no duplicate job (exactly once)" }
+  - { run: assert, with: { of: "${.total}", equals: 1 }, desc: "no duplicate job (exactly once)" }
 
 teardown:
   - { run: toxiproxy.reset }
@@ -116,14 +116,14 @@ verbs:
     # NOTE: writing [job, inputs?] unquoted is invalid YAML: a flow
     # scalar cannot end with '?]'. The optional marker must be quoted.
     params: [job, "inputs?"]
-    do: [ { run: http.post, with: { path: "/jobs/${job}", form: "${inputs}" }, capture: { id: ".id" } } ]
+    do: [ { run: http.post, with: { path: "/jobs/${.job}", form: "${.inputs}" }, capture: { id: ".id" } } ]
   await:
     params: [of, timeout]
-    do: [ { run: wait_until, with: { probe: { run: http.get, with: { path: "/jobs/${of}" } },
-            read: ".state", in: [SUCCESS,FAILED], timeout: "${timeout}" } } ]
+    do: [ { run: wait_until, with: { probe: { run: http.get, with: { path: "/jobs/${.of}" } },
+            read: ".state", in: [SUCCESS,FAILED], timeout: "${.timeout}" } } ]
   count:
     params: [job]
-    probe: { run: http.get, with: { path: "/jobs?type=${job}" }, read: ".items | length" }
+    probe: { run: http.get, with: { path: "/jobs?type=${.job}" }, read: ".items | length" }
 `
 
 func TestParseSpecProvider(t *testing.T) {

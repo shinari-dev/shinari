@@ -58,8 +58,12 @@ steadyState step resolves to a mutating action (rule 9).
 
 ## Interpolation
 
-`${vars.x}` reads vars; `${name}` reads a capture (falling back to a var of
-that name). Pure string substitution — **no arithmetic, no expressions**.
-A reference that is the entire value (`with: ${job}`) preserves the captured
-value's type; embedded references stringify. Captures are scenario-global,
-ordered, last-write-wins, visible across sections.
+Each `${...}` is a **jq expression** evaluated over the scope — the same jq used
+in `read:`/`capture:`, so there is one expression language. The jq input is the
+vars overlaid by the captures (a captured name shadows a var), both top-level
+fields: `${.job}` reads a var or capture named `job`, `${.rsp.value.total}`
+reaches into a captured object, and full jq is available (`${.total // 0}`,
+`${.runs | length}`). A reference that is the entire value (`with: ${.job}`)
+preserves the result's type; embedded references stringify, and a jq result of
+null renders as empty. Captures are scenario-global, ordered, last-write-wins,
+visible across sections.

@@ -57,13 +57,13 @@ method:
 
 verify:
   - run: assert
-    with: { of: "${rsp.total}", equals: 19.90 }
+    with: { of: "${.rsp.total}", equals: 19.90 }
     desc: "served from Postgres, priced correctly"
   - run: http.get
     with: /metrics
     as: metrics
   - run: assert
-    with: { of: "${metrics.p99_ms}", lt: 200 }
+    with: { of: "${.metrics.p99_ms}", lt: 200 }
     desc: "p99 back under 200ms"
     finding: "cold cache: p99 spikes for ~30s after restart"
 ```

@@ -17,31 +17,31 @@ verbs:
     params: [job]
     do:
       - run: exec.run
-        with: "sh scripts/jobstore.sh submit ${job}"
+        with: "sh scripts/jobstore.sh submit ${.job}"
   complete:
     params: [job]
     do:
       - run: exec.run
-        with: "sh scripts/jobstore.sh complete ${job}"
+        with: "sh scripts/jobstore.sh complete ${.job}"
   crash_worker:
     params: [job]
     do:
       - run: exec.run
-        with: "sh scripts/jobstore.sh crash ${job}"
+        with: "sh scripts/jobstore.sh crash ${.job}"
   recover:
     params: [job]
     do:
       - run: exec.run
-        with: "sh scripts/jobstore.sh recover ${job}"
+        with: "sh scripts/jobstore.sh recover ${.job}"
   status:
     params: [job]
     probe:
       run: exec.run
-      with: "sh scripts/jobstore.sh status ${job}"
+      with: "sh scripts/jobstore.sh status ${.job}"
       kind: probe
   runs:
     params: [job]
     probe:
       run: exec.run
-      with: "sh scripts/jobstore.sh runs ${job}"
+      with: "sh scripts/jobstore.sh runs ${.job}"
       kind: probe

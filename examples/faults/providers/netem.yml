@@ -10,32 +10,32 @@ verbs:
       - run: background
         effect: degradation
         with:
-          name: "netem-${target}"
+          name: "netem-${.target}"
           step:
             run: exec.run
-            with: "pumba netem --duration 24h delay --time ${ms} ${target}"
+            with: "pumba netem --duration 24h delay --time ${.ms} ${.target}"
   loss:
     params: [target, percent]
     do:
       - run: background
         effect: degradation
         with:
-          name: "netem-${target}"
+          name: "netem-${.target}"
           step:
             run: exec.run
-            with: "pumba netem --duration 24h loss --percent ${percent} ${target}"
+            with: "pumba netem --duration 24h loss --percent ${.percent} ${.target}"
   rate:
     params: [target, kbps]
     do:
       - run: background
         effect: degradation
         with:
-          name: "netem-${target}"
+          name: "netem-${.target}"
           step:
             run: exec.run
-            with: "pumba netem --duration 24h rate --rate ${kbps}kbit ${target}"
+            with: "pumba netem --duration 24h rate --rate ${.kbps}kbit ${.target}"
   clear:
     params: [target]
     do:
       - run: stop_background
-        with: "netem-${target}"
+        with: "netem-${.target}"

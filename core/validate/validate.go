@@ -12,6 +12,7 @@ import (
 	"github.com/shinari-dev/shinari/core/builtins"
 	"github.com/shinari-dev/shinari/core/discover"
 	"github.com/shinari-dev/shinari/core/interp"
+	"github.com/shinari-dev/shinari/core/jqx"
 	"github.com/shinari-dev/shinari/core/model"
 	"github.com/shinari-dev/shinari/core/registry"
 	"github.com/shinari-dev/shinari/sdk"
@@ -85,11 +86,9 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 
 	defined := map[string]bool{}
 	for k := range set.Project.Vars {
-		defined["vars."+k] = true
 		defined[k] = true
 	}
 	for k := range sc.Vars {
-		defined["vars."+k] = true
 		defined[k] = true
 	}
 	laterBound := map[string]string{} // capture name -> binding verb (for rule 6/10 hints)
@@ -163,24 +162,26 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 				Msg: "steadyState re-runs after method — a one-shot mutating verb here is not idempotent", Severity: Warn})
 		}
 
-		// rules 6 & 10 — references resolve, in execution order.
+		// rules 6 & 10 — references resolve, in execution order. Each ${...} is
+		// a jq expression; check the top-level input fields it reads.
 		for _, ref := range refsOf(st) {
-			name := strings.TrimSpace(ref)
-			if defined[name] {
-				continue
-			}
-			if binder, later := laterBound[name]; later {
-				rule, msg := 10, fmt.Sprintf("${%s} is referenced before %s binds it", name, binder)
-				if binder == "stop_background" || bgRunning[name] {
-					rule = 6
-					msg = fmt.Sprintf("${%s} is a background capture — it settles only at stop_background; reference it after", name)
+			for _, name := range jqx.RootRefs(ref) {
+				if defined[name] {
+					continue
 				}
-				out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: rule,
-					Msg: msg, Severity: Error})
-				continue
+				if binder, later := laterBound[name]; later {
+					rule, msg := 10, fmt.Sprintf("${%s} is referenced before %s binds it", name, binder)
+					if binder == "stop_background" || bgRunning[name] {
+						rule = 6
+						msg = fmt.Sprintf("${%s} is a background capture — it settles only at stop_background; reference it after", name)
+					}
+					out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: rule,
+						Msg: msg, Severity: Error})
+					continue
+				}
+				out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 10,
+					Msg: fmt.Sprintf("unresolved reference ${%s} — no var and no earlier capture by that name", name), Severity: Error})
 			}
-			out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 10,
-				Msg: fmt.Sprintf("unresolved reference ${%s} — no var and no earlier capture by that name", name), Severity: Error})
 		}
 
 		// track state for later rules
@@ -242,8 +243,8 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 }
 
 // validateComposedDef checks a kind: Provider body: every ${ref} in a verb
-// body must be a param, an earlier body capture, or a vars.* (resolved
-// from the caller at runtime).
+// body must reference a param or an earlier body capture. Composed verbs
+// declare their inputs as params rather than reaching into caller vars.
 func validateComposedDef(def *model.ProviderDef) []Finding {
 	var out []Finding
 	for verb, cv := range def.Verbs {
@@ -259,12 +260,13 @@ func validateComposedDef(def *model.ProviderDef) []Finding {
 		for i := range steps {
 			st := &steps[i]
 			for _, ref := range refsOf(st) {
-				name := strings.TrimSpace(ref)
-				if strings.HasPrefix(name, "vars.") || known[name] {
-					continue
+				for _, name := range jqx.RootRefs(ref) {
+					if known[name] {
+						continue
+					}
+					out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
+						Msg: fmt.Sprintf("provider %s verb %s: ${%s} is neither a param nor an earlier capture", def.Name, verb, name)})
 				}
-				out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
-					Msg: fmt.Sprintf("provider %s verb %s: ${%s} is neither a param nor an earlier capture", def.Name, verb, name)})
 			}
 			for name := range bindings(st) {
 				known[name] = true

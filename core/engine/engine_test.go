@@ -125,7 +125,7 @@ method:
       - { run: sut.kill, with: app }
 verify:
   - { run: sut.count, with: sleep, as: total }
-  - { run: assert, with: { of: "${total}", equals: "${vars.n}" }, desc: "exactly once" }
+  - { run: assert, with: { of: "${.total}", equals: "${.n}" }, desc: "exactly once" }
 `
 
 func TestPassedScenario(t *testing.T) {
@@ -248,7 +248,7 @@ setup:
   - { run: sut.up, with: [app] }
 verify:
   - { run: sut.count, with: sleep, as: total }
-  - { run: assert, with: { of: "${total}", equals: 1 }, desc: "exactly once",
+  - { run: assert, with: { of: "${.total}", equals: 1 }, desc: "exactly once",
       finding: "duplicates occur after a crash; operator dedupes manually" }
 `
 
@@ -361,7 +361,7 @@ method:
     steps:
       - { run: sut.submit, with: b, as: x }
 verify:
-  - { run: assert, with: { of: "${x}", equals: second }, desc: "last write wins" }
+  - { run: assert, with: { of: "${.x}", equals: second }, desc: "last write wins" }
 `)
 	sut.script["submit"] = []any{"first", "second"}
 	res, _ := run(t, sut, sc, reg)
@@ -431,7 +431,7 @@ method:
       - { run: background, with: { name: load, step: { run: sut.status, with: x } } }
       - { run: stop_background, with: load, as: loadResult }
 verify:
-  - { run: assert, with: { of: "${loadResult}", equals: ok } }
+  - { run: assert, with: { of: "${.loadResult}", equals: ok } }
 `)
 	res, _ := run(t, sut, sc, reg)
 	if res.Verdict != ScenarioPassed {
