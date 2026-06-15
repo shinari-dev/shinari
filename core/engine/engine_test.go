@@ -190,6 +190,58 @@ verify:
 	}
 }
 
+func TestSampleAggregates(t *testing.T) {
+	const src = `
+apiVersion: shinari/v1
+kind: Scenario
+name: sample
+verify:
+  - { run: sample, with: { probe: { run: sut.count }, count: 5 }, as: load }
+  - { run: assert, with: { of: "${.load.value.n}", equals: 5 } }
+  - { run: assert, with: { of: "${.load.value.errorRate}", equals: 0 } }
+  - { run: assert, with: { of: "${.load.value.p99}", gte: 0 } }
+`
+	sut, sc, reg := newWorld(t, src)
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+}
+
+func TestSampleCountsErrors(t *testing.T) {
+	const src = `
+apiVersion: shinari/v1
+kind: Scenario
+name: sample-errors
+verify:
+  - { run: sample, with: { probe: { run: sut.count }, count: 4 }, as: load }
+  - { run: assert, with: { of: "${.load.value.errors}", equals: 4 } }
+  - { run: assert, with: { of: "${.load.value.errorRate}", equals: 1 } }
+`
+	sut, sc, reg := newWorld(t, src)
+	sut.fails["count"] = fmt.Errorf("boom") // every probe call errors
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+}
+
+func TestSampleByDuration(t *testing.T) {
+	const src = `
+apiVersion: shinari/v1
+kind: Scenario
+name: sample-duration
+verify:
+  - { run: sample, with: { probe: { run: sut.count }, duration: 0.2, interval: 0.05 }, as: load }
+  - { run: assert, with: { of: "${.load.value.n}", gte: 1 } }
+`
+	sut, sc, reg := newWorld(t, src)
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+}
+
 func TestFailedOnVerifyRegression(t *testing.T) {
 	sut, sc, reg := newWorld(t, passingScenario)
 	sut.script["count"] = []any{2} // duplicate: regression

@@ -84,3 +84,34 @@ its result. The capture (`loadResult`) exists only **after**
 `stop_background` — referencing it earlier is a `validate` error (rule 6).
 A background step killed by the stop is not a failure; its output becomes the
 value.
+
+## sample
+
+Runs a probe repeatedly and aggregates the results — for SLO-style assertions
+over a window, not a single reading. `Kind: probe`.
+
+| arg | meaning |
+|---|---|
+| `probe` | the step to sample (a nested `{ run, with, read }`) |
+| `count` | number of calls (use this or `duration`) |
+| `duration` | seconds to sample for (use this or `count`) |
+| `interval` | seconds between calls (default 0) |
+
+Returns an Observation whose `value` is
+`{ n, errors, errorRate, min, max, mean, p50, p95, p99 }` (latencies in ms):
+
+```yaml
+- run: sample
+  with:
+    probe: { run: http.get, with: /checkout/42 }
+    duration: 30
+    interval: 0.1
+  as: load
+- run: assert
+  with: { of: "${.load.value.errorRate}", lt: 0.01 }
+- run: assert
+  with: { of: "${.load.value.p99}", lt: 200 }
+```
+
+Sampling is sequential (one call at a time). For concurrent load, drive a
+generator with `background` and `sample` a separate health probe.

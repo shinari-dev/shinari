@@ -58,6 +58,12 @@ func Specs() map[string]sdk.VerbSpec {
 			}},
 		"stop_background": {Name: "stop_background", Kind: sdk.KindAction, Primary: "name",
 			Args: []sdk.ArgSpec{{Name: "name", Type: "string", Required: true}}},
+		"sample": {Name: "sample", Kind: sdk.KindProbe, Args: []sdk.ArgSpec{
+			{Name: "probe", Type: "map", Required: true},
+			{Name: "count", Type: "number"},
+			{Name: "duration", Type: "number"},
+			{Name: "interval", Type: "number"},
+		}},
 	}
 }
 
