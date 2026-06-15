@@ -202,7 +202,7 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 			observesLatency = true
 		}
 		for _, ref := range refsOf(st) {
-			if strings.Contains(ref, "durationMs") {
+			if strings.Contains(ref, "meta.durationMs") {
 				observesLatency = true
 			}
 		}
