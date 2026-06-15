@@ -26,9 +26,10 @@ are impossible by construction.
 - **State.** No desired-state reconciliation, no drift, no state surgery.
   Shinari runs are ephemeral; there is nothing to reconcile and no file to
   corrupt.
-- **An expression language.** No `count`/`for_each`, no arithmetic in
-  `${...}`. The moment logic outgrows string interpolation it belongs in a
-  script behind `exec.run`, where it can be tested like code.
+- **A resource meta-language.** No `count`/`for_each` or HCL-style graph
+  wiring. Expressions are jq (the same language as `read:`/`capture:`); the
+  moment logic outgrows a jq expression it belongs in a script behind
+  `exec.run`, where it can be tested like code.
 - **Schema gymnastics.** Verb arg specs are name/type/required — enough for
   `validate` to catch typos before a run, nowhere near a type system.
 

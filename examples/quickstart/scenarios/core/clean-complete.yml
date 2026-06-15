@@ -13,35 +13,35 @@ method:
   - phase: "Submit the job and observe it RUNNING"
     steps:
       - run: jobstore.submit
-        with: "${vars.job}"
+        with: "${.job}"
       - run: wait_until
         with:
           probe:
             run: jobstore.status
-            with: "${vars.job}"
+            with: "${.job}"
           equals: RUNNING
           timeout: 5
           interval: 0.1
   - phase: "The worker completes the job"
     steps:
       - run: jobstore.complete
-        with: "${vars.job}"
+        with: "${.job}"
 
 verify:
   - run: jobstore.status
-    with: "${vars.job}"
+    with: "${.job}"
     as: state
   - run: assert
     with:
-      of: "${state}"
+      of: "${.state}"
       equals: SUCCESS
     desc: "job completed"
   - run: jobstore.runs
-    with: "${vars.job}"
+    with: "${.job}"
     as: total
   - run: assert
     with:
-      of: "${total}"
+      of: "${.total}"
       equals: 1
     desc: "exactly once"
 

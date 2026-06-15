@@ -45,13 +45,13 @@ method:
   - phase: "Do the thing"
     steps:
       - run: exec.run
-        with: "echo ${vars.greeting}"
+        with: "echo ${.greeting}"
         as: said
 
 verify:
   - run: assert
     with:
-      of: "${said}"
+      of: "${.said}"
       equals: hello
     desc: "we said hello"
 
@@ -87,7 +87,7 @@ shinari run
   => PASSED
 ```
 
-Note the capture: `as: said` stored the step's output, and `${said}` read it
+Note the capture: `as: said` stored the step's output, and `${.said}` read it
 back in `verify`. Captures are scenario-global, ordered, last-write-wins.
 
 ## 4. Break it, on purpose

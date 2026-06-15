@@ -21,8 +21,8 @@ verbs:
     do:
       - run: http.post
         with:
-          path: "/jobs/${job}"
-          form: "${inputs}"
+          path: "/jobs/${.job}"
+          form: "${.inputs}"
         capture:
           id: ".id"
   await:
@@ -33,16 +33,16 @@ verbs:
           probe:
             run: http.get
             with:
-              path: "/jobs/${of}"
+              path: "/jobs/${.of}"
           read: ".state"
           in: [SUCCESS, FAILED]
-          timeout: "${timeout}"
+          timeout: "${.timeout}"
   count:
     params: [job]
     probe:
       run: http.get
       with:
-        path: "/jobs?type=${job}"
+        path: "/jobs?type=${.job}"
       read: ".items | length"
 ```
 
@@ -81,14 +81,14 @@ method:
 verify:
   - run: app.await
     with:
-      of: "${job}"
+      of: "${.job}"
       timeout: 420
   - run: app.count
     with: sleep
     as: total
   - run: assert
     with:
-      of: "${total}"
+      of: "${.total}"
       equals: 1
     desc: "exactly once"
 ```
@@ -101,7 +101,7 @@ verify:
 - **Args** — `params:` become the verb's arg spec: required unless marked
   `"name?"`, first param doubles as the scalar shorthand
   (`with: sleep` ≡ `with: { job: sleep }`).
-- **Scoping** — `${param}` references and body captures are macro-local; they
+- **Scoping** — `${.param}` references and body captures are macro-local; they
   never leak into the scenario's capture namespace.
 
 ## Rules to know

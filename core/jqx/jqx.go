@@ -7,9 +7,32 @@ package jqx
 
 import (
 	"fmt"
+	"regexp"
 
 	"github.com/itchyny/gojq"
 )
+
+// rootRefRe matches a top-level input field access `.name`: a dot that is NOT
+// preceded by another field, identifier, or closing bracket (which would make
+// it a nested access like .a.b). Best-effort, for static validation only;
+// dynamic keys (.["x"]) are not reported.
+var rootRefRe = regexp.MustCompile(`(^|[^.\w\])])\.([A-Za-z_]\w*)`)
+
+// RootRefs returns the distinct top-level input fields a jq expression reads,
+// e.g. RootRefs(".rsp.value.total") == ["rsp"]. Used by validate to check a
+// reference resolves to a known var or capture.
+func RootRefs(expr string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range rootRefRe.FindAllStringSubmatch(expr, -1) {
+		name := m[2]
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	return out
+}
 
 // Eval runs a jq expression against a value and returns the first result.
 // The value must be JSON-shaped (maps, slices, scalars).

@@ -10,32 +10,32 @@ verbs:
       - run: background
         effect: degradation
         with:
-          name: "stress-${target}"
+          name: "stress-${.target}"
           step:
             run: exec.run
-            with: "pumba stress --duration 24h --stressors '--cpu ${load}' ${target}"
+            with: "pumba stress --duration 24h --stressors '--cpu ${.load}' ${.target}"
   memory:
     params: [target, bytes]
     do:
       - run: background
         effect: degradation
         with:
-          name: "stress-${target}"
+          name: "stress-${.target}"
           step:
             run: exec.run
-            with: "pumba stress --duration 24h --stressors '--vm 1 --vm-bytes ${bytes}' ${target}"
+            with: "pumba stress --duration 24h --stressors '--vm 1 --vm-bytes ${.bytes}' ${.target}"
   io:
     params: [target, workers]
     do:
       - run: background
         effect: degradation
         with:
-          name: "stress-${target}"
+          name: "stress-${.target}"
           step:
             run: exec.run
-            with: "pumba stress --duration 24h --stressors '--io ${workers}' ${target}"
+            with: "pumba stress --duration 24h --stressors '--io ${.workers}' ${.target}"
   clear:
     params: [target]
     do:
       - run: stop_background
-        with: "stress-${target}"
+        with: "stress-${.target}"

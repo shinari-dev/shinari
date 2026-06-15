@@ -120,11 +120,11 @@ the first verb runs (after `setup`).
 ```yaml
 - run: db.query
   with: "SELECT count(*) AS n FROM runs WHERE job_id=$1"
-  args: ["${job}"]
+  args: ["${.job}"]
   read: ".[0].n"
   as: runs
 - run: assert
-  with: { of: "${runs}", equals: 1 }
+  with: { of: "${.runs}", equals: 1 }
   desc: "exactly once"
 ```
 

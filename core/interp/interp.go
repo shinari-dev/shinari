@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 The Shinari Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package interp implements ${...} interpolation: pure string substitution
-// over vars and captures — deliberately not an expression language.
+// Package interp implements ${...} interpolation: each ${...} is a jq
+// expression evaluated over the scope (vars overlaid by captures). jq is the
+// single expression language, shared with read:/capture:.
 package interp
 
 import (
@@ -10,20 +11,32 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/shinari-dev/shinari/core/jqx"
 	"github.com/shinari-dev/shinari/utils/conv"
 )
 
 var refRe = regexp.MustCompile(`\$\{([^}]*)\}`)
 
-// Scope resolves references. Lookup order: explicit "vars." prefix reads
-// Vars; bare names read Captures first, then Vars (a captured name shadows
-// a var, last-write-wins).
+// Scope resolves references. The jq input is vars overlaid by captures, so a
+// captured name shadows a var of the same name.
 type Scope struct {
 	Vars     map[string]any
 	Captures map[string]any
 }
 
-// Refs returns every ${...} reference name in s, in order.
+// root builds the jq input document from the scope.
+func (sc Scope) root() map[string]any {
+	root := make(map[string]any, len(sc.Vars)+len(sc.Captures))
+	for k, v := range sc.Vars {
+		root[k] = v
+	}
+	for k, v := range sc.Captures {
+		root[k] = v
+	}
+	return root
+}
+
+// Refs returns every ${...} expression in s, in order.
 func Refs(s string) []string {
 	var out []string
 	for _, m := range refRe.FindAllStringSubmatch(s, -1) {
@@ -32,31 +45,18 @@ func Refs(s string) []string {
 	return out
 }
 
-func (sc Scope) lookup(ref string) (any, bool) {
-	ref = strings.TrimSpace(ref)
-	if name, ok := strings.CutPrefix(ref, "vars."); ok {
-		v, found := sc.Vars[name]
-		return v, found
-	}
-	if v, found := sc.Captures[ref]; found {
-		return v, true
-	}
-	v, found := sc.Vars[ref]
-	return v, found
-}
-
-// String interpolates every ${...} in s. A reference that does not resolve
-// is an error naming the reference — including anything that looks like
-// arithmetic (`${a - b}`), which is simply an unknown name (there is no
-// expression language).
+// String interpolates every ${...} in s, stringifying each jq result. A jq
+// parse/eval error is reported, naming the expression; a jq result of null
+// renders as empty.
 func (sc Scope) String(s string) (string, error) {
 	var firstErr error
+	root := sc.root()
 	out := refRe.ReplaceAllStringFunc(s, func(m string) string {
-		ref := m[2 : len(m)-1]
-		v, ok := sc.lookup(ref)
-		if !ok {
+		expr := m[2 : len(m)-1]
+		v, err := jqx.Eval(expr, root)
+		if err != nil {
 			if firstErr == nil {
-				firstErr = fmt.Errorf("unresolved reference ${%s} (no var or capture by that name; note: Shinari has no expression language)", ref)
+				firstErr = fmt.Errorf("interpolating ${%s}: %w", expr, err)
 			}
 			return m
 		}
@@ -65,23 +65,17 @@ func (sc Scope) String(s string) (string, error) {
 	return out, firstErr
 }
 
-// Value interpolates s, preserving the referenced value's type when the
-// whole string is exactly one reference (`with: ${job}`); otherwise it
-// behaves like String.
+// Value interpolates s, preserving the jq result's type when the whole string
+// is exactly one ${...} (`with: ${.job}`); otherwise it behaves like String.
 func (sc Scope) Value(s string) (any, error) {
 	trimmed := strings.TrimSpace(s)
 	if m := refRe.FindStringSubmatch(trimmed); m != nil && m[0] == trimmed {
-		v, ok := sc.lookup(m[1])
-		if !ok {
-			return nil, fmt.Errorf("unresolved reference ${%s} (no var or capture by that name)", m[1])
-		}
-		return v, nil
+		return jqx.Eval(m[1], sc.root())
 	}
 	return sc.String(s)
 }
 
-// Any walks an already-decoded YAML value (maps, lists, scalars) and
-// interpolates every string in it.
+// Any walks an already-decoded YAML value and interpolates every string in it.
 func (sc Scope) Any(v any) (any, error) {
 	switch t := v.(type) {
 	case string:
@@ -111,6 +105,5 @@ func (sc Scope) Any(v any) (any, error) {
 	}
 }
 
-// Stringify renders a value the way interpolation embeds it: numbers
-// canonically, everything else via fmt.
+// Stringify renders a value the way interpolation embeds it.
 func Stringify(v any) string { return conv.ToString(v) }

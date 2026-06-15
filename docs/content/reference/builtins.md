@@ -14,7 +14,7 @@ Kind: assertion. Exactly **one** operator key per step.
 ```yaml
 - run: assert
   with:
-    of: "${total}"
+    of: "${.total}"
     equals: 1
   desc: "exactly once"
 ```
@@ -51,7 +51,7 @@ until a condition holds or a timeout expires.
     probe:                    # any probe step: run/with/read
       run: http.get
       with:
-        path: "/jobs/${job}"
+        path: "/jobs/${.job}"
     read: ".state"            # optional jq over the probe's value
     in: [SUCCESS, FAILED]     # exactly one assert operator (any from the table above)
     timeout: 420              # seconds — required
