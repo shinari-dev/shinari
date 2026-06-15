@@ -86,11 +86,16 @@ providers:
 
 | verb | kind | args |
 |---|---|---|
-| `get` | probe | `path` (primary), `headers?` |
-| `post` / `put` / `delete` | action | `path` (primary), `body?` (JSON), `form?` (urlencoded), `headers?` |
+| `get` | probe | `path` (primary), `headers?`, `expectStatus?` |
+| `post` / `put` / `delete` | action | `path` (primary), `body?` (JSON), `form?` (urlencoded), `headers?`, `expectStatus?` |
 
 JSON responses decode into structured values — `read:`/`capture:` jq
-expressions work on them directly. Status ≥ 400 is a step failure.
+expressions work on them directly. The response carries `meta.status` and
+`meta.bytes` (plus the engine's `meta.durationMs`), so after `as: rsp` you can
+`assert of: "${.rsp.meta.status}"` and `assert of: "${.rsp.meta.durationMs}"`.
+Status ≥ 400 is a step failure unless the code is listed in `expectStatus`
+(e.g. `expectStatus: [200, 503]` to observe graceful degradation), in which case
+it returns normally with the status in `meta`.
 
 ## sql — query + capture
 
@@ -124,7 +129,7 @@ the first verb runs (after `setup`).
   read: ".[0].n"
   as: runs
 - run: assert
-  with: { of: "${.runs}", equals: 1 }
+  with: { of: "${.runs.value}", equals: 1 }
   desc: "exactly once"
 ```
 

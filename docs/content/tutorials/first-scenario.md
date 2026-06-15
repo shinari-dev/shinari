@@ -51,7 +51,7 @@ method:
 verify:
   - run: assert
     with:
-      of: "${.said}"
+      of: "${.said.value}"
       equals: hello
     desc: "we said hello"
 
@@ -87,7 +87,7 @@ shinari run
   => PASSED
 ```
 
-Note the capture: `as: said` stored the step's output, and `${.said}` read it
+Note the capture: `as: said` stored the step's output, and `${.said.value}` read it
 back in `verify`. Captures are scenario-global, ordered, last-write-wins.
 
 ## 4. Break it, on purpose

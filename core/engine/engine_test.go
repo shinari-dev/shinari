@@ -125,7 +125,7 @@ method:
       - { run: sut.kill, with: app }
 verify:
   - { run: sut.count, with: sleep, as: total }
-  - { run: assert, with: { of: "${.total}", equals: "${.n}" }, desc: "exactly once" }
+  - { run: assert, with: { of: "${.total.value}", equals: "${.n}" }, desc: "exactly once" }
 `
 
 func TestPassedScenario(t *testing.T) {
@@ -155,6 +155,38 @@ func TestPassedScenario(t *testing.T) {
 	}
 	if len(res.Held) == 0 || res.Held[0] != "sut.smoke" {
 		t.Errorf("held = %v", res.Held)
+	}
+}
+
+func TestAsBindsEnvelopeWithDuration(t *testing.T) {
+	const src = `
+apiVersion: shinari/v1
+kind: Scenario
+name: envelope
+verify:
+  - { run: sut.count, as: rsp }
+  - { run: assert, with: { of: "${.rsp.value}", equals: "ok" } }
+  - { run: assert, with: { of: "${.rsp.meta.durationMs}", gte: 0 } }
+`
+	sut, sc, reg := newWorld(t, src)
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+}
+
+func TestStepTimeoutFails(t *testing.T) {
+	const src = `
+apiVersion: shinari/v1
+kind: Scenario
+name: timeout
+verify:
+  - { run: sleep, with: { seconds: 5 }, timeout: 0.1 }
+`
+	sut, sc, reg := newWorld(t, src)
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioFailed {
+		t.Fatalf("verdict = %s, want FAILED (timeout)", res.Verdict)
 	}
 }
 
@@ -248,7 +280,7 @@ setup:
   - { run: sut.up, with: [app] }
 verify:
   - { run: sut.count, with: sleep, as: total }
-  - { run: assert, with: { of: "${.total}", equals: 1 }, desc: "exactly once",
+  - { run: assert, with: { of: "${.total.value}", equals: 1 }, desc: "exactly once",
       finding: "duplicates occur after a crash; operator dedupes manually" }
 `
 
@@ -361,7 +393,7 @@ method:
     steps:
       - { run: sut.submit, with: b, as: x }
 verify:
-  - { run: assert, with: { of: "${.x}", equals: second }, desc: "last write wins" }
+  - { run: assert, with: { of: "${.x.value}", equals: second }, desc: "last write wins" }
 `)
 	sut.script["submit"] = []any{"first", "second"}
 	res, _ := run(t, sut, sc, reg)
@@ -431,7 +463,7 @@ method:
       - { run: background, with: { name: load, step: { run: sut.status, with: x } } }
       - { run: stop_background, with: load, as: loadResult }
 verify:
-  - { run: assert, with: { of: "${.loadResult}", equals: ok } }
+  - { run: assert, with: { of: "${.loadResult.value}", equals: ok } }
 `)
 	res, _ := run(t, sut, sc, reg)
 	if res.Verdict != ScenarioPassed {

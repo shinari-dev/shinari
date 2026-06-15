@@ -57,7 +57,7 @@ setup:
   - { run: sut.up, with: [app] }
 verify:
   - { run: sut.count, with: job, as: total }
-  - { run: assert, with: { of: "${.total}", equals: 1 }, desc: "exactly once" }
+  - { run: assert, with: { of: "${.total.value}", equals: 1 }, desc: "exactly once" }
 `,
 		"providers/app.yml": `apiVersion: shinari/v1
 kind: Provider

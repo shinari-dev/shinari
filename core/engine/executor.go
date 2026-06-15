@@ -222,12 +222,18 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		return skipOrFail(err)
 	}
 
-	result, err := r.execVerb(ctx, res, st.Run, withVal, r.scope())
+	runCtx := ctx
+	if st.Timeout > 0 {
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, time.Duration(st.Timeout*float64(time.Second)))
+		defer cancel()
+	}
+	result, err := r.execVerb(runCtx, res, st.Run, withVal, r.scope())
 	if err != nil {
 		return r.judge(st, finish, err)
 	}
 
-	if _, err = applyBindings(st, result.Value, func(name string, v any) {
+	if _, err = applyBindings(st, result, func(name string, v any) {
 		r.captures[name] = v
 		if sr.Captured == nil {
 			sr.Captured = map[string]any{}
@@ -299,7 +305,8 @@ func (r *runner) decodeWith(st *model.Step, scope interp.Scope) (any, error) {
 // capture: outputs through sink. The top-level executor and composed-macro
 // expansion share this; they differ only in where bindings land (the run
 // captures vs. a macro-local scope), which the sink abstracts.
-func applyBindings(st *model.Step, value any, sink func(name string, v any)) (any, error) {
+func applyBindings(st *model.Step, result sdk.VerbResult, sink func(name string, v any)) (any, error) {
+	value := result.Value
 	if st.Read != "" {
 		v, err := jqx.Eval(st.Read, value)
 		if err != nil {
@@ -308,7 +315,7 @@ func applyBindings(st *model.Step, value any, sink func(name string, v any)) (an
 		value = v
 	}
 	if st.As != "" {
-		sink(st.As, value)
+		sink(st.As, envelope(result.Output, value, result.Meta))
 	}
 	for name, expr := range st.Capture {
 		v, err := jqx.Eval(expr, value)
@@ -320,6 +327,16 @@ func applyBindings(st *model.Step, value any, sink func(name string, v any)) (an
 	return value, nil
 }
 
+// envelope wraps a verb result for `as:`: the payload, its raw output, and
+// metadata (durationMs plus provider facts). read:/capture: still operate on
+// the payload; only `as:` binds this whole shape.
+func envelope(output string, value any, meta map[string]any) map[string]any {
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	return map[string]any{"value": value, "output": output, "meta": meta}
+}
+
 // execVerb dispatches a resolved verb: language builtin, composed macro,
 // or native provider.
 func (r *runner) execVerb(ctx context.Context, res registry.Resolution, run string, withVal any, scope interp.Scope) (sdk.VerbResult, error) {
@@ -327,14 +344,21 @@ func (r *runner) execVerb(ctx context.Context, res registry.Resolution, run stri
 	if err != nil {
 		return sdk.VerbResult{}, err
 	}
+	start := r.opts.now()
+	var result sdk.VerbResult
 	switch {
 	case res.Builtin != "":
-		return r.execBuiltin(ctx, res.Builtin, args, scope)
+		result, err = r.execBuiltin(ctx, res.Builtin, args, scope)
 	case res.Composed != nil:
-		return r.execComposed(ctx, run, res, args)
+		result, err = r.execComposed(ctx, run, res, args)
 	default:
-		return res.Instance.Native.Run(ctx, registry.VerbName(run), args)
+		result, err = res.Instance.Native.Run(ctx, registry.VerbName(run), args)
 	}
+	if result.Meta == nil {
+		result.Meta = map[string]any{}
+	}
+	result.Meta["durationMs"] = float64(r.opts.now().Sub(start).Milliseconds())
+	return result, err
 }
 
 // execComposed expands a macro: body steps run with a macro-local scope
@@ -370,7 +394,7 @@ func (r *runner) execComposed(ctx context.Context, run string, res registry.Reso
 		if err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("%s → %s: %w", run, st.Run, err)
 		}
-		value, err := applyBindings(st, result.Value, func(name string, v any) { local[name] = v })
+		value, err := applyBindings(st, result, func(name string, v any) { local[name] = v })
 		if err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("%s → %s: %w", run, st.Run, err)
 		}

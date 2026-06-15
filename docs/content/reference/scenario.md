@@ -67,3 +67,9 @@ reaches into a captured object, and full jq is available (`${.total // 0}`,
 preserves the result's type; embedded references stringify, and a jq result of
 null renders as empty. Captures are scenario-global, ordered, last-write-wins,
 visible across sections.
+
+A step's result is captured as an **Observation envelope** `{value, output,
+meta}`: `as: rsp` binds the whole envelope, so the payload is `${.rsp.value}`
+and the call's facts are `${.rsp.meta.durationMs}` / `${.rsp.meta.status}`.
+`read:` and `capture:` operate on the payload. A per-step `timeout:` (seconds)
+fails the step if the verb runs longer.

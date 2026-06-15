@@ -85,3 +85,32 @@ func TestApiBaseAlias(t *testing.T) {
 		t.Fatalf("baseURL = %q", p.baseURL)
 	}
 }
+
+func TestGetSetsStatusAndBytesMeta(t *testing.T) {
+	s := server(t)
+	p := provider(t, s.URL)
+	res, err := p.Run(context.Background(), "get", map[string]any{"path": "/jobs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Meta["status"].(int) != 200 {
+		t.Fatalf("meta.status = %v", res.Meta["status"])
+	}
+	if b, _ := res.Meta["bytes"].(int); b <= 0 {
+		t.Fatalf("meta.bytes = %v", res.Meta["bytes"])
+	}
+}
+
+func TestExpectStatusAcceptsListedCode(t *testing.T) {
+	s := server(t)
+	p := provider(t, s.URL)
+	res, err := p.Run(context.Background(), "get", map[string]any{
+		"path": "/boom", "expectStatus": []any{200, 500},
+	})
+	if err != nil {
+		t.Fatalf("500 should be accepted via expectStatus, got err %v", err)
+	}
+	if res.Meta["status"].(int) != 500 {
+		t.Fatalf("meta.status = %v", res.Meta["status"])
+	}
+}

@@ -88,7 +88,7 @@ verify:
     as: total
   - run: assert
     with:
-      of: "${.total}"
+      of: "${.total.value}"
       equals: 1
     desc: "exactly once"
 ```
