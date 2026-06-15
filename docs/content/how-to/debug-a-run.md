@@ -14,7 +14,7 @@ Teardown destroys the evidence. Skip it:
 KEEP_UP=1 ./shinari run worker-killed-mid-task
 ```
 
-The whole `teardown` section is skipped — containers, toxics, and DNS
+The whole `teardown` section is skipped: containers, toxics, and DNS
 overrides stay exactly as the failure left them. Poke at the system, then
 clean up manually (`docker compose down -v`).
 
@@ -26,12 +26,12 @@ clean up manually (`docker compose down -v`).
 
 `-dry-run` skips every **action** (anything that mutates: `docker.kill`,
 `http.post`, `exec.run` unless overridden) and still executes probes and
-assertions. Use it to check wiring — do the probes resolve, do the captures
-flow — without touching the system.
+assertions. Use it to check wiring (do the probes resolve, do the captures
+flow) without touching the system.
 
 ## Read the journal
 
-Every run writes `journal.jsonl`: the complete, ordered event stream — one
+Every run writes `journal.jsonl`: the complete, ordered event stream, one
 JSON object per line.
 
 ```sh
@@ -56,7 +56,7 @@ Target one scenario by name (or a whole suite by directory name):
 
 | symptom | likely cause |
 |---|---|
-| `ERRORED` + compose output | stack didn't come up — read the setup step's error, it embeds stderr |
-| `INCONCLUSIVE` | steadyState failed *before* any fault — the environment, not the product |
-| `wait_until: condition not observed within Ns; last observed: X` | the gate never fired — `X` tells you what the probe actually saw |
-| a finding flipped to `✗ finding now passes` | not a bug: the gap was fixed — promote the assertion |
+| `ERRORED` + compose output | stack didn't come up: read the setup step's error, it embeds stderr |
+| `INCONCLUSIVE` | steadyState failed *before* any fault: the environment, not the product |
+| `wait_until: condition not observed within Ns; last observed: X` | the gate never fired; `X` tells you what the probe actually saw |
+| a finding flipped to `✗ finding now passes` | not a bug: the gap was fixed, promote the assertion |

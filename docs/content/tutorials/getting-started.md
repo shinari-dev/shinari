@@ -1,6 +1,6 @@
 ---
 title: Getting started
-description: Build the binary, run the quickstart project, and read your first findings report — in five minutes.
+description: Build the binary, run the quickstart project, and read your first findings report, in five minutes.
 weight: 10
 ---
 
@@ -21,20 +21,20 @@ You should see the command list: `init`, `validate`, `list`, `run`.
 ## 2. Meet the quickstart project
 
 The repo ships a complete example under `examples/quickstart/`: a toy job
-store driven entirely through shell — zero infrastructure required. Look at
+store driven entirely through shell, zero infrastructure required. Look at
 its shape:
 
 ```text
 examples/quickstart/
-  project.yml                    # kind: Project — the root
+  project.yml                    # kind: Project (the root)
   shinari.lock.yml               # pinned providers
-  providers/jobstore.yml         # kind: Provider — a composed provider
+  providers/jobstore.yml         # kind: Provider (a composed provider)
   scripts/jobstore.sh            # the "system under test"
   scenarios/core/clean-complete.yml
   scenarios/recovery/worker-killed.yml
 ```
 
-Nothing about this layout is mandatory — Shinari recognizes its files by
+Nothing about this layout is mandatory. Shinari recognizes its files by
 their `apiVersion`/`kind` header, not by name or location.
 
 ## 3. Validate before running
@@ -49,7 +49,7 @@ valid — 2 scenario(s), 2 warning(s)
 ```
 
 `validate` is static: it resolves every verb, checks every argument and every
-`${...}` reference, and never touches the system. The warning is expected —
+`${...}` reference, and never touches the system. The warning is expected;
 this project uses no docker stack.
 
 ## 4. List what was discovered
@@ -84,7 +84,7 @@ Watch the stream. Three glyphs matter:
 2 scenario(s): 2 passed, 0 failed, 0 errored, 0 inconclusive — 1 finding(s) held
 ```
 
-The exactly-once assertion **failed** — and the run is **green** (exit `0`).
+The exactly-once assertion **failed**, and the run is **green** (exit `0`).
 That is the point: the failure is a *known, documented gap*, declared with
 `finding:` in the scenario, so the suite stays a signal instead of a wall of
 ignored red.
@@ -100,7 +100,7 @@ cat shinari-out/findings.md
 Per scenario you get **Injected** (which faults ran), **Held** (which
 assertions passed), and **Gapped** (the findings, with the observed failure).
 There is also `results.json`, `junit.xml`, `results.tsv`, and
-`journal.jsonl` — the full event stream.
+`journal.jsonl`: the full event stream.
 
 ## Where you are
 

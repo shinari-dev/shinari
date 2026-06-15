@@ -4,7 +4,7 @@ description: Make a hostname disappear, point it somewhere else, or blackhole it
 weight: 20
 ---
 
-**Goal:** simulate DNS-level failures — the outage class that bypasses every
+**Goal:** simulate DNS-level failures: the outage class that bypasses every
 proxy because the client never connects at all.
 
 ## Prerequisites
@@ -28,7 +28,7 @@ providers:
   with: api.partner.com
 ```
 
-The host resolves to *nothing* — the "their domain expired" failure.
+The host resolves to *nothing*: the "their domain expired" failure.
 
 ## Repoint a host
 
@@ -48,7 +48,7 @@ Useful for "the failover DNS record was wrong" scenarios.
   with: api.partner.com
 ```
 
-Resolves to `0.0.0.0`: lookups succeed, connections go nowhere — clients hit
+Resolves to `0.0.0.0`: lookups succeed, connections go nowhere, and clients hit
 connect timeouts instead of resolution errors. Different failure, different
 code path in your retry logic. Test both.
 

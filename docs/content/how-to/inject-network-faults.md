@@ -33,7 +33,7 @@ providers:
 
 ## Partition a service
 
-`partition` disables the proxy — connections fail immediately, like a network
+`partition` disables the proxy: connections fail immediately, like a network
 split:
 
 ```yaml
@@ -43,7 +43,7 @@ split:
 
 ## Blackhole (connections hang, not fail)
 
-`blackhole` keeps connections open but drops all data — the nastier failure
+`blackhole` keeps connections open but drops all data: the nastier failure
 mode, where clients wait instead of erroring:
 
 ```yaml
@@ -76,7 +76,7 @@ include it yourself, as above.
 
 ## Gate the fault on an observed event
 
-Don't partition "after 5 seconds" — partition *the instant the stream is up*:
+Don't partition "after 5 seconds"; partition *the instant the stream is up*:
 
 ```yaml
 - run: wait_until

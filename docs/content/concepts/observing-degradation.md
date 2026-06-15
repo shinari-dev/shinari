@@ -31,5 +31,5 @@ repeatedly and returns `{ n, errors, errorRate, p50, p95, p99, ... }`:
 ```
 
 `validate` warns (rule 11) when a `degradation` fault is injected but nothing
-observes its effect — a survival-only check on a latency fault is usually a
+observes its effect: a survival-only check on a latency fault is usually a
 gap, not a pass.

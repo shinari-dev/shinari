@@ -1,6 +1,6 @@
 ---
 title: Reference
-description: The technical specification — every command, key, verb, verdict, and rule, stated precisely.
+description: "The technical specification: every command, key, verb, verdict, and rule, stated precisely."
 params:
   code: SECTOR 03
   headline: Technical readout

@@ -1,12 +1,12 @@
 ---
 title: Your first finding
-description: Turn a known gap into an executable, self-maintaining contract — and watch CI flip when someone fixes it.
+description: Turn a known gap into an executable, self-maintaining contract, and watch CI flip when someone fixes it.
 weight: 30
 ---
 
 This is the heart of Shinari. You will declare a known failure as a
 `finding:`, watch the suite stay green while the gap exists, then "fix" the
-system and watch the suite go red — demanding promotion.
+system and watch the suite go red, demanding promotion.
 
 ## 1. A system with a gap
 
@@ -17,7 +17,7 @@ fake a service that duplicates work on recovery. Create `dupes.yml`:
 apiVersion: shinari/v1
 kind: Scenario
 name: crash-recovery-duplicates
-description: Recovery re-runs the whole job — a known duplicate-work gap.
+description: Recovery re-runs the whole job, a known duplicate-work gap.
 
 setup:
   - run: exec.run
@@ -47,7 +47,7 @@ verify:
 The assertion states what *should* be true (`runs == 1`). The `finding:`
 states what *is* true instead, in words an operator can use.
 
-## 2. Run it — the gap holds
+## 2. Run it: the gap holds
 
 ```sh
 shinari run crash-recovery-duplicates
@@ -67,10 +67,10 @@ Exit `0`. The check rendered as **FINDING**, counted separately, recorded in
   - observed: assert failed: expected 2 == 1
 ```
 
-Your suite is now *living documentation of how the system fails* — and it is
+Your suite is now *living documentation of how the system fails*, and it is
 green, so people keep watching it.
 
-## 3. Fix the system — the ledger bites
+## 3. Fix the system: the ledger bites
 
 Simulate the fix: delete the second `echo` line (the duplicate re-run) and run
 again:
@@ -81,7 +81,7 @@ again:
   => FAILED
 ```
 
-Exit `1`. CI goes red on a **good** event — deliberately. A finding that
+Exit `1`. CI goes red on a **good** event, deliberately. A finding that
 passes silently would rot into a stale claim; instead the harness demands you
 delete the `finding:` line, turning the check into a hard assertion forever.
 
@@ -97,7 +97,7 @@ Remove the `finding:` key:
     desc: "exactly once"
 ```
 
-Run once more: green — and this time `exactly once` is a regression tripwire,
+Run once more: green, and this time `exactly once` is a regression tripwire,
 not a documented gap.
 
 ## The lifecycle you just executed
@@ -110,6 +110,6 @@ gap discovered ─▶ finding: declared ─▶ suite GREEN, gap visible in the l
                   suite RED: "promote this" ─▶ finding: removed ─▶ hard assertion
 ```
 
-That loop — *green until the product changes* — is what Shinari exists to
+That loop, *green until the product changes*, is what Shinari exists to
 run. The full reasoning lives in
 [Why a findings ledger](/concepts/findings-ledger/).

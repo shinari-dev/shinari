@@ -8,7 +8,7 @@ weight: 10
 shinari [flags] <command> [target...]
 ```
 
-A **target** is a scenario name or a suite name, resolved by discovery — never
+A **target** is a scenario name or a suite name, resolved by discovery, never
 a file path. No targets means all scenarios.
 
 ## Commands
@@ -32,16 +32,16 @@ a file path. No targets means all scenarios.
 
 | variable | effect |
 |---|---|
-| `KEEP_UP=1` | skip the entire `teardown` section — preserve the stack for inspection |
+| `KEEP_UP=1` | skip the entire `teardown` section, preserving the stack for inspection |
 
 ## Exit codes
 
 | code | meaning |
 |---|---|
-| `0` | `PASSED` — all checks pass/skip; findings still fail as expected |
-| `1` | `FAILED` — a check regressed, or a `finding:` unexpectedly passes |
-| `2` | `ERRORED` — setup failed; the harness could not be established (also: report I/O failure, concurrent-run lock held) |
-| `3` | `INCONCLUSIVE` — steadyState failed before method |
+| `0` | `PASSED`: all checks pass/skip; findings still fail as expected |
+| `1` | `FAILED`: a check regressed, or a `finding:` unexpectedly passes |
+| `2` | `ERRORED`: setup failed; the harness could not be established (also: report I/O failure, concurrent-run lock held) |
+| `3` | `INCONCLUSIVE`: steadyState failed before method |
 | `64` | usage error (unknown command/target, bad flags) |
 
 With several scenarios in one run, the **worst** verdict wins, ranked

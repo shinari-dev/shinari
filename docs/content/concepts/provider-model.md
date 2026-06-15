@@ -6,7 +6,7 @@ weight: 40
 ---
 
 A provider is a named, namespaced bundle of capabilities; each capability is
-a verb addressed `<provider>.<verb>`. Namespacing is mandatory — collisions
+a verb addressed `<provider>.<verb>`. Namespacing is mandatory; collisions
 are impossible by construction.
 
 ## How configuration works
@@ -17,7 +17,7 @@ are impossible by construction.
 - **Named instances.** The configured name *is* the namespace: configure one
   type twice (`appA`, `appB`) and you get two verb namespaces, two deployments
   addressable from one scenario.
-- **Pinned versions in a committed lock file** (`shinari.lock.yml`) →
+- **Pinned versions in a committed lock file** (`shinari.lock.yml`) for
   reproducible runs.
 - **`init` before `run`** to resolve what's declared.
 
@@ -30,7 +30,7 @@ are impossible by construction.
   wiring. Expressions are jq (the same language as `read:`/`capture:`); the
   moment logic outgrows a jq expression it belongs in a script behind
   `exec.run`, where it can be tested like code.
-- **Schema gymnastics.** Verb arg specs are name/type/required — enough for
+- **Schema gymnastics.** Verb arg specs are name/type/required: enough for
   `validate` to catch typos before a run, nowhere near a type system.
 
 ## Two implementations, one model
@@ -38,11 +38,11 @@ are impossible by construction.
 | kind | written in | when |
 |---|---|---|
 | built-in native | Go, compiled in | the arsenal: `docker`, `toxiproxy`, `net`, `http`, `exec` |
-| composed | YAML macros over other verbs | your domain vocabulary — most teams never need more |
+| composed | YAML macros over other verbs | your domain vocabulary; most teams never need more |
 
 The taste test that routes authorship: *can it be composed from existing
-verbs?* Yes → composed provider. No → native verb. Author discipline
-("don't forget the exactly-once assertion") is never a verb — it's a
+verbs?* Yes means a composed provider. No means a native verb. Author discipline
+("don't forget the exactly-once assertion") is never a verb; it's a
 `validate` rule.
 
 The `sdk` package is the isolation seam every native provider implements, so

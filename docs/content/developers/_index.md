@@ -1,6 +1,6 @@
 ---
 title: Developers
-description: Extend Shinari — give your system its own verbs, in YAML or against the Go SDK.
+description: Extend Shinari by giving your system its own verbs, in YAML or against the Go SDK.
 params:
   code: SECTOR 05
   headline: Extend the arsenal

@@ -47,7 +47,7 @@ providers:
 
 ## The providers block
 
-Each key is an **instance name** — the verb namespace. Fields:
+Each key is an **instance name** (the verb namespace). Fields:
 
 | field | meaning |
 |---|---|
@@ -56,12 +56,12 @@ Each key is an **instance name** — the verb namespace. Fields:
 | `source` | provider type, when the instance name isn't the type (named instances) |
 | `version` | reserved |
 
-A scenario may carry its own `providers:` block — merged over the project's,
+A scenario may carry its own `providers:` block, merged over the project's,
 later wins, config maps merge shallowly.
 
 ## The lock file
 
-`shinari init` writes `shinari.lock.yml` next to the project — commit it:
+`shinari init` writes `shinari.lock.yml` next to the project. Commit it:
 
 ```yaml
 version: 1
@@ -76,12 +76,12 @@ providers:
 ```
 
 Built-ins pin the engine version; local composed providers pin a content
-checksum. There is no network fetch — every provider is either compiled in or
+checksum. There is no network fetch: every provider is either compiled in or
 resolved from a local path.
 
 ## Best-practice layout
 
-Convention, encouraged by docs and rendered nicely by `list` — never
+Convention, encouraged by docs and rendered nicely by `list`, never
 required:
 
 ```text
