@@ -99,6 +99,34 @@ verify:
 	}
 }
 
+func TestRule11DegradationUnobserved(t *testing.T) {
+	withFault := func(extra string) []Finding {
+		return Validate(load(t, map[string]string{
+			"project.yml": projectWithSut,
+			"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: deg
+setup:
+  - { run: sut.up, with: [app] }
+method:
+  - phase: f
+    steps:
+      - { run: sut.kill, with: app, effect: degradation }
+` + extra,
+		}))
+	}
+	if f := findRule(withFault(""), 11); f == nil || f.Severity != Warn {
+		t.Fatalf("want rule 11 warn when degradation is unobserved, got %v", withFault(""))
+	}
+	observed := `verify:
+  - { run: sut.count, with: job, as: rsp }
+  - { run: assert, with: { of: "${.rsp.meta.durationMs}", lt: 200 } }
+`
+	if f := findRule(withFault(observed), 11); f != nil {
+		t.Fatalf("rule 11 should not fire when latency is observed: %v", f)
+	}
+}
+
 func TestRule2WithSpecMismatch(t *testing.T) {
 	set := load(t, map[string]string{
 		"project.yml": projectWithSut,

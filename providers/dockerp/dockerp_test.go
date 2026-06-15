@@ -83,6 +83,22 @@ func TestDownRemovesVolumesAndOrphans(t *testing.T) {
 	}
 }
 
+func TestLogsCursorArgs(t *testing.T) {
+	p, argsFile := provider(t)
+	_, err := p.Run(context.Background(), "logs", map[string]any{
+		"service": "api", "tail": 50, "since": "30s",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := recorded(t, argsFile)
+	for _, want := range []string{"logs", "--no-color", "--tail 50", "--since 30s", "api"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("argv %q missing %q", got, want)
+		}
+	}
+}
+
 func TestFailureSurfacesOutput(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "fail-docker")

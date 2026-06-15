@@ -19,13 +19,22 @@ method:
       - run: sleep
         with: { seconds: 8 }
         desc: "let Pumba attach and apply the netem rule"
-      - run: http.get
-        with: "http://localhost:5678/"
-        desc: "still answers under delay"
-  - phase: "Clear the fault"
+      - run: sample
+        with: { probe: { run: http.get, with: "http://localhost:5678/" }, count: 10 }
+        as: load
+      - run: assert
+        with: { of: "${.load.value.p99}", gt: 250 }
+        desc: "the 300ms delay shows up in p99"
+  - phase: "Clear the fault and confirm recovery"
     steps:
       - run: netem.clear
         with: api
+      - run: sample
+        with: { probe: { run: http.get, with: "http://localhost:5678/" }, count: 10 }
+        as: recovered
+      - run: assert
+        with: { of: "${.recovered.value.p99}", lt: 100 }
+        desc: "latency back to normal after clear"
 
 teardown:
   - run: docker.down
