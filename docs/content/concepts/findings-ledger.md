@@ -1,7 +1,7 @@
 ---
 aliases: [/explanation/findings-ledger/]
 title: Why a findings ledger
-description: The product is the ledger — everything else is the apparatus that makes it credible.
+description: The product is the ledger; everything else is the apparatus that makes it credible.
 weight: 10
 ---
 
@@ -18,7 +18,7 @@ later half the gaps are fixed, half the workarounds are wrong, and nobody
 knows which half.
 
 **The red test.** Findings stay as failing tests, "so we don't forget."
-The suite is now permanently red. Humans cannot watch a red suite — they
+The suite is now permanently red. Humans cannot watch a red suite; they
 learn, rationally, to ignore it. The day a *real* regression appears, it
 drowns in the expected failures.
 
@@ -38,9 +38,9 @@ Shinari makes a finding an **executable, self-maintaining contract**:
 The assertion states what *should* hold. The `finding:` states what holds
 instead. The harness verifies both, every run:
 
-- While the gap exists, the check fails — **as declared** — renders as
+- While the gap exists, the check fails (**as declared**), renders as
   `FINDING`, and the run stays green. The suite remains a signal.
-- The day the gap is fixed, the check *passes* — which **fails the run**,
+- The day the gap is fixed, the check *passes*, which **fails the run**,
   with one instruction: *promote this to a hard assertion*. Delete the
   `finding:` line and the check becomes a permanent regression tripwire.
 
@@ -51,15 +51,15 @@ a human's attention. Nothing else does.
 ## Why green matters more than red
 
 The counterintuitive bet: an expected failure should keep CI **green**.
-The alternative — "warning" states, allowed-failure lists, quarantined
-suites — all converge on the same outcome: a category of signal that everyone
+The alternative ("warning" states, allowed-failure lists, quarantined
+suites) all converge on the same outcome: a category of signal that everyone
 filters out. Verification you ignore is not verification. The ledger works
 because there is exactly one red, and it always means *act*.
 
 ## The suite as documentation
 
 Run after run, the findings report accumulates the honest answer to "how
-does this system fail?" — per scenario: what was **injected**, what **held**,
+does this system fail?", per scenario: what was **injected**, what **held**,
 what **gapped**, with the operator workaround in the narrative. It cannot go
 stale, because every line is re-proven on every run. That document is the
-product. The engine, the providers, the YAML — apparatus.
+product. The engine, the providers, the YAML are apparatus.

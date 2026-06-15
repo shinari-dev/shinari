@@ -1,6 +1,6 @@
 ---
 title: Verbs & builtins
-description: The unprefixed language verbs — assert, sleep, wait_until, background — and the closed assert-operator set.
+description: The unprefixed language verbs (assert, sleep, wait_until, background) and the closed assert-operator set.
 weight: 40
 ---
 
@@ -22,7 +22,7 @@ Kind: assertion. Exactly **one** operator key per step.
 | operator | passes when |
 |---|---|
 | `equals` / `notEquals` | numeric comparison when both sides parse as numbers, else string equality |
-| `contains` / `absent` | substring (strings) or membership (lists) — `absent` is the negation |
+| `contains` / `absent` | substring (strings) or membership (lists); `absent` is the negation |
 | `in` | `of` equals any element of the operand list |
 | `matches` | the operand regex matches `of` |
 | `gt` `lt` `gte` `lte` | numeric comparison |
@@ -37,7 +37,7 @@ Kind: action. Seconds (number).
   with: 50
 ```
 
-Prefer `wait_until` — sleep is for genuinely time-based waits (a TTL, a
+Prefer `wait_until`; sleep is for genuinely time-based waits (a TTL, a
 scheduler tick), not for "probably done by now".
 
 ## wait_until
@@ -54,8 +54,8 @@ until a condition holds or a timeout expires.
         path: "/jobs/${.job}"
     read: ".state"            # optional jq over the probe's value
     in: [SUCCESS, FAILED]     # exactly one assert operator (any from the table above)
-    timeout: 420              # seconds — required
-    interval: 1               # seconds between polls — optional, default 1
+    timeout: 420              # seconds (required)
+    interval: 1               # seconds between polls (optional, default 1)
 ```
 
 On success it emits a `gate.observed` event and yields the observed value; on
@@ -63,8 +63,8 @@ timeout it fails with the **last observed value** in the message.
 
 ## background / stop_background
 
-Kind: action. Run a step concurrently with the timeline — load generators,
-log followers:
+Kind: action. Run a step concurrently with the timeline (load generators,
+log followers):
 
 ```yaml
 - run: background
@@ -81,13 +81,13 @@ log followers:
 
 `stop_background` cancels the step if still running, waits for it, and yields
 its result. The capture (`loadResult`) exists only **after**
-`stop_background` — referencing it earlier is a `validate` error (rule 6).
+`stop_background`; referencing it earlier is a `validate` error (rule 6).
 A background step killed by the stop is not a failure; its output becomes the
 value.
 
 ## sample
 
-Runs a probe repeatedly and aggregates the results — for SLO-style assertions
+Runs a probe repeatedly and aggregates the results, for SLO-style assertions
 over a window, not a single reading. `Kind: probe`.
 
 | arg | meaning |

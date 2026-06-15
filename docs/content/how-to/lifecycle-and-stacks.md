@@ -18,11 +18,11 @@ providers:
 ```
 
 Compose file paths resolve against the **project root**, not the process cwd.
-The `docker` provider is the *lifecycle provider* (it implements `up`/`down`)
-— exactly one provider may hold that role per scenario, and it powers the
+The `docker` provider is the *lifecycle provider* (it implements `up`/`down`).
+Exactly one provider may hold that role per scenario, and it powers the
 default teardown.
 
-## Bring services up — and wait for health
+## Bring services up, and wait for health
 
 ```yaml
 setup:
@@ -36,9 +36,9 @@ so give your services `healthcheck:` blocks and `setup` stays race-free.
 ## Process faults
 
 ```yaml
-- run: docker.kill      # SIGKILL — no goodbye
+- run: docker.kill      # SIGKILL, no goodbye
   with: worker-a
-- run: docker.stop      # SIGTERM — graceful shutdown path
+- run: docker.stop      # SIGTERM, graceful shutdown path
   with: worker-a
 - run: docker.pause     # SIGSTOP-like freeze: alive but unresponsive
   with: worker-a
@@ -53,7 +53,7 @@ tests your shutdown hooks. A system can pass one and fail the other.
 
 ## Logs as an event gate
 
-`docker.logs` is a probe — combine it with `wait_until` to gate faults on
+`docker.logs` is a probe; combine it with `wait_until` to gate faults on
 what the service *says* rather than on time:
 
 ```yaml
@@ -72,7 +72,7 @@ what the service *says* rather than on time:
 
 With no `teardown:` section, Shinari runs the lifecycle provider's `down`
 (`compose down -v --remove-orphans`). An **explicit `teardown:` replaces that
-default** — if you add steps (e.g. `toxiproxy.reset`), add `docker.down`
+default**: if you add steps (e.g. `toxiproxy.reset`), add `docker.down`
 yourself:
 
 ```yaml

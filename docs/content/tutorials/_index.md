@@ -1,6 +1,6 @@
 ---
 title: Tutorials
-description: Learning by doing — guided first encounters with the harness, from zero to a tracked finding.
+description: "Learning by doing: guided first encounters with the harness, from zero to a tracked finding."
 params:
   code: SECTOR 01
   headline: First contact

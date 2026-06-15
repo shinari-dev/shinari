@@ -1,6 +1,6 @@
 ---
 title: Build a provider
-description: From YAML macros to a native Go provider against the SDK — and when to choose which.
+description: From YAML macros to a native Go provider against the SDK, and when to choose which.
 weight: 10
 ---
 
@@ -13,13 +13,13 @@ the top**; most teams never need to leave it.
 > *Can it be composed from existing verbs?*
 > **Yes** → a composed provider (YAML, this page, first section).
 > **No** → a native provider (Go against the SDK, second section).
-> *"Make scenario authors remember to do X"* → neither — that's a `validate`
+> *"Make scenario authors remember to do X"* → neither; that's a `validate`
 > rule, not a verb.
 
-## Level 1 — composed provider (YAML, no Go)
+## Level 1: composed provider (YAML, no Go)
 
 A `kind: Provider` resource declares macros over existing verbs. This is
-where domain vocabulary lives — `app.submit`, `app.await` — built on the
+where domain vocabulary lives (`app.submit`, `app.await`), built on the
 `http`/`exec` primitives:
 
 ```yaml
@@ -40,13 +40,13 @@ verbs:
 
 The full walkthrough is in
 [Compose a domain provider](/how-to/compose-a-provider/). Reach for Level 2
-only when the capability *cannot* be expressed with existing verbs — a new
+only when the capability *cannot* be expressed with existing verbs: a new
 protocol, a new injection mechanism, a tool with no CLI.
 
-## Level 2 — native provider (Go, against the SDK)
+## Level 2: native provider (Go, against the SDK)
 
 A native provider is one Go type implementing `sdk.Provider`. The `sdk`
-package is the entire contract — a provider never imports the engine:
+package is the entire contract, and a provider never imports the engine:
 
 ```go
 package sdk
@@ -66,12 +66,12 @@ validation, dry-run, and the verdict model:
 
 | field | meaning |
 |---|---|
-| `Name` | local verb name, snake_case (`flush_cache`) — the engine namespaces it with your instance name |
-| `Kind` | `action` (mutates), `probe` (observes), `assertion` (judges) — drives dry-run skipping, steadyState re-runs, and where `finding:` is allowed |
-| `SideEffects` | `true` for anything that mutates the system — powers composed-verb kind inference |
-| `Effect` | the fault this verb injects: `EffectOutage` (drops/blocks work), `EffectDegradation` (slows it), or unset for non-faults — drives `fault.injected` tracking and the validate recovery rule, so a fault is recognized by its declaration, not its name |
+| `Name` | local verb name, snake_case (`flush_cache`); the engine namespaces it with your instance name |
+| `Kind` | `action` (mutates), `probe` (observes), `assertion` (judges); drives dry-run skipping, steadyState re-runs, and where `finding:` is allowed |
+| `SideEffects` | `true` for anything that mutates the system; powers composed-verb kind inference |
+| `Effect` | the fault this verb injects: `EffectOutage` (drops/blocks work), `EffectDegradation` (slows it), or unset for non-faults; drives `fault.injected` tracking and the validate recovery rule, so a fault is recognized by its declaration, not its name |
 | `Primary` | the arg bound when a step writes `with: <scalar>` shorthand |
-| `Args` | name/type/required triples — enough for `validate` to catch typos before a run |
+| `Args` | name/type/required triples, enough for `validate` to catch typos before a run |
 
 ### A complete example
 
@@ -143,29 +143,29 @@ Contract notes:
 
 - **`Configure` is called once** per configured instance; fail fast there,
   not on first `Run`.
-- **Return structured `Value`s** (maps, slices, numbers) — that's what makes
+- **Return structured `Value`s** (maps, slices, numbers); that's what makes
   `read:`, `capture:`, and `assert` work on your results. Put raw logs in
   `Output`.
 - **Errors are step failures.** Make the message name the verb and the
   target: it lands verbatim in the console, the reports, and the findings
   ledger.
-- A relative-path-resolving provider receives `projectDir` in its config map
-  — anchor file paths on it, not on the process cwd.
+- A relative-path-resolving provider receives `projectDir` in its config map;
+  anchor file paths on it, not on the process cwd.
 
 ### Register and use it
 
 A provider **self-registers** its type name from an `init()`, so nothing in
-the engine has to know it exists — the same inversion as `database/sql`
-drivers. Put this in your provider package:
+the engine has to know it exists (the same inversion as `database/sql`
+drivers). Put this in your provider package:
 
 ```go
 func init() { sdk.Register("broker", New) }
 ```
 
 The engine resolves configured types through that registry, so the only thing
-left is to make sure your package is linked into the binary — import it (for
-the built-ins that is `providers/all`, which the CLI imports; for your own
-provider, blank-import it from your `main`):
+left is to make sure your package is linked into the binary by importing it
+(for the built-ins that is `providers/all`, which the CLI imports; for your
+own provider, blank-import it from your `main`):
 
 ```go
 import _ "example.com/me/brokerp" // runs init(), self-registers "broker"
@@ -198,11 +198,11 @@ method:
 Unit tests never need real infrastructure: fake the upstream (an
 `httptest.Server`, a stub binary) and assert on what your provider sends.
 Scenario-level tests register the provider under a fake type and run the
-engine against scripted values — see `core/engine/engine_test.go` for the
+engine against scripted values; see `core/engine/engine_test.go` for the
 pattern.
 
 ## Going deeper
 
-Engine internals — the three-package architecture, the result/event
-contract, design principles and non-goals — live in
+Engine internals (the three-package architecture, the result/event
+contract, design principles and non-goals) live in
 [`DEVELOPERS.md`](https://github.com/shinari-dev/shinari/blob/main/DEVELOPERS.md).

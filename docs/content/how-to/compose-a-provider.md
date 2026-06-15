@@ -1,6 +1,6 @@
 ---
 title: Compose a domain provider
-description: Give your system under test its own vocabulary — submit, await, count — with zero Go.
+description: Give your system under test its own vocabulary (submit, await, count) with zero Go.
 weight: 30
 ---
 
@@ -46,7 +46,7 @@ verbs:
       read: ".items | length"
 ```
 
-> A trailing `?` marks a param optional — and it must be **quoted**
+> A trailing `?` marks a param optional, and it must be **quoted**
 > (`"inputs?"`): bare `inputs?]` is invalid YAML flow syntax.
 
 ## 2. Configure it
@@ -95,19 +95,19 @@ verify:
 
 ## What the engine infers for you
 
-- **Kind** — a verb whose body mutates (`http.post`) is an *action*; a body
+- **Kind**: a verb whose body mutates (`http.post`) is an *action*; a body
   ending in `assert` is an *assertion*; otherwise it's a *probe*. Kind drives
   dry-run, steadyState re-runs, and where `finding:` is allowed.
-- **Args** — `params:` become the verb's arg spec: required unless marked
+- **Args**: `params:` become the verb's arg spec: required unless marked
   `"name?"`, first param doubles as the scalar shorthand
   (`with: sleep` ≡ `with: { job: sleep }`).
-- **Scoping** — `${.param}` references and body captures are macro-local; they
+- **Scoping**: `${.param}` references and body captures are macro-local; they
   never leak into the scenario's capture namespace.
 
 ## Rules to know
 
 - Composed verbs may call native verbs and builtins freely, but another
-  composed verb only **one level deep** — `validate` rule 4 rejects deeper
+  composed verb only **one level deep**: `validate` rule 4 rejects deeper
   nesting. Vocabulary, not an inner platform.
 - If a step needs logic YAML can't express, don't fight it: wrap a script with
   `exec.run` inside the verb body.

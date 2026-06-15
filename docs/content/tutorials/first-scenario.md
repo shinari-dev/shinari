@@ -4,8 +4,8 @@ description: Write a Project and a Scenario from an empty directory and watch ea
 weight: 20
 ---
 
-You will build a tiny project from scratch — a Project resource, one Scenario
-— and learn the five sections of the timeline by triggering each one.
+You will build a tiny project from scratch (a Project resource, one Scenario)
+and learn the five sections of the timeline by triggering each one.
 
 ## 1. Create the project root
 
@@ -60,11 +60,11 @@ teardown:
     with: "echo cleaning up"
 ```
 
-Read it top to bottom — it is the test lifecycle:
+Read it top to bottom; it is the test lifecycle:
 
 | section | role | on failure |
 |---|---|---|
-| `setup` | arrange, once | run is `ERRORED` — the harness never came up |
+| `setup` | arrange, once | run is `ERRORED`: the harness never came up |
 | `method` | ordered phases of faults + observations | run is `FAILED` |
 | `verify` | cumulative, terminal checks | run is `FAILED` |
 | `teardown` | always runs, even after failure | never changes the verdict |
@@ -72,7 +72,7 @@ Read it top to bottom — it is the test lifecycle:
 ## 3. Validate, then run
 
 ```sh
-shinari validate     # from inside the directory — cwd is the default project
+shinari validate     # from inside the directory; cwd is the default project
 shinari run
 ```
 
@@ -99,7 +99,7 @@ Change the assertion to `equals: goodbye` and run again:
   => FAILED
 ```
 
-Exit code `1`: *your system broke*. Now break the harness instead — change
+Exit code `1`: *your system broke*. Now break the harness instead; change
 `setup` to `exec.run, with: "exit 1"`:
 
 ```text
@@ -120,7 +120,7 @@ steadyState:
     kind: assertion
 ```
 
-`steadyState` runs **before** `method` as a gate — if the system isn't
+`steadyState` runs **before** `method` as a gate: if the system isn't
 healthy before you inject anything, the run is `INCONCLUSIVE` (exit `3`),
 because a fault test against a broken system proves nothing. It then re-runs
 **after** `method` as the recovery check.

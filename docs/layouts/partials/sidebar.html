@@ -3,8 +3,20 @@
 <aside class="sidebar">
   <p class="sidebar-title"><a href="{{ $section.RelPermalink }}">{{ $section.Title }}</a></p>
   <ul>
-    {{ range $section.RegularPages.ByWeight }}
+    {{ range $section.Pages.ByWeight }}
     {{ $page := . }}
+    {{ if .IsSection }}{{/* nested sub-section: link to its index, list its pages */}}
+    <li>
+      <details {{ if or (eq $page $current) ($current.IsDescendant $page) }}open{{ end }}>
+        <summary><a href="{{ .RelPermalink }}" {{ if eq $page $current }}class="active"{{ end }}>{{ .Title }}</a></summary>
+        <ul class="sub">
+          {{ range .RegularPages.ByWeight }}
+          <li><a href="{{ .RelPermalink }}" {{ if eq . $current }}class="active"{{ end }}>{{ .Title }}</a></li>
+          {{ end }}
+        </ul>
+      </details>
+    </li>
+    {{ else }}
     {{ $headings := slice }}
     {{ range .Fragments.Headings }}{{/* level-0 root wraps the document */}}
       {{ if eq .Level 2 }}{{ $headings = $headings | append . }}
@@ -24,6 +36,7 @@
       <a href="{{ .RelPermalink }}" {{ if eq $page $current }}class="active"{{ end }}>{{ .Title }}</a>
       {{ end }}
     </li>
+    {{ end }}
     {{ end }}
   </ul>
   <p class="sidebar-title">Elsewhere</p>

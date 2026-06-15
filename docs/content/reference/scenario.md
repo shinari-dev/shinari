@@ -5,20 +5,20 @@ weight: 20
 ---
 
 ```yaml
-apiVersion: shinari/v1          # required — recognition marker
+apiVersion: shinari/v1          # required: recognition marker
 kind: Scenario                  # required
 name: data-loss/worker-killed   # required
 description: <text>             # optional
 
-providers: ...                  # optional — per-scenario overrides, merged over the Project's (later wins)
-vars:                           # optional — merged over Project vars
+providers: ...                  # optional: per-scenario overrides, merged over the Project's (later wins)
+vars:                           # optional: merged over Project vars
   sleepSecs: 30
 
 setup:       [ <step>... ]      # optional
 steadyState: [ <step>... ]      # optional
 method:      [ <phase>... ]     # optional
 verify:      [ <step>... ]      # optional
-teardown:    [ <step>... ]      # optional — replaces the default when present
+teardown:    [ <step>... ]      # optional: replaces the default when present
 ```
 
 ## Sections
@@ -28,7 +28,7 @@ teardown:    [ <step>... ]      # optional — replaces the default when present
 | `setup` | once, first | scenario `ERRORED`; nothing else runs except teardown |
 | `steadyState` | **twice**: before `method` (gate) and after it (recovery check) | gate failure ⇒ `INCONCLUSIVE`; recovery failure ⇒ `FAILED` |
 | `method` | ordered phases, each an ordered `steps:` list | first failure stops the timeline ⇒ `FAILED` |
-| `verify` | once, at the end — **all** steps run even after failures (cumulative) | any non-finding failure ⇒ `FAILED` |
+| `verify` | once, at the end (**all** steps run even after failures, cumulative) | any non-finding failure ⇒ `FAILED` |
 | `teardown` | **always**, even after ERRORED/FAILED; skipped under `KEEP_UP=1` | recorded, never changes the verdict |
 
 A **phase** is:
@@ -41,14 +41,14 @@ method:
         with: worker-a
 ```
 
-There are no do/check/after buckets inside a phase — kind comes from the
+There are no do/check/after buckets inside a phase; kind comes from the
 verb, and steps interleave acting and observing freely.
 
 ## Teardown default
 
 When the `teardown:` key is **absent**, Shinari runs `<lifecycle>.down`
 (the one configured provider implementing `up`/`down`). When the key is
-**present** — even empty — it replaces that default entirely.
+**present** (even empty), it replaces that default entirely.
 
 ## steadyState contract
 
@@ -58,7 +58,7 @@ steadyState step resolves to a mutating action (rule 9).
 
 ## Interpolation
 
-Each `${...}` is a **jq expression** evaluated over the scope — the same jq used
+Each `${...}` is a **jq expression** evaluated over the scope, the same jq used
 in `read:`/`capture:`, so there is one expression language. The jq input is the
 vars overlaid by the captures (a captured name shadows a var), both top-level
 fields: `${.job}` reads a var or capture named `job`, `${.rsp.value.total}`

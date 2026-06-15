@@ -3,13 +3,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#0a0b0e">
-  <title>{{ if .IsHome }}{{ site.Title }} — {{ site.Params.tagline }}{{ else }}{{ .Title }} · {{ site.Title }}{{ end }}</title>
+  <title>{{ if .IsHome }}{{ site.Title }} | {{ site.Params.tagline }}{{ else }}{{ .Title }} · {{ site.Title }}{{ end }}</title>
   <meta name="description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}">
   <link rel="icon" href="{{ "favicon.svg" | relURL }}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="{{ "apple-touch-icon.png" | relURL }}">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="{{ site.Title }}">
-  <meta property="og:title" content="{{ if .IsHome }}{{ site.Title }} — {{ site.Params.tagline }}{{ else }}{{ .Title }} · {{ site.Title }}{{ end }}">
+  <meta property="og:title" content="{{ if .IsHome }}{{ site.Title }} | {{ site.Params.tagline }}{{ else }}{{ .Title }} · {{ site.Title }}{{ end }}">
   <meta property="og:description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}">
   <meta property="og:url" content="{{ .Permalink }}">
   <meta name="twitter:card" content="summary">

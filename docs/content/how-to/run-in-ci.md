@@ -4,7 +4,7 @@ description: Wire exit codes, JUnit XML, and the findings report into a pipeline
 weight: 40
 ---
 
-**Goal:** a CI job that goes red only on *real change* — a regression, or a
+**Goal:** a CI job that goes red only on *real change*: a regression, or a
 finding that started passing.
 
 ## The job
@@ -38,10 +38,10 @@ finding that started passing.
 
 | exit | verdict | CI meaning |
 |---|---|---|
-| 0 | `PASSED` | green — findings still failing as expected |
-| 1 | `FAILED` | red — regression, **or a finding now passes (promote it)** |
-| 2 | `ERRORED` | red — harness/infra problem, not a product problem |
-| 3 | `INCONCLUSIVE` | red — system was never healthy; fix the baseline |
+| 0 | `PASSED` | green: findings still failing as expected |
+| 1 | `FAILED` | red: regression, **or a finding now passes (promote it)** |
+| 2 | `ERRORED` | red: harness/infra problem, not a product problem |
+| 3 | `INCONCLUSIVE` | red: system was never healthy; fix the baseline |
 | 64 | usage | the pipeline invoked shinari wrong |
 
 Route alerts accordingly: `1` pages the product team, `2`/`3` page whoever
@@ -50,7 +50,7 @@ owns the test environment. That separation is the reason the codes exist.
 ## Findings in JUnit output
 
 A held finding renders as a **passed** testcase with the narrative in
-`system-out` — CI dashboards stay green while the gap remains visible in the
+`system-out`: CI dashboards stay green while the gap remains visible in the
 test detail. The `results.json` artifact carries the full structure
 (per-check verdicts, findings, injected faults, timings) for custom tooling.
 
