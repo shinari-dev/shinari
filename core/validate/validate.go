@@ -113,6 +113,8 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 
 	methodHasOutage := false
 	methodCapturesID := false
+	methodHasDegradation := false
+	observesLatency := false
 	verifyAwaitsCapture := false
 	verifyHasExactlyOnce := false
 	verifyHasFinding := false
@@ -196,6 +198,15 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 			defined[name] = true
 		}
 
+		if st.Run == "sample" {
+			observesLatency = true
+		}
+		for _, ref := range refsOf(st) {
+			if strings.Contains(ref, "durationMs") {
+				observesLatency = true
+			}
+		}
+
 		if strings.HasPrefix(sctx.section, "method") {
 			// An outage-class fault (work can be lost) is what makes a
 			// scenario recovery-shaped — declared by the verb (or by the step,
@@ -207,6 +218,9 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 			}
 			if effect == sdk.EffectOutage {
 				methodHasOutage = true
+			}
+			if effect == sdk.EffectDegradation {
+				methodHasDegradation = true
 			}
 			if kind == sdk.KindAction && (st.As != "" || len(st.Capture) > 0) {
 				methodCapturesID = true
@@ -237,6 +251,12 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 			msg = "recovery-shaped scenario (fault injected, work captured, verify awaits it) MUST assert exactly-once (count equals: 1) or carry a finding:"
 		}
 		out = append(out, Finding{File: sc.File, Scenario: sc.Name, Rule: 7, Msg: msg, Severity: sev})
+	}
+
+	// rule 11 — a degradation fault that nothing observes is a smell.
+	if methodHasDegradation && !observesLatency {
+		out = append(out, Finding{File: sc.File, Scenario: sc.Name, Rule: 11, Severity: Warn,
+			Msg: "degradation fault injected but nothing observes it — assert a latency (${...meta.durationMs}) or use sample"})
 	}
 
 	return out

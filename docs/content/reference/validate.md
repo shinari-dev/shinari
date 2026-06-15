@@ -19,6 +19,7 @@ file, scenario, step, and reason.
 | 8 | **One lifecycle provider** — at most one configured provider implements `up`/`down`; several is an error, zero a warning (pure exec/http suites are legitimate) | error / warn |
 | 9 | **steadyState idempotency** — warn when steadyState contains a mutating action: it re-runs after method | warn |
 | 10 | **Interpolation closure** — every `${...}` resolves to a var or an *earlier* capture, in execution order; composed-provider bodies are checked against their params | error |
+| 11 | **Degradation observed** — warn when a `degradation` fault is injected in `method` but nothing observes its effect (no `sample`, no `${...meta.durationMs}` assertion) | warn |
 
 ## Exit behaviour
 

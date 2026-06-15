@@ -63,7 +63,11 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 		{Name: "start", Kind: sdk.KindAction, SideEffects: true, Primary: "service", Args: service},
 		{Name: "pause", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
 		{Name: "unpause", Kind: sdk.KindAction, SideEffects: true, Primary: "service", Args: service},
-		{Name: "logs", Kind: sdk.KindProbe, Primary: "service", Args: service},
+		{Name: "logs", Kind: sdk.KindProbe, Primary: "service", Args: []sdk.ArgSpec{
+			{Name: "service", Type: "string", Required: true},
+			{Name: "tail", Type: "string"},
+			{Name: "since", Type: "string"},
+		}},
 	}
 }
 
@@ -111,7 +115,15 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	case "unpause":
 		out, err = p.compose(ctx, "unpause", service)
 	case "logs":
-		out, err = p.compose(ctx, "logs", "--no-color", service)
+		cmdArgs := []string{"logs", "--no-color"}
+		if t, ok := args["tail"]; ok && t != nil && fmt.Sprintf("%v", t) != "" {
+			cmdArgs = append(cmdArgs, "--tail", fmt.Sprintf("%v", t))
+		}
+		if s, ok := args["since"].(string); ok && s != "" {
+			cmdArgs = append(cmdArgs, "--since", s)
+		}
+		cmdArgs = append(cmdArgs, service)
+		out, err = p.compose(ctx, cmdArgs...)
 	default:
 		return sdk.VerbResult{}, fmt.Errorf("docker has no verb %q", verb)
 	}

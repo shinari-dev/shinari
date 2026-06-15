@@ -12,6 +12,7 @@ import (
 	_ "github.com/shinari-dev/shinari/providers/execp"
 	_ "github.com/shinari-dev/shinari/providers/httpp"
 	_ "github.com/shinari-dev/shinari/providers/netp"
+	_ "github.com/shinari-dev/shinari/providers/promp"
 	_ "github.com/shinari-dev/shinari/providers/sqlp"
 	_ "github.com/shinari-dev/shinari/providers/toxiproxyp"
 )
