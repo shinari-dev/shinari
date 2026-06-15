@@ -15,6 +15,9 @@ import (
 	"github.com/shinari-dev/shinari/utils/conv"
 )
 
+// refRe matches a ${ jq } reference. The jq body cannot contain a literal `}`
+// (so jq object construction like ${ {a: .x} } is unsupported in interpolation);
+// reach for those shapes in a read:/capture: step instead.
 var refRe = regexp.MustCompile(`\$\{([^}]*)\}`)
 
 // Scope resolves references. The jq input is vars overlaid by captures, so a

@@ -426,12 +426,7 @@ func (r *runner) execBuiltin(ctx context.Context, name string, args map[string]a
 		if !ok {
 			return sdk.VerbResult{}, fmt.Errorf("sleep: seconds must be a number, got %v", args["seconds"])
 		}
-		select {
-		case <-ctx.Done():
-			return sdk.VerbResult{}, ctx.Err()
-		case <-time.After(time.Duration(secs * float64(time.Second))):
-			return sdk.VerbResult{}, nil
-		}
+		return sdk.VerbResult{}, sleepCtx(ctx, secs)
 
 	case "wait_until":
 		return r.execWaitUntil(ctx, args, scope)
@@ -471,6 +466,17 @@ func (r *runner) execBuiltin(ctx context.Context, name string, args map[string]a
 		return r.execSample(ctx, args, scope)
 	}
 	return sdk.VerbResult{}, fmt.Errorf("unknown builtin %q", name)
+}
+
+// sleepCtx waits for seconds, or returns ctx.Err() if the context is cancelled
+// first. Shared by sleep and sample's inter-sample interval.
+func sleepCtx(ctx context.Context, seconds float64) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(time.Duration(seconds * float64(time.Second))):
+		return nil
+	}
 }
 
 // execSample runs a probe repeatedly (count times or for duration seconds, at
@@ -514,10 +520,8 @@ func (r *runner) execSample(ctx context.Context, args map[string]any, scope inte
 		if perr != nil {
 			errs++
 		}
-		select {
-		case <-ctx.Done():
-			return sdk.VerbResult{}, ctx.Err()
-		case <-time.After(time.Duration(interval * float64(time.Second))):
+		if err := sleepCtx(ctx, interval); err != nil {
+			return sdk.VerbResult{}, err
 		}
 	}
 	sort.Float64s(lats)
