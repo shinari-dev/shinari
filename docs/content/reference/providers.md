@@ -1,13 +1,13 @@
 ---
 title: Built-in providers
-description: Config and verb tables for docker, toxiproxy, net, http, sql, and exec.
+description: Config and verb tables for docker, toxiproxy, net, http, sql, prom, and exec.
 weight: 50
 ---
 
-Six providers compile into the binary — zero install. They split by
+Seven providers compile into the binary — zero install. They split by
 **injection mechanism**: process control (`docker`), a proxy in the request
-path (`toxiproxy`), the DNS resolver (`net`), plus three primitives (`http`,
-`sql`, `exec`).
+path (`toxiproxy`), the DNS resolver (`net`), plus four primitives (`http`,
+`sql`, `prom`, `exec`).
 
 ## docker — lifecycle + process faults
 
@@ -30,7 +30,7 @@ providers:
 | `stop` | action | `service` | SIGTERM (graceful path) |
 | `start` | action | `service` | restart a stopped service |
 | `pause` / `unpause` | action | `service` | freeze / thaw the process |
-| `logs` | probe | `service` | container log text (gate on it with `wait_until`) |
+| `logs` | probe | `service` (primary), `tail?`, `since?` | container log text; `tail`/`since` fetch an incremental slice (gate on it with `wait_until`) |
 
 Relative `composeFiles` paths resolve against the project root.
 
@@ -131,6 +131,35 @@ the first verb runs (after `setup`).
 - run: assert
   with: { of: "${.runs.value}", equals: 1 }
   desc: "exactly once"
+```
+
+## prom — metrics scrape
+
+Scrapes a Prometheus/OpenMetrics endpoint and selects one sample by metric name
+and labels — for asserting on the system's own SLO metrics.
+
+```yaml
+providers:
+  metrics:
+    source: prom
+    config:
+      baseUrl: http://localhost:9090
+```
+
+| verb | kind | args |
+|---|---|---|
+| `scrape` | probe | `metric` (primary), `path?` (default `/metrics`), `labels?` (map) |
+
+Returns the matched sample's value as a number; errors if no line matches the
+metric and labels. Selection is a direct lookup by name + label subset (no
+histogram-bucket math — the endpoint exposes the quantile):
+
+```yaml
+- run: metrics.scrape
+  with: { metric: http_request_duration_seconds, labels: { quantile: "0.99" } }
+  as: p99
+- run: assert
+  with: { of: "${.p99.value}", lt: 0.2 }
 ```
 
 ## exec — the escape hatch
