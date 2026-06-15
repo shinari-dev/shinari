@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -465,8 +466,112 @@ func (r *runner) execBuiltin(ctx context.Context, name string, args map[string]a
 			return sdk.VerbResult{Value: h.result.Output, Output: h.result.Output}, nil
 		}
 		return h.result, nil
+
+	case "sample":
+		return r.execSample(ctx, args, scope)
 	}
 	return sdk.VerbResult{}, fmt.Errorf("unknown builtin %q", name)
+}
+
+// execSample runs a probe repeatedly (count times or for duration seconds, at
+// interval) and aggregates the results into an Observation whose value is
+// { n, errors, errorRate, min, max, mean, p50, p95, p99 }. Latencies are in ms.
+func (r *runner) execSample(ctx context.Context, args map[string]any, scope interp.Scope) (sdk.VerbResult, error) {
+	probeMap, _ := args["probe"].(map[string]any)
+	if probeMap == nil {
+		return sdk.VerbResult{}, fmt.Errorf("sample needs a probe: step")
+	}
+	count := 0
+	if n, ok := conv.ToFloat(args["count"]); ok {
+		count = int(n)
+	}
+	duration := 0.0
+	if d, ok := conv.ToFloat(args["duration"]); ok {
+		duration = d
+	}
+	if count <= 0 && duration <= 0 {
+		return sdk.VerbResult{}, fmt.Errorf("sample needs count: or duration:")
+	}
+	interval := 0.0
+	if v, ok := conv.ToFloat(args["interval"]); ok {
+		interval = v
+	}
+	deadline := r.opts.now().Add(time.Duration(duration * float64(time.Second)))
+
+	var lats []float64
+	n, errs := 0, 0
+	for {
+		if count > 0 && n >= count {
+			break
+		}
+		if duration > 0 && !r.opts.now().Before(deadline) {
+			break
+		}
+		start := r.opts.now()
+		_, perr := r.execStepMap(ctx, probeMap, scope)
+		lats = append(lats, float64(r.opts.now().Sub(start).Milliseconds()))
+		n++
+		if perr != nil {
+			errs++
+		}
+		select {
+		case <-ctx.Done():
+			return sdk.VerbResult{}, ctx.Err()
+		case <-time.After(time.Duration(interval * float64(time.Second))):
+		}
+	}
+	sort.Float64s(lats)
+	return sdk.VerbResult{Value: map[string]any{
+		"n":         float64(n),
+		"errors":    float64(errs),
+		"errorRate": ratio(errs, n),
+		"min":       at(lats, 0),
+		"max":       at(lats, len(lats)-1),
+		"mean":      mean(lats),
+		"p50":       percentile(lats, 50),
+		"p95":       percentile(lats, 95),
+		"p99":       percentile(lats, 99),
+	}}, nil
+}
+
+func ratio(a, b int) float64 {
+	if b == 0 {
+		return 0
+	}
+	return float64(a) / float64(b)
+}
+
+func at(xs []float64, i int) float64 {
+	if i < 0 || i >= len(xs) {
+		return 0
+	}
+	return xs[i]
+}
+
+func mean(xs []float64) float64 {
+	if len(xs) == 0 {
+		return 0
+	}
+	s := 0.0
+	for _, x := range xs {
+		s += x
+	}
+	return s / float64(len(xs))
+}
+
+// percentile is the nearest-rank value of sorted xs at the p-th percentile.
+func percentile(sorted []float64, p int) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	idx := (p*len(sorted)+99)/100 - 1 // ceil(p/100 * n) - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
+	}
+	return sorted[idx]
 }
 
 // execWaitUntil blocks the timeline on an observed event: poll the
