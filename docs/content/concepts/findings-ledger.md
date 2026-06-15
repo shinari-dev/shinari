@@ -29,7 +29,7 @@ Shinari makes a finding an **executable, self-maintaining contract**:
 ```yaml
 - run: assert
   with:
-    of: "${.total}"
+    of: "${.total.value}"
     equals: 1
   desc: "exactly once"
   finding: "recovery re-runs the whole job; operators dedupe downstream today"

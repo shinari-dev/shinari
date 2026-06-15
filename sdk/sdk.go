@@ -57,10 +57,13 @@ type VerbSpec struct {
 }
 
 // VerbResult is what a verb returns: a structured value (JSON-decoded when
-// applicable) plus the raw textual output for logs/diagnostics.
+// applicable), the raw textual output for logs/diagnostics, and optional
+// metadata. The engine stamps meta.durationMs on every call; providers add
+// facts like status and bytes.
 type VerbResult struct {
 	Value  any
 	Output string
+	Meta   map[string]any
 }
 
 // Provider is the whole contract. Configure is called once per configured

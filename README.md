@@ -57,16 +57,17 @@ method:
 
 verify:
   - run: assert
-    with: { of: "${.rsp.total}", equals: 19.90 }
+    with: { of: "${.rsp.value.total}", equals: 19.90 }
     desc: "served from Postgres, priced correctly"
-  - run: http.get
-    with: /metrics
-    as: metrics
   - run: assert
-    with: { of: "${.metrics.p99_ms}", lt: 200 }
-    desc: "p99 back under 200ms"
-    finding: "cold cache: p99 spikes for ~30s after restart"
+    with: { of: "${.rsp.meta.durationMs}", lt: 200 }
+    desc: "checkout answered under 200ms with the cache down"
+    finding: "cold cache: checkout latency spikes for ~30s after restart"
 ```
+
+`${.rsp.value...}` is the response payload; `${.rsp.meta.durationMs}` is the
+latency Shinari measured for that call. Every capture is an Observation
+envelope `{value, output, meta}`, and `${...}` is a jq expression over it.
 
 ```text
 $ shinari run
@@ -80,7 +81,7 @@ $ shinari run
   ✓ docker.start redis
   ✓ steady state recovered: http.get /health
   ✓ served from Postgres, priced correctly
-  ◆ FINDING p99 back under 200ms
+  ◆ FINDING checkout answered under 200ms with the cache down
   => PASSED
 
 1 scenario(s): 1 passed, 1 finding(s) held

@@ -33,7 +33,7 @@ verify:
     as: state
   - run: assert
     with:
-      of: "${.state}"
+      of: "${.state.value}"
       equals: SUCCESS
     desc: "job completed"
   - run: jobstore.runs
@@ -41,7 +41,7 @@ verify:
     as: total
   - run: assert
     with:
-      of: "${.total}"
+      of: "${.total.value}"
       equals: 1
     desc: "exactly once"
 

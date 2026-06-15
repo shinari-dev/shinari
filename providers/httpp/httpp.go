@@ -49,7 +49,22 @@ func argSpecs() []sdk.ArgSpec {
 		{Name: "body", Type: "map"},
 		{Name: "form", Type: "map"},
 		{Name: "headers", Type: "map"},
+		{Name: "expectStatus", Type: "list"},
 	}
+}
+
+// accepted reports whether status is in the expectStatus list, if any.
+func accepted(spec any, status int) bool {
+	list, ok := spec.([]any)
+	if !ok {
+		return false
+	}
+	for _, s := range list {
+		if n, ok := conv.ToFloat(s); ok && int(n) == status {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Provider) Verbs() []sdk.VerbSpec {
@@ -110,6 +125,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
+	meta := map[string]any{"status": resp.StatusCode, "bytes": len(raw)}
 
 	var value any = string(raw)
 	if strings.Contains(resp.Header.Get("Content-Type"), "json") {
@@ -118,9 +134,9 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 			value = decoded
 		}
 	}
-	if resp.StatusCode >= 400 {
-		return sdk.VerbResult{Value: value, Output: string(raw)},
-			fmt.Errorf("http.%s %s: status %d: %s", verb, path, resp.StatusCode, conv.Truncate(string(raw), 200))
+	if accepted(args["expectStatus"], resp.StatusCode) || resp.StatusCode < 400 {
+		return sdk.VerbResult{Value: value, Output: string(raw), Meta: meta}, nil
 	}
-	return sdk.VerbResult{Value: value, Output: string(raw)}, nil
+	return sdk.VerbResult{Value: value, Output: string(raw), Meta: meta},
+		fmt.Errorf("http.%s %s: status %d: %s", verb, path, resp.StatusCode, conv.Truncate(string(raw), 200))
 }

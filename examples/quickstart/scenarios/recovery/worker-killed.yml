@@ -45,7 +45,7 @@ verify:
     as: state
   - run: assert
     with:
-      of: "${.state}"
+      of: "${.state.value}"
       equals: SUCCESS
     desc: "job completed after the crash"
   - run: jobstore.runs
@@ -53,7 +53,7 @@ verify:
     as: total
   - run: assert
     with:
-      of: "${.total}"
+      of: "${.total.value}"
       equals: 1
     desc: "no duplicate run (exactly once)"
     finding: "recovery re-runs the whole job — duplicate work until idempotent replay ships; operators dedupe downstream today"

@@ -38,7 +38,7 @@ verify:
     kind: probe
   - run: assert
     with:
-      of: "${.runs}"
+      of: "${.runs.value}"
       equals: 1
     desc: "exactly once"
     finding: "recovery re-runs the whole job; operators dedupe downstream today"
@@ -92,7 +92,7 @@ Remove the `finding:` key:
 ```yaml
   - run: assert
     with:
-      of: "${.runs}"
+      of: "${.runs.value}"
       equals: 1
     desc: "exactly once"
 ```
