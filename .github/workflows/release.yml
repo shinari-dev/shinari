@@ -62,8 +62,12 @@ jobs:
           fi
           sed -i -E 's/^const version = ".*"/const version = "'"$RELEASE_VERSION"'"/' cli/main.go
           git add cli/main.go
-          git commit -m "ci: release version $RELEASE_VERSION 🎉"
-          git push --atomic origin "HEAD:${GITHUB_REF#refs/heads/}"
+          if git diff --cached --quiet; then
+            echo "cli/main.go already at version $RELEASE_VERSION; nothing to commit"
+          else
+            git commit -m "ci: release version $RELEASE_VERSION 🎉"
+            git push --atomic origin "HEAD:${GITHUB_REF#refs/heads/}"
+          fi
           {
             echo "HEAD=$(git rev-parse HEAD)"
             echo "RELEASE_VERSION=$RELEASE_VERSION"
@@ -115,5 +119,9 @@ jobs:
         run: |
           sed -i -E 's/^const version = ".*"/const version = "'"$NEXT_VERSION"'"/' cli/main.go
           git add cli/main.go
-          git commit -m "ci: bump version for next iteration to $NEXT_VERSION"
-          git push origin "HEAD:$BRANCH_NAME"
+          if git diff --cached --quiet; then
+            echo "cli/main.go already at version $NEXT_VERSION; nothing to commit"
+          else
+            git commit -m "ci: bump version for next iteration to $NEXT_VERSION"
+            git push origin "HEAD:$BRANCH_NAME"
+          fi
