@@ -91,234 +91,25 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 	for k := range sc.Vars {
 		defined[k] = true
 	}
-	laterBound := map[string]string{} // capture name -> binding verb (for rule 6/10 hints)
+	// Pre-scan every binding (recursively, including inside parallel branches)
+	// so a forward/out-of-order reference can be told apart from a typo.
+	laterBound := map[string]string{}
 	for _, sec := range sc.Sections() {
-		for _, st := range sec.Steps {
-			for name := range bindings(&st) {
-				laterBound[name] = st.Run
-			}
-			for _, branch := range decodeBranches(&st) {
-				for i := range branch {
-					for name := range bindings(&branch[i]) {
-						laterBound[name] = "parallel"
-					}
-				}
-			}
-		}
+		collectBindings(sec.Steps, func(name, verb string) { laterBound[name] = verb })
 	}
 
-	type stepCtx struct {
-		section string
-		step    *model.Step
-	}
-	var ordered []stepCtx
+	v := &scenarioValidator{sc: sc, reg: reg, laterBound: laterBound, bgRunning: map[string]bool{}}
 	for _, sec := range sc.Sections() {
 		for i := range sec.Steps {
-			ordered = append(ordered, stepCtx{sec.Name, &sec.Steps[i]})
+			v.checkStep(&sec.Steps[i], sec.Name, defined, nil, 0)
 		}
 	}
-
-	methodHasOutage := false
-	methodCapturesID := false
-	methodHasDegradation := false
-	observesLatency := false
-	verifyAwaitsCapture := false
-	verifyHasExactlyOnce := false
-	verifyHasFinding := false
-	bgRunning := map[string]bool{}
-
-	for _, sctx := range ordered {
-		st := sctx.step
-		res, rerr := reg.Resolve(st.Run)
-		if rerr != nil {
-			// rule 3 — unless the step opted into tri-state SKIP.
-			if st.OnAbsent != "skip" {
-				out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 3,
-					Msg: rerr.Error(), Severity: Error})
-			}
-			continue
-		}
-
-		kind := res.Spec.Kind
-		if st.Kind != "" {
-			kind = sdk.Kind(st.Kind)
-		}
-
-		// rules 2 & 5 — with: matches the arg spec, finding: only on assertions.
-		raw := rawWith(st)
-		out = append(out, perStepArgAndFinding(sc, res.Spec, st, kind, raw)...)
-
-		// rule 12 — parallel branch structure, per-branch rule recursion, and
-		// the cross-branch reference ban.
-		if st.Run == "parallel" {
-			branches := decodeBranches(st)
-			if len(branches) == 0 {
-				out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: "parallel", Rule: 12,
-					Msg: "parallel: branches must be a non-empty list", Severity: Error})
-			}
-			perBranch := make([]map[string]bool, len(branches))
-			for bi, branch := range branches {
-				perBranch[bi] = branchBindings(branch)
-			}
-			for bi := range branches {
-				branch := branches[bi]
-				if len(branch) == 0 {
-					out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: "parallel", Rule: 12,
-						Msg: fmt.Sprintf("parallel: branch %d is empty", bi), Severity: Error})
-					continue
-				}
-				for si := range branch {
-					bst := &branch[si]
-					bres, berr := reg.Resolve(bst.Run)
-					if berr != nil {
-						if bst.OnAbsent != "skip" {
-							out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: bst.Run, Rule: 3,
-								Msg: berr.Error(), Severity: Error})
-						}
-						continue
-					}
-					bkind := bres.Spec.Kind
-					if bst.Kind != "" {
-						bkind = sdk.Kind(bst.Kind)
-					}
-					// rules 2 & 5 — same per-step checks as a top-level step.
-					out = append(out, perStepArgAndFinding(sc, bres.Spec, bst, bkind, rawWith(bst))...)
-					// rule 12 — cross-branch reference: a ${name} bound only in a
-					// sibling branch (not a var, not pre-block, not this branch).
-					for _, ref := range refsOf(bst) {
-						for _, name := range jqx.RootRefs(ref) {
-							if defined[name] || perBranch[bi][name] {
-								continue
-							}
-							inSibling := false
-							for bj := range perBranch {
-								if bj != bi && perBranch[bj][name] {
-									inSibling = true
-								}
-							}
-							if inSibling {
-								out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: bst.Run, Rule: 12,
-									Msg: fmt.Sprintf("${%s} is bound in a sibling parallel branch — concurrent branches have no ordering; reference it after the block", name), Severity: Error})
-							}
-						}
-					}
-					// branch faults feed the recovery/degradation rules (7, 11)
-					if strings.HasPrefix(sctx.section, "method") {
-						beff := bres.Spec.Effect
-						if bst.Effect != "" {
-							beff = sdk.Effect(bst.Effect)
-						}
-						if beff == sdk.EffectOutage {
-							methodHasOutage = true
-						}
-						if beff == sdk.EffectDegradation {
-							methodHasDegradation = true
-						}
-					}
-				}
-			}
-		}
-
-		// rule 9 — steadyState idempotency.
-		if sctx.section == "steadyState" && kind == sdk.KindAction && res.Spec.SideEffects {
-			out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 9,
-				Msg: "steadyState re-runs after method — a one-shot mutating verb here is not idempotent", Severity: Warn})
-		}
-
-		// rules 6 & 10 — references resolve, in execution order. Each ${...} is
-		// a jq expression; check the top-level input fields it reads. Branch
-		// references are checked per-branch in the parallel block below, not
-		// here (the flat scope would mis-resolve them).
-		if st.Run != "parallel" {
-			for _, ref := range refsOf(st) {
-				for _, name := range jqx.RootRefs(ref) {
-					if defined[name] {
-						continue
-					}
-					if binder, later := laterBound[name]; later {
-						rule, msg := 10, fmt.Sprintf("${%s} is referenced before %s binds it", name, binder)
-						if binder == "stop_background" || bgRunning[name] {
-							rule = 6
-							msg = fmt.Sprintf("${%s} is a background capture — it settles only at stop_background; reference it after", name)
-						}
-						out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: rule,
-							Msg: msg, Severity: Error})
-						continue
-					}
-					out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 10,
-						Msg: fmt.Sprintf("unresolved reference ${%s} — no var and no earlier capture by that name", name), Severity: Error})
-				}
-			}
-		}
-
-		// track state for later rules
-		if st.Run == "background" {
-			if m, ok := raw.(map[string]any); ok {
-				if n, _ := m["name"].(string); n != "" {
-					bgRunning[n] = true
-				}
-			}
-		}
-		for name := range bindings(st) {
-			defined[name] = true
-		}
-		for _, branch := range decodeBranches(st) {
-			for i := range branch {
-				for name := range bindings(&branch[i]) {
-					defined[name] = true
-				}
-			}
-		}
-
-		if st.Run == "sample" {
-			observesLatency = true
-		}
-		for _, ref := range refsOf(st) {
-			if strings.Contains(ref, "meta.durationMs") {
-				observesLatency = true
-			}
-		}
-
-		if strings.HasPrefix(sctx.section, "method") {
-			// An outage-class fault (work can be lost) is what makes a
-			// scenario recovery-shaped — declared by the verb (or by the step,
-			// for faults injected via exec.run/http.post), not matched against
-			// a hardcoded name list, so third-party faults count too.
-			effect := res.Spec.Effect
-			if st.Effect != "" {
-				effect = sdk.Effect(st.Effect)
-			}
-			if effect == sdk.EffectOutage {
-				methodHasOutage = true
-			}
-			if effect == sdk.EffectDegradation {
-				methodHasDegradation = true
-			}
-			if kind == sdk.KindAction && (st.As != "" || len(st.Capture) > 0) {
-				methodCapturesID = true
-			}
-		}
-		if sctx.section == "verify" {
-			if len(refsOf(st)) > 0 {
-				verifyAwaitsCapture = true
-			}
-			if st.Finding != "" {
-				verifyHasFinding = true
-			}
-			if st.Run == "assert" {
-				if m, ok := raw.(map[string]any); ok {
-					if v, has := m["equals"]; has && fmt.Sprintf("%v", v) == "1" {
-						verifyHasExactlyOnce = true
-					}
-				}
-			}
-		}
-	}
+	out = append(out, v.out...)
 
 	// rule 7 — recovery invariant present.
-	if methodHasOutage && methodCapturesID && !verifyHasExactlyOnce && !verifyHasFinding {
+	if v.methodHasOutage && v.methodCapturesID && !v.verifyHasExactlyOnce && !v.verifyHasFinding {
 		sev, msg := Warn, "recovery-shaped scenario (fault + captured work): consider an exactly-once assertion (count equals: 1) or a finding:"
-		if verifyAwaitsCapture {
+		if v.verifyAwaitsCapture {
 			sev = Error
 			msg = "recovery-shaped scenario (fault injected, work captured, verify awaits it) MUST assert exactly-once (count equals: 1) or carry a finding:"
 		}
@@ -326,12 +117,198 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 	}
 
 	// rule 11 — a degradation fault that nothing observes is a smell.
-	if methodHasDegradation && !observesLatency {
+	if v.methodHasDegradation && !v.observesLatency {
 		out = append(out, Finding{File: sc.File, Scenario: sc.Name, Rule: 11, Severity: Warn,
 			Msg: "degradation fault injected but nothing observes it — assert a latency (${...meta.durationMs}) or use sample"})
 	}
 
 	return out
+}
+
+// scenarioValidator carries the per-scenario reference scope helpers and the
+// scenario-global accumulators rules 7 and 11 read, so the per-step checks run
+// uniformly over top-level steps and parallel branch steps (the latter
+// recursively, against a branch-local capture scope).
+type scenarioValidator struct {
+	sc         *model.Scenario
+	reg        *registry.Registry
+	laterBound map[string]string
+	bgRunning  map[string]bool
+	out        []Finding
+
+	methodHasOutage      bool
+	methodCapturesID     bool
+	methodHasDegradation bool
+	observesLatency      bool
+	verifyAwaitsCapture  bool
+	verifyHasExactlyOnce bool
+	verifyHasFinding     bool
+}
+
+func (v *scenarioValidator) add(f Finding) {
+	f.File = v.sc.File
+	f.Scenario = v.sc.Name
+	v.out = append(v.out, f)
+}
+
+// checkStep validates one step against the capture scope `defined`, which it
+// extends with the step's own bindings. siblings/selfIdx carry the per-branch
+// binding sets when the step runs inside a parallel branch (nil at the top
+// level): a reference to a sibling branch's capture is rule 12 rather than a
+// generic unresolved reference.
+func (v *scenarioValidator) checkStep(st *model.Step, section string, defined map[string]bool, siblings []map[string]bool, selfIdx int) {
+	res, rerr := v.reg.Resolve(st.Run)
+	if rerr != nil {
+		// rule 3 — unless the step opted into tri-state SKIP.
+		if st.OnAbsent != "skip" {
+			v.add(Finding{Step: st.Run, Rule: 3, Msg: rerr.Error(), Severity: Error})
+		}
+		return
+	}
+	kind := res.Spec.Kind
+	if st.Kind != "" {
+		kind = sdk.Kind(st.Kind)
+	}
+	raw := rawWith(st)
+
+	// rules 2 & 5 — with: matches the arg spec, finding: only on assertions.
+	v.out = append(v.out, perStepArgAndFinding(v.sc, res.Spec, st, kind, raw)...)
+
+	if st.Run == "parallel" {
+		v.checkParallel(st, section, defined)
+		return
+	}
+
+	// rule 9 — steadyState idempotency.
+	if section == "steadyState" && kind == sdk.KindAction && res.Spec.SideEffects {
+		v.add(Finding{Step: st.Run, Rule: 9,
+			Msg: "steadyState re-runs after method — a one-shot mutating verb here is not idempotent", Severity: Warn})
+	}
+
+	// rules 6, 10 & 12 — references resolve, in execution order.
+	for _, ref := range refsOf(st) {
+		for _, name := range jqx.RootRefs(ref) {
+			if defined[name] {
+				continue
+			}
+			// inside a parallel branch: a capture bound only by a sibling
+			// branch has no ordering relative to this one.
+			if siblings != nil && boundInSibling(siblings, selfIdx, name) {
+				v.add(Finding{Step: st.Run, Rule: 12,
+					Msg: fmt.Sprintf("${%s} is bound in a sibling parallel branch — concurrent branches have no ordering; reference it after the block", name), Severity: Error})
+				continue
+			}
+			if binder, later := v.laterBound[name]; later {
+				rule, msg := 10, fmt.Sprintf("${%s} is referenced before %s binds it", name, binder)
+				if binder == "stop_background" || v.bgRunning[name] {
+					rule = 6
+					msg = fmt.Sprintf("${%s} is a background capture — it settles only at stop_background; reference it after", name)
+				}
+				v.add(Finding{Step: st.Run, Rule: rule, Msg: msg, Severity: Error})
+				continue
+			}
+			v.add(Finding{Step: st.Run, Rule: 10,
+				Msg: fmt.Sprintf("unresolved reference ${%s} — no var and no earlier capture by that name", name), Severity: Error})
+		}
+	}
+
+	// track state for later rules
+	if st.Run == "background" {
+		if m, ok := raw.(map[string]any); ok {
+			if n, _ := m["name"].(string); n != "" {
+				v.bgRunning[n] = true
+			}
+		}
+	}
+	if st.Run == "sample" {
+		v.observesLatency = true
+	}
+	for _, ref := range refsOf(st) {
+		if strings.Contains(ref, "meta.durationMs") {
+			v.observesLatency = true
+		}
+	}
+	if strings.HasPrefix(section, "method") {
+		// An outage-class fault (work can be lost) is what makes a scenario
+		// recovery-shaped — declared by the verb (or the step, for faults
+		// injected via exec.run/http.post), not matched against a name list.
+		effect := res.Spec.Effect
+		if st.Effect != "" {
+			effect = sdk.Effect(st.Effect)
+		}
+		if effect == sdk.EffectOutage {
+			v.methodHasOutage = true
+		}
+		if effect == sdk.EffectDegradation {
+			v.methodHasDegradation = true
+		}
+		if kind == sdk.KindAction && (st.As != "" || len(st.Capture) > 0) {
+			v.methodCapturesID = true
+		}
+	}
+	if section == "verify" {
+		if len(refsOf(st)) > 0 {
+			v.verifyAwaitsCapture = true
+		}
+		if st.Finding != "" {
+			v.verifyHasFinding = true
+		}
+		if st.Run == "assert" {
+			if m, ok := raw.(map[string]any); ok {
+				if eq, has := m["equals"]; has && fmt.Sprintf("%v", eq) == "1" {
+					v.verifyHasExactlyOnce = true
+				}
+			}
+		}
+	}
+
+	for name := range bindings(st) {
+		defined[name] = true
+	}
+}
+
+// checkParallel validates a parallel step: branch structure (rule 12), then
+// each branch recursively against a branch-local scope (pre-block captures plus
+// that branch's own earlier captures), so siblings stay isolated. After the
+// block, every branch's captures become visible to following steps.
+func (v *scenarioValidator) checkParallel(st *model.Step, section string, defined map[string]bool) {
+	branches := decodeBranches(st)
+	if len(branches) == 0 {
+		v.add(Finding{Step: "parallel", Rule: 12, Msg: "parallel: branches must be a non-empty list", Severity: Error})
+		return
+	}
+	siblings := make([]map[string]bool, len(branches))
+	for bi := range branches {
+		siblings[bi] = branchBindings(branches[bi])
+	}
+	for bi := range branches {
+		if len(branches[bi]) == 0 {
+			v.add(Finding{Step: "parallel", Rule: 12, Msg: fmt.Sprintf("parallel: branch %d is empty", bi), Severity: Error})
+			continue
+		}
+		branchScope := make(map[string]bool, len(defined))
+		for k := range defined {
+			branchScope[k] = true
+		}
+		for si := range branches[bi] {
+			v.checkStep(&branches[bi][si], section, branchScope, siblings, bi)
+		}
+	}
+	// branch captures become visible to steps after the block.
+	for _, bset := range siblings {
+		for name := range bset {
+			defined[name] = true
+		}
+	}
+}
+
+func boundInSibling(siblings []map[string]bool, selfIdx int, name string) bool {
+	for bj := range siblings {
+		if bj != selfIdx && siblings[bj][name] {
+			return true
+		}
+	}
+	return false
 }
 
 // validateComposedDef checks a kind: Provider body: every ${ref} in a verb
@@ -423,15 +400,26 @@ func decodeBranches(st *model.Step) [][]model.Step {
 	return w.Branches
 }
 
-// branchBindings returns the set of capture names a single branch binds.
+// branchBindings returns the capture names a branch binds, recursively
+// (including bindings inside any nested parallel branches).
 func branchBindings(branch []model.Step) map[string]bool {
 	out := map[string]bool{}
-	for i := range branch {
-		for name := range bindings(&branch[i]) {
-			out[name] = true
+	collectBindings(branch, func(name, _ string) { out[name] = true })
+	return out
+}
+
+// collectBindings calls sink(name, verb) for every capture bound by steps,
+// recursing into parallel branches so nested bindings are seen too.
+func collectBindings(steps []model.Step, sink func(name, verb string)) {
+	for i := range steps {
+		st := &steps[i]
+		for name := range bindings(st) {
+			sink(name, st.Run)
+		}
+		for _, branch := range decodeBranches(st) {
+			collectBindings(branch, sink)
 		}
 	}
-	return out
 }
 
 func refsOf(st *model.Step) []string {

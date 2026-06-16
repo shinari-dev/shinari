@@ -534,3 +534,87 @@ verify:
 		t.Fatalf("an invalid branch step must still trip rule 2, got %v", Validate(set))
 	}
 }
+
+func TestParallelBranchUnresolvedReferenceIsRule10(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: v-branch-unresolved
+verify:
+  - run: parallel
+    with:
+      branches:
+        - - { run: sut.count, as: c }
+          - { run: assert, with: { of: "${.nope}", equals: 1 } }
+`,
+	})
+	if findRule(Validate(set), 10) == nil {
+		t.Fatalf("an unresolved reference inside a branch must raise rule 10, got %v", Validate(set))
+	}
+}
+
+func TestParallelIntraBranchReferenceResolves(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: v-branch-intra
+verify:
+  - run: parallel
+    with:
+      branches:
+        - - { run: sut.count, as: c }
+          - { run: assert, with: { of: "${.c.value}", equals: 1 } }
+`,
+	})
+	for _, f := range Validate(set) {
+		if f.Rule == 10 || f.Rule == 12 {
+			t.Fatalf("a within-branch reference to an earlier capture must resolve, got %v", f)
+		}
+	}
+}
+
+func TestNestedParallelCrossBranchIsRule12(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: v-nested-cross
+verify:
+  - run: parallel
+    with:
+      branches:
+        - - run: parallel
+            with:
+              branches:
+                - - { run: sut.count, as: deep }
+                - - { run: assert, with: { of: "${.deep.value}", equals: 1 } }
+`,
+	})
+	if findRule(Validate(set), 12) == nil {
+		t.Fatalf("a cross-branch reference inside a nested parallel must raise rule 12, got %v", Validate(set))
+	}
+}
+
+func TestParallelBranchObservesLatencyNoRule11(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: v-branch-latency
+method:
+  - phase: degrade-and-observe
+    steps:
+      - run: parallel
+        with:
+          branches:
+            - - { run: sut.submit, with: j, effect: degradation }
+            - - { run: sut.count, as: c }
+              - { run: assert, with: { of: "${.c.meta.durationMs}", lt: 100 } }
+`,
+	})
+	if f := findRule(Validate(set), 11); f != nil {
+		t.Fatalf("a branch that asserts latency observes the degradation; rule 11 should not fire, got %v", f)
+	}
+}
