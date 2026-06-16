@@ -64,6 +64,8 @@ func Specs() map[string]sdk.VerbSpec {
 			{Name: "duration", Type: "number"},
 			{Name: "interval", Type: "number"},
 		}},
+		"parallel": {Name: "parallel", Kind: sdk.KindAction, SideEffects: true,
+			Args: []sdk.ArgSpec{{Name: "branches", Type: "list", Required: true}}},
 	}
 }
 

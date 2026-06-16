@@ -13,6 +13,7 @@ description: <text>             # optional
 providers: ...                  # optional: per-scenario overrides, merged over the Project's (later wins)
 vars:                           # optional: merged over Project vars
   sleepSecs: 30
+timeout: 120                    # optional: whole-scenario deadline in seconds
 
 setup:       [ <step>... ]      # optional
 steadyState: [ <step>... ]      # optional
@@ -73,3 +74,13 @@ meta}`: `as: rsp` binds the whole envelope, so the payload is `${.rsp.value}`
 and the call's facts are `${.rsp.meta.durationMs}` / `${.rsp.meta.status}`.
 `read:` and `capture:` operate on the payload. A per-step `timeout:` (seconds)
 fails the step if the verb runs longer.
+
+## Timeouts
+
+A per-step `timeout:` (seconds) bounds one step: the step FAILs and is marked
+timed-out if the verb runs longer, and its context is cancelled. A top-level
+`timeout:` bounds the whole timeline (setup through verify): if it expires the
+scenario is `FAILED` with `scenario exceeded timeout <N>s`. Teardown still runs
+after a scenario timeout. The `http` provider honors whichever deadline applies
+for any duration; with no step or scenario deadline it falls back to a 30s
+per-request default.

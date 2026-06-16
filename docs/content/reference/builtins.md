@@ -1,6 +1,6 @@
 ---
 title: Verbs & builtins
-description: The unprefixed language verbs (assert, sleep, wait_until, background) and the closed assert-operator set.
+description: The unprefixed language verbs (assert, sleep, wait_until, background, sample, parallel) and the closed assert-operator set.
 weight: 40
 ---
 
@@ -115,3 +115,44 @@ Returns an Observation whose `value` is
 
 Sampling is sequential (one call at a time). For concurrent load, drive a
 generator with `background` and `sample` a separate health probe.
+
+## parallel
+
+Kind: action. Runs several branches concurrently and waits for all of them (a
+barrier join), so a scenario can drive load while a fault is active or inject
+several faults at the same instant. Each branch is a full step sequence, so it
+may act, probe, assert, carry a `finding:`, and even nest another `parallel`.
+
+```yaml
+- run: parallel
+  with:
+    branches:
+      - - run: loadgen.drive            # branch 0: hold load
+          with: { rps: 50, for: 30s }
+      - - run: toxiproxy.partition      # branch 1: fault, then assert under it
+          with: { name: db }
+        - run: http.get
+          as: resp
+        - run: assert
+          with: { of: "${.resp.meta.durationMs}", lt: 800 }
+```
+
+Semantics:
+
+- **Barrier join.** Every branch runs to completion; there is no
+  sibling cancellation, so outcomes never depend on race timing.
+- **Deterministic.** Branch events and results are flushed back in
+  branch-index order, so the journal and the verdict are identical run to run.
+  Live streaming pauses inside a block; its events surface when it completes.
+- **Verdict rollup.** Any failing branch step fails the parallel step. A branch
+  `finding:` stays a finding and keeps the scenario green.
+- **Captures.** A name bound in a branch is visible to steps after the block. A
+  branch cannot reference a sibling branch's capture (concurrent branches have
+  no ordering); doing so is a `validate` error (rule 12). When more than one
+  branch binds the same name, the highest-indexed branch wins.
+- **Nesting** is allowed; a safety cap of 64 concurrent branches applies across
+  the whole tree.
+
+This differs from `background`/`stop_background`: a `parallel` block has a fixed
+branch set and a defined join point, which makes it more deterministic than the
+manual fork/join over named handles.

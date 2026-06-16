@@ -1,0 +1,68 @@
+apiVersion: shinari/v1
+kind: Scenario
+name: concurrent-submits
+description: >
+  Two jobs are submitted and completed at the same instant through parallel
+  blocks, and the store must run each exactly once. A small demonstration of
+  driving concurrent work with a barrier-joined parallel step.
+
+setup:
+  - run: jobstore.reset
+
+steadyState:
+  - run: jobstore.healthy
+
+method:
+  - phase: "Submit two jobs concurrently, then complete them concurrently"
+    steps:
+      - run: parallel
+        with:
+          branches:
+            - - run: jobstore.submit
+                with: "job-a"
+              - run: wait_until
+                with:
+                  probe:
+                    run: jobstore.status
+                    with: "job-a"
+                  equals: RUNNING
+                  timeout: 5
+                  interval: 0.1
+            - - run: jobstore.submit
+                with: "job-b"
+              - run: wait_until
+                with:
+                  probe:
+                    run: jobstore.status
+                    with: "job-b"
+                  equals: RUNNING
+                  timeout: 5
+                  interval: 0.1
+      - run: parallel
+        with:
+          branches:
+            - - run: jobstore.complete
+                with: "job-a"
+            - - run: jobstore.complete
+                with: "job-b"
+
+verify:
+  - run: jobstore.status
+    with: "job-a"
+    as: a
+  - run: assert
+    with:
+      of: "${.a.value}"
+      equals: SUCCESS
+    desc: "job-a completed"
+  - run: jobstore.status
+    with: "job-b"
+    as: b
+  - run: assert
+    with:
+      of: "${.b.value}"
+      equals: SUCCESS
+    desc: "job-b completed"
+
+teardown:
+  - run: jobstore.reset

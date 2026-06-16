@@ -37,6 +37,7 @@ func (f *fakeSUT) Verbs() []sdk.VerbSpec {
 		{Name: "submit", Kind: sdk.KindAction, SideEffects: true, Primary: "job"},
 		{Name: "status", Kind: sdk.KindProbe, Primary: "of"},
 		{Name: "count", Kind: sdk.KindProbe, Primary: "job"},
+		{Name: "echo", Kind: sdk.KindProbe, Primary: "of"},
 		{Name: "smoke", Kind: sdk.KindAssertion},
 	}
 }
@@ -46,6 +47,9 @@ func (f *fakeSUT) Run(ctx context.Context, verb string, args map[string]any) (sd
 	f.calls = append(f.calls, verb)
 	if err, ok := f.fails[verb]; ok && err != nil {
 		return sdk.VerbResult{}, err
+	}
+	if verb == "echo" {
+		return sdk.VerbResult{Value: args["of"]}, nil
 	}
 	if vals, ok := f.script[verb]; ok && len(vals) > 0 {
 		v := vals[0]
@@ -187,6 +191,67 @@ verify:
 	res, _ := run(t, sut, sc, reg)
 	if res.Verdict != ScenarioFailed {
 		t.Fatalf("verdict = %s, want FAILED (timeout)", res.Verdict)
+	}
+}
+
+func TestScenarioTimeoutFails(t *testing.T) {
+	const src = `
+apiVersion: shinari/v1
+kind: Scenario
+name: scenariotimeout
+timeout: 0.1
+verify:
+  - { run: sleep, with: { seconds: 5 } }
+`
+	sut, sc, reg := newWorld(t, src)
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioFailed {
+		t.Fatalf("verdict = %s, want FAILED", res.Verdict)
+	}
+	if !strings.Contains(res.Reason, "scenario exceeded timeout") {
+		t.Fatalf("reason = %q, want it to name the scenario timeout", res.Reason)
+	}
+	// teardown still runs after a scenario timeout
+	if sut.callCount("down") != 1 {
+		t.Errorf("teardown must run after timeout, down called %d times", sut.callCount("down"))
+	}
+}
+
+func TestTimedOutStepIsMarked(t *testing.T) {
+	const src = `
+apiVersion: shinari/v1
+kind: Scenario
+name: timedoutmark
+verify:
+  - { run: sleep, with: { seconds: 5 }, timeout: 0.1 }
+`
+	sut, sc, reg := newWorld(t, src)
+	res, rec := run(t, sut, sc, reg)
+
+	var sleepStep *StepResult
+	for i := range res.Steps {
+		if res.Steps[i].Run == "sleep" {
+			sleepStep = &res.Steps[i]
+		}
+	}
+	if sleepStep == nil {
+		t.Fatal("no sleep step in result")
+	}
+	if !sleepStep.TimedOut {
+		t.Errorf("sleep step should be marked TimedOut")
+	}
+
+	// the event payload carries it too, so Reduce can rebuild it
+	found := false
+	for _, e := range rec.Events {
+		if e.Type == EvStepFailed && e.Verb == "sleep" {
+			if to, _ := e.Payload["timedOut"].(bool); to {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("step.failed event for sleep must carry timedOut:true")
 	}
 }
 

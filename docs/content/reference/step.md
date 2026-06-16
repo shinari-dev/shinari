@@ -36,7 +36,7 @@ Unknown keys are a **parse error**, not ignored.
 | `finding` | inverts the contract: failure ⇒ `FINDING` (green), success ⇒ `FAILED` with "promote this". Allowed only on assertion-kind checks (validate rule 5) |
 | `kind` | overrides the verb's declared kind for this step. In practice: `exec.run` defaults to `action`; mark a read-only script `kind: probe` so dry-run and steadyState treat it correctly |
 | `effect` | declares the fault this step injects (`outage` drops/blocks work, `degradation` slows it). Native fault verbs already carry it; set it on a step when the fault rides a polymorphic verb (`exec.run` running `tc`/`iptables`, or `http.post` to a chaos endpoint) so fault tracking and validate's recovery rule see it |
-| `timeout` | optional per-step deadline in seconds; the step FAILs if the verb runs longer (the verb's context is cancelled) |
+| `timeout` | optional per-step deadline in seconds; the step FAILs and is marked timed-out if the verb runs longer (the verb's context is cancelled) |
 
 ## Evaluation order
 

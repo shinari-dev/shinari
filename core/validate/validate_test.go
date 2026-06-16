@@ -463,3 +463,74 @@ verbs:
 		t.Fatal("want rule 10 error for composed body ref")
 	}
 }
+
+func TestParallelEmptyBranchesIsRule12(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: v-empty
+verify:
+  - { run: parallel, with: { branches: [] } }
+`,
+	})
+	if findRule(Validate(set), 12) == nil {
+		t.Fatalf("empty branches must raise rule 12, got %v", Validate(set))
+	}
+}
+
+func TestParallelCrossBranchReferenceIsRule12(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: v-cross
+verify:
+  - run: parallel
+    with:
+      branches:
+        - - { run: sut.count, as: fromA }
+        - - { run: assert, with: { of: "${.fromA.value}", equals: 1 } }
+`,
+	})
+	if findRule(Validate(set), 12) == nil {
+		t.Fatalf("a branch referencing a sibling branch's capture must raise rule 12, got %v", Validate(set))
+	}
+}
+
+func TestParallelPostBlockReferenceResolves(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: v-postblock
+verify:
+  - run: parallel
+    with:
+      branches:
+        - - { run: sut.count, as: shared }
+  - { run: assert, with: { of: "${.shared.value}", equals: 1 } }
+`,
+	})
+	if findRule(Validate(set), 10) != nil {
+		t.Fatalf("a capture bound inside a branch must be visible after the block (no rule 10), got %v", Validate(set))
+	}
+}
+
+func TestParallelBranchStepArgSpecChecked(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: v-argspec
+verify:
+  - run: parallel
+    with:
+      branches:
+        - - { run: assert, with: { of: 1 } }
+`,
+	})
+	if findRule(Validate(set), 2) == nil {
+		t.Fatalf("an invalid branch step must still trip rule 2, got %v", Validate(set))
+	}
+}
