@@ -39,6 +39,8 @@ checksum:
 changelog:
   use: github
   sort: asc
+  # Just the commit subject; drop the default "<sha>: <msg> (Author <email>)" noise.
+  format: "{{ .Message }}"
   groups:
     - title: Features
       regexp: '^.*?feat(\(.+\))??!?:.+$'
