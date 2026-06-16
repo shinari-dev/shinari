@@ -26,7 +26,7 @@ import (
 	"github.com/shinari-dev/shinari/core/validate"
 )
 
-const version = "0.1.0"
+const version = "0.2.0-dev"
 
 // exitUsage is EX_USAGE: distinct from the verdict codes 0..3.
 const exitUsage = 64
