@@ -59,3 +59,38 @@ func TestTruncate(t *testing.T) {
 		t.Errorf("over limit: got %q", got)
 	}
 }
+
+func TestBaseURL(t *testing.T) {
+	cases := []struct {
+		cfg  map[string]any
+		want string
+	}{
+		{map[string]any{"baseUrl": "http://h/"}, "http://h"},                // trailing slash trimmed
+		{map[string]any{"apiBase": "http://x/"}, "http://x"},                // apiBase alias
+		{map[string]any{"baseUrl": "http://a", "apiBase": "b"}, "http://a"}, // baseUrl wins
+		{map[string]any{"baseUrl": ""}, ""},                                 // empty ignored
+		{map[string]any{}, ""},                                              // neither set
+		{map[string]any{"baseUrl": 7}, ""},                                  // non-string ignored
+	}
+	for _, c := range cases {
+		if got := BaseURL(c.cfg); got != c.want {
+			t.Errorf("BaseURL(%#v) = %q, want %q", c.cfg, got, c.want)
+		}
+	}
+}
+
+func TestJoinURL(t *testing.T) {
+	cases := []struct{ base, ref, want string }{
+		{"http://h", "/x", "http://h/x"},                 // leading slash
+		{"http://h", "x", "http://h/x"},                  // no leading slash, one inserted
+		{"", "/x", "/x"},                                 // no base
+		{"", "http://h/x", "http://h/x"},                 // absolute, no base
+		{"http://h", "http://other/y", "http://other/y"}, // absolute wins over base
+		{"http://h", "https://s/y", "https://s/y"},       // https absolute
+	}
+	for _, c := range cases {
+		if got := JoinURL(c.base, c.ref); got != c.want {
+			t.Errorf("JoinURL(%q, %q) = %q, want %q", c.base, c.ref, got, c.want)
+		}
+	}
+}

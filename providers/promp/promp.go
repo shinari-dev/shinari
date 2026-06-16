@@ -30,9 +30,7 @@ func New() sdk.Provider { return &Provider{client: &http.Client{Timeout: 30 * ti
 func (p *Provider) Type() string { return "prom" }
 
 func (p *Provider) Configure(cfg map[string]any) error {
-	if u, ok := cfg["baseUrl"].(string); ok {
-		p.base = strings.TrimRight(u, "/")
-	}
+	p.base = conv.BaseURL(cfg)
 	return nil
 }
 
@@ -55,7 +53,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	}
 	want, _ := args["labels"].(map[string]any)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.base+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, conv.JoinURL(p.base, path), nil)
 	if err != nil {
 		return sdk.VerbResult{}, fmt.Errorf("prom.scrape %s: %w", metric, err)
 	}

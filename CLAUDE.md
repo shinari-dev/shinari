@@ -48,7 +48,7 @@ with a strict dependency direction (every arrow points down: `cli → core → s
   provider needs no core change** — write the package, self-register, and add one line to
   `providers/all` (or have your own binary blank-import it).
 - **`utils/conv/`** — a dependency-free leaf of small value helpers (`ToFloat`, `ToString`,
-  `Truncate`) shared by core and the providers.
+  `Truncate`, `BaseURL`, `JoinURL`) shared by core and the providers.
 - **`utils/stats/`** — a dependency-free leaf computing the window statistics
   (`Summarize`: n, errors, errorRate, min/max/mean, p50/p95/p99) shared by the
   `sample` builtin and the `load` provider.
