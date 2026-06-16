@@ -1,5 +1,6 @@
 /shinari
 /shinari-out/
+/dist/
 .jobstore/
 docs/superpowers/
 docs/public/
