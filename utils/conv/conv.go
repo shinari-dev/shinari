@@ -59,3 +59,30 @@ func Truncate(s string, n int) string {
 	}
 	return s[:n] + "..."
 }
+
+// BaseURL returns a provider's configured base URL: the first non-empty value
+// among the "baseUrl" and "apiBase" config keys, with any trailing slash
+// trimmed. Returns "" when neither is set. Shared by the HTTP-shaped providers
+// so they agree on the config seam.
+func BaseURL(cfg map[string]any) string {
+	for _, key := range []string{"baseUrl", "apiBase"} {
+		if v, ok := cfg[key].(string); ok && v != "" {
+			return strings.TrimRight(v, "/")
+		}
+	}
+	return ""
+}
+
+// JoinURL resolves a request reference against a provider base URL. An absolute
+// ref (http:// or https://) is returned unchanged; otherwise, when base is set,
+// ref is appended with exactly one separating slash. base is assumed already
+// trimmed of a trailing slash (see BaseURL).
+func JoinURL(base, ref string) string {
+	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
+		return ref
+	}
+	if base == "" {
+		return ref
+	}
+	return base + "/" + strings.TrimLeft(ref, "/")
+}

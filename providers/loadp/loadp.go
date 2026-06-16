@@ -37,12 +37,7 @@ func (p *Provider) Type() string { return "load" }
 
 // Configure accepts an optional baseUrl prepended to relative targets.
 func (p *Provider) Configure(cfg map[string]any) error {
-	for _, key := range []string{"baseUrl", "apiBase"} {
-		if v, ok := cfg[key].(string); ok && v != "" {
-			p.baseURL = strings.TrimRight(v, "/")
-			return nil
-		}
-	}
+	p.baseURL = conv.BaseURL(cfg)
 	return nil
 }
 
@@ -114,7 +109,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		}
 	}
 
-	url := p.resolve(target)
+	url := conv.JoinURL(p.baseURL, target)
 	targeter := vegeta.NewStaticTargeter(vegeta.Target{
 		Method: method, URL: url, Header: header, Body: body,
 	})
@@ -141,7 +136,9 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 			errs++
 		}
 	}
-	attacker.Stop()
+	// No explicit Stop() here: the range above only ends once the attack has
+	// finished (duration elapsed) or the cancellation goroutine already called
+	// Stop. The deferred close(stop) releases that goroutine.
 
 	meta := map[string]any{
 		"target":      url,
@@ -149,16 +146,4 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		"durationSec": dur,
 	}
 	return sdk.VerbResult{Value: stats.Summarize(lats, errs), Meta: meta}, nil
-}
-
-// resolve joins a relative target onto the configured baseURL; absolute URLs
-// pass through unchanged.
-func (p *Provider) resolve(target string) string {
-	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
-		return target
-	}
-	if p.baseURL == "" {
-		return target
-	}
-	return p.baseURL + "/" + strings.TrimLeft(target, "/")
 }

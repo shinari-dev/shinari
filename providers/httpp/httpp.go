@@ -38,12 +38,7 @@ func New() sdk.Provider {
 func (p *Provider) Type() string { return "http" }
 
 func (p *Provider) Configure(cfg map[string]any) error {
-	for _, key := range []string{"baseUrl", "apiBase"} {
-		if v, ok := cfg[key].(string); ok && v != "" {
-			p.baseURL = strings.TrimRight(v, "/")
-			return nil
-		}
-	}
+	p.baseURL = conv.BaseURL(cfg)
 	return nil
 }
 
@@ -92,10 +87,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		defer cancel()
 	}
 	path, _ := args["path"].(string)
-	full := p.baseURL + path
-	if !strings.HasPrefix(path, "/") && p.baseURL == "" {
-		full = path // absolute URL given directly
-	}
+	full := conv.JoinURL(p.baseURL, path)
 
 	var reqBody io.Reader
 	contentType := ""
