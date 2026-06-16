@@ -24,10 +24,26 @@ jobs:
       NEXT_VERSION: ${{ steps.version.outputs.NEXT_VERSION }}
       BRANCH_NAME: ${{ github.ref_name }}
     steps:
+      - name: Ensure dispatched from a branch
+        run: |
+          if [ "${{ github.ref_type }}" != "branch" ]; then
+            echo "release must be run from a branch, not ${{ github.ref_type }} '${{ github.ref_name }}'" >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+
+      - name: Test
+        run: go test ./...
 
       - name: Configure Git
         run: |
@@ -77,9 +93,6 @@ jobs:
         with:
           go-version: '1.26.x'
           check-latest: true
-
-      - name: Test
-        run: go test ./...
 
       - name: Configure Git
         run: |
