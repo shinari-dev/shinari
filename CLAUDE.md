@@ -41,14 +41,17 @@ with a strict dependency direction (every arrow points down: `cli → core → s
 - **`sdk/`** — the provider contract (`Provider`, `VerbSpec`, `VerbResult`, `Kind`) **and the
   registration seam** (`Register`/`Factory`, the database/sql-style driver table). Providers link only
   this package, never the engine.
-- **`providers/`** — the native providers (`execp`, `httpp`, `dockerp`, `toxiproxyp`, `netp`, `sqlp`, `promp`),
-  each linking only `sdk` (plus the `utils/conv` leaf) — exactly the shape a third-party out-of-tree
+- **`providers/`** — the native providers (`execp`, `httpp`, `dockerp`, `toxiproxyp`, `netp`, `sqlp`, `promp`, `loadp`),
+  each linking only `sdk` (plus the dependency-free `utils/` leaves) — exactly the shape a third-party out-of-tree
   provider takes. Each **self-registers** its type from an `init()` (`sdk.Register("docker", New)`);
   `providers/all` blank-imports them so a binary loads the built-in set with one import. **Adding a
   provider needs no core change** — write the package, self-register, and add one line to
   `providers/all` (or have your own binary blank-import it).
 - **`utils/conv/`** — a dependency-free leaf of small value helpers (`ToFloat`, `ToString`,
   `Truncate`) shared by core and the providers.
+- **`utils/stats/`** — a dependency-free leaf computing the window statistics
+  (`Summarize`: n, errors, errorRate, min/max/mean, p50/p95/p99) shared by the
+  `sample` builtin and the `load` provider.
 
 ### core sub-packages
 
@@ -96,7 +99,7 @@ method)→3. CLI **usage** errors exit `64` (EX_USAGE) to stay distinct from ver
 
 ## Providers are composable in two ways
 
-1. **Native** Go providers implementing the `sdk.Provider` interface (the seven built-ins).
+1. **Native** Go providers implementing the `sdk.Provider` interface (the eight built-ins).
 2. **Composed** providers: `kind: Provider` YAML macros over other verbs, zero Go — see
    `examples/quickstart/providers/jobstore.yml`. A composed verb declares `params:` and a `do:`
    (sequence) or `probe:` (single observation).
