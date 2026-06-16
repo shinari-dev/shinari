@@ -102,8 +102,8 @@ func TestRunCountsErrors(t *testing.T) {
 func TestRunValidatesArgs(t *testing.T) {
 	p := New().(*Provider)
 	cases := []map[string]any{
-		{"rate": 10, "duration": 1},                      // missing target
-		{"target": "http://x", "duration": 1},            // missing rate
+		{"rate": 10, "duration": 1},                        // missing target
+		{"target": "http://x", "duration": 1},              // missing rate
 		{"target": "http://x", "rate": 10},                 // missing duration
 		{"target": "http://x", "rate": 0, "duration": 1},   // non-positive rate
 		{"target": "http://x", "rate": 0.5, "duration": 1}, // sub-1 rate would truncate to a vegeta infinite-rate flood
