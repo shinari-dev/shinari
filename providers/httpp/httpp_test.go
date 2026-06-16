@@ -6,10 +6,12 @@ package httpp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func server(t *testing.T) *httptest.Server {
@@ -112,5 +114,64 @@ func TestExpectStatusAcceptsListedCode(t *testing.T) {
 	}
 	if res.Meta["status"].(int) != 500 {
 		t.Fatalf("meta.status = %v", res.Meta["status"])
+	}
+}
+
+func TestContextDeadlineGovernsTimeout(t *testing.T) {
+	// A server that delays longer than the step's deadline.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+			w.WriteHeader(200)
+		}
+	}))
+	defer srv.Close()
+
+	p := New()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := p.(*Provider).Run(ctx, "get", map[string]any{"path": srv.URL})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected a deadline error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error should unwrap to context.DeadlineExceeded, got %v", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("request should have aborted at ~100ms, took %s (client 30s cap still in force?)", elapsed)
+	}
+}
+
+func TestNoDeadlineFallsBackToDefault(t *testing.T) {
+	// With no caller deadline the provider must apply its own default so a hung
+	// server cannot block forever. (HTTP does not carry a client deadline to the
+	// server, so we observe the fallback by shrinking defaultTimeout and pointing
+	// at a slow server.)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+			w.WriteHeader(200)
+		}
+	}))
+	defer srv.Close()
+
+	p := New().(*Provider)
+	p.defaultTimeout = 50 * time.Millisecond
+
+	start := time.Now()
+	_, err := p.Run(context.Background(), "get", map[string]any{"path": srv.URL})
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("with no caller deadline the provider's default must apply, got %v", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("default deadline (~50ms) did not apply, took %s", elapsed)
 	}
 }

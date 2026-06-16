@@ -97,6 +97,13 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 			for name := range bindings(&st) {
 				laterBound[name] = st.Run
 			}
+			for _, branch := range decodeBranches(&st) {
+				for i := range branch {
+					for name := range bindings(&branch[i]) {
+						laterBound[name] = "parallel"
+					}
+				}
+			}
 		}
 	}
 
@@ -137,25 +144,79 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 			kind = sdk.Kind(st.Kind)
 		}
 
-		// rule 2 — with: matches the verb's arg spec.
+		// rules 2 & 5 — with: matches the arg spec, finding: only on assertions.
 		raw := rawWith(st)
-		if _, berr := registry.BindArgs(res.Spec, raw); berr != nil {
-			out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 2,
-				Msg: berr.Error(), Severity: Error})
-		}
-		if st.Run == "assert" || st.Run == "wait_until" {
-			if m, ok := raw.(map[string]any); ok {
-				if _, _, oerr := builtins.ExtractOperator(m); oerr != nil {
-					out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 2,
-						Msg: oerr.Error(), Severity: Error})
+		out = append(out, perStepArgAndFinding(sc, res.Spec, st, kind, raw)...)
+
+		// rule 12 — parallel branch structure, per-branch rule recursion, and
+		// the cross-branch reference ban.
+		if st.Run == "parallel" {
+			branches := decodeBranches(st)
+			if len(branches) == 0 {
+				out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: "parallel", Rule: 12,
+					Msg: "parallel: branches must be a non-empty list", Severity: Error})
+			}
+			perBranch := make([]map[string]bool, len(branches))
+			for bi, branch := range branches {
+				perBranch[bi] = branchBindings(branch)
+			}
+			for bi := range branches {
+				branch := branches[bi]
+				if len(branch) == 0 {
+					out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: "parallel", Rule: 12,
+						Msg: fmt.Sprintf("parallel: branch %d is empty", bi), Severity: Error})
+					continue
+				}
+				for si := range branch {
+					bst := &branch[si]
+					bres, berr := reg.Resolve(bst.Run)
+					if berr != nil {
+						if bst.OnAbsent != "skip" {
+							out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: bst.Run, Rule: 3,
+								Msg: berr.Error(), Severity: Error})
+						}
+						continue
+					}
+					bkind := bres.Spec.Kind
+					if bst.Kind != "" {
+						bkind = sdk.Kind(bst.Kind)
+					}
+					// rules 2 & 5 — same per-step checks as a top-level step.
+					out = append(out, perStepArgAndFinding(sc, bres.Spec, bst, bkind, rawWith(bst))...)
+					// rule 12 — cross-branch reference: a ${name} bound only in a
+					// sibling branch (not a var, not pre-block, not this branch).
+					for _, ref := range refsOf(bst) {
+						for _, name := range jqx.RootRefs(ref) {
+							if defined[name] || perBranch[bi][name] {
+								continue
+							}
+							inSibling := false
+							for bj := range perBranch {
+								if bj != bi && perBranch[bj][name] {
+									inSibling = true
+								}
+							}
+							if inSibling {
+								out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: bst.Run, Rule: 12,
+									Msg: fmt.Sprintf("${%s} is bound in a sibling parallel branch — concurrent branches have no ordering; reference it after the block", name), Severity: Error})
+							}
+						}
+					}
+					// branch faults feed the recovery/degradation rules (7, 11)
+					if strings.HasPrefix(sctx.section, "method") {
+						beff := bres.Spec.Effect
+						if bst.Effect != "" {
+							beff = sdk.Effect(bst.Effect)
+						}
+						if beff == sdk.EffectOutage {
+							methodHasOutage = true
+						}
+						if beff == sdk.EffectDegradation {
+							methodHasDegradation = true
+						}
+					}
 				}
 			}
-		}
-
-		// rule 5 — finding: only on assertion-kind checks.
-		if st.Finding != "" && kind != sdk.KindAssertion {
-			out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 5,
-				Msg: fmt.Sprintf("finding: is only allowed on assertion-kind checks; %s is kind %s", st.Run, kind), Severity: Error})
 		}
 
 		// rule 9 — steadyState idempotency.
@@ -165,24 +226,28 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 		}
 
 		// rules 6 & 10 — references resolve, in execution order. Each ${...} is
-		// a jq expression; check the top-level input fields it reads.
-		for _, ref := range refsOf(st) {
-			for _, name := range jqx.RootRefs(ref) {
-				if defined[name] {
-					continue
-				}
-				if binder, later := laterBound[name]; later {
-					rule, msg := 10, fmt.Sprintf("${%s} is referenced before %s binds it", name, binder)
-					if binder == "stop_background" || bgRunning[name] {
-						rule = 6
-						msg = fmt.Sprintf("${%s} is a background capture — it settles only at stop_background; reference it after", name)
+		// a jq expression; check the top-level input fields it reads. Branch
+		// references are checked per-branch in the parallel block below, not
+		// here (the flat scope would mis-resolve them).
+		if st.Run != "parallel" {
+			for _, ref := range refsOf(st) {
+				for _, name := range jqx.RootRefs(ref) {
+					if defined[name] {
+						continue
 					}
-					out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: rule,
-						Msg: msg, Severity: Error})
-					continue
+					if binder, later := laterBound[name]; later {
+						rule, msg := 10, fmt.Sprintf("${%s} is referenced before %s binds it", name, binder)
+						if binder == "stop_background" || bgRunning[name] {
+							rule = 6
+							msg = fmt.Sprintf("${%s} is a background capture — it settles only at stop_background; reference it after", name)
+						}
+						out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: rule,
+							Msg: msg, Severity: Error})
+						continue
+					}
+					out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 10,
+						Msg: fmt.Sprintf("unresolved reference ${%s} — no var and no earlier capture by that name", name), Severity: Error})
 				}
-				out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 10,
-					Msg: fmt.Sprintf("unresolved reference ${%s} — no var and no earlier capture by that name", name), Severity: Error})
 			}
 		}
 
@@ -196,6 +261,13 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 		}
 		for name := range bindings(st) {
 			defined[name] = true
+		}
+		for _, branch := range decodeBranches(st) {
+			for i := range branch {
+				for name := range bindings(&branch[i]) {
+					defined[name] = true
+				}
+			}
 		}
 
 		if st.Run == "sample" {
@@ -310,6 +382,56 @@ func bindings(st *model.Step) map[string]bool {
 func rawWith(st *model.Step) any {
 	raw, _ := st.DecodeWith()
 	return raw
+}
+
+// perStepArgAndFinding runs the per-step checks shared by top-level steps and
+// parallel branch steps: rule 2 (with: matches the arg spec, plus the assert/
+// wait_until operator) and rule 5 (finding: only on assertion-kind checks).
+func perStepArgAndFinding(sc *model.Scenario, spec sdk.VerbSpec, st *model.Step, kind sdk.Kind, raw any) []Finding {
+	var out []Finding
+	if _, err := registry.BindArgs(spec, raw); err != nil {
+		out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 2,
+			Msg: err.Error(), Severity: Error})
+	}
+	if st.Run == "assert" || st.Run == "wait_until" {
+		if m, ok := raw.(map[string]any); ok {
+			if _, _, oerr := builtins.ExtractOperator(m); oerr != nil {
+				out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 2,
+					Msg: oerr.Error(), Severity: Error})
+			}
+		}
+	}
+	if st.Finding != "" && kind != sdk.KindAssertion {
+		out = append(out, Finding{File: sc.File, Scenario: sc.Name, Step: st.Run, Rule: 5,
+			Msg: fmt.Sprintf("finding: is only allowed on assertion-kind checks; %s is kind %s", st.Run, kind), Severity: Error})
+	}
+	return out
+}
+
+// decodeBranches returns the branch step-lists of a parallel step, or nil if
+// the step is not a well-formed parallel block.
+func decodeBranches(st *model.Step) [][]model.Step {
+	if st.Run != "parallel" {
+		return nil
+	}
+	var w struct {
+		Branches [][]model.Step `yaml:"branches"`
+	}
+	if err := st.With.Decode(&w); err != nil {
+		return nil
+	}
+	return w.Branches
+}
+
+// branchBindings returns the set of capture names a single branch binds.
+func branchBindings(branch []model.Step) map[string]bool {
+	out := map[string]bool{}
+	for i := range branch {
+		for name := range bindings(&branch[i]) {
+			out[name] = true
+		}
+	}
+	return out
 }
 
 func refsOf(st *model.Step) []string {

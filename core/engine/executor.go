@@ -5,9 +5,11 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/shinari-dev/shinari/core/builtins"
@@ -47,9 +49,11 @@ type runner struct {
 	sc       *model.Scenario
 	opts     Options
 	captures map[string]any
+	writes   map[string]bool // non-nil only in a branch runner: records capture writes to merge back
 	vars     map[string]any
 	bg       map[string]*bgHandle
 	res      *ScenarioResult
+	limiter  *atomic.Int32 // shared across the nesting tree: caps concurrent branches
 }
 
 // RunScenario executes one scenario: setup → steadyState (gate) → method
@@ -70,6 +74,7 @@ func RunScenario(ctx context.Context, sc *model.Scenario, projectVars map[string
 		captures: map[string]any{},
 		vars:     vars,
 		bg:       map[string]*bgHandle{},
+		limiter:  &atomic.Int32{},
 		res: &ScenarioResult{
 			Name: sc.Name, Description: sc.Description, Suite: sc.Suite,
 			Start: opts.now(),
@@ -77,7 +82,17 @@ func RunScenario(ctx context.Context, sc *model.Scenario, projectVars map[string
 	}
 	em.Emit(Event{Type: EvScenarioStarted, Time: opts.now(), Scenario: sc.Name})
 
-	verdict, reason := r.timeline(ctx)
+	timelineCtx := ctx
+	if sc.Timeout > 0 {
+		var cancel context.CancelFunc
+		timelineCtx, cancel = context.WithTimeout(ctx, time.Duration(sc.Timeout*float64(time.Second)))
+		defer cancel()
+	}
+	verdict, reason := r.timeline(timelineCtx)
+	if sc.Timeout > 0 && errors.Is(timelineCtx.Err(), context.DeadlineExceeded) {
+		verdict = ScenarioFailed
+		reason = fmt.Sprintf("scenario exceeded timeout %gs", sc.Timeout)
+	}
 
 	r.teardown(ctx)
 	r.res.Verdict = verdict
@@ -189,9 +204,13 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		sr.Verdict = v
 		sr.Err = errMsg
 		sr.End = r.opts.now()
+		payload := map[string]any{"verdict": string(v), "error": errMsg}
+		if sr.TimedOut {
+			payload["timedOut"] = true
+		}
 		r.emit.Emit(Event{Type: stepEventType[v], Time: sr.End, Scenario: r.sc.Name,
 			Section: section, Phase: phase, Step: stepLabel(st), Verb: st.Run,
-			Payload: map[string]any{"verdict": string(v), "error": errMsg}})
+			Payload: payload})
 		return sr
 	}
 	skipOrFail := func(err error) StepResult {
@@ -213,6 +232,11 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 	if st.Kind != "" {
 		kind = sdk.Kind(st.Kind) // the exec.run override
 	}
+	if st.Run == "parallel" {
+		// Not gated by the block's kind: each inner step flows back through
+		// runStep and applies dry-run / verdict split / findings individually.
+		return r.runParallel(ctx, section, phase, st, finish)
+	}
 	if r.opts.DryRun && kind == sdk.KindAction {
 		sr.SkipReason = "dry-run skips actions"
 		return finish(CheckSkip, "")
@@ -231,11 +255,17 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 	}
 	result, err := r.execVerb(runCtx, res, st.Run, withVal, r.scope())
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			sr.TimedOut = true
+		}
 		return r.judge(st, finish, err)
 	}
 
 	if _, err = applyBindings(st, result, func(name string, v any) {
 		r.captures[name] = v
+		if r.writes != nil {
+			r.writes[name] = true
+		}
 		if sr.Captured == nil {
 			sr.Captured = map[string]any{}
 		}

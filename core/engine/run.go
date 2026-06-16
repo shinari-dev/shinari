@@ -90,9 +90,10 @@ func Reduce(events []Event) RunResult {
 			}
 			verdict := CheckVerdict(fmt.Sprintf("%v", e.Payload["verdict"]))
 			errMsg, _ := e.Payload["error"].(string)
+			timedOut, _ := e.Payload["timedOut"].(bool)
 			sc.Steps = append(sc.Steps, StepResult{
 				Section: e.Section, Phase: e.Phase, Run: e.Verb,
-				Verdict: verdict, Err: errMsg, End: e.Time,
+				Verdict: verdict, Err: errMsg, TimedOut: timedOut, End: e.Time,
 			})
 		case EvFaultInjected:
 			if sc := byName[e.Scenario]; sc != nil {

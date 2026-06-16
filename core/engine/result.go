@@ -50,6 +50,7 @@ type StepResult struct {
 	Verdict    CheckVerdict   `json:"verdict"`
 	Finding    string         `json:"finding,omitempty"`
 	Err        string         `json:"error,omitempty"`
+	TimedOut   bool           `json:"timedOut,omitempty"`
 	SkipReason string         `json:"skipReason,omitempty"`
 	Captured   map[string]any `json:"captured,omitempty"`
 	Start      time.Time      `json:"start"`

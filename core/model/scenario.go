@@ -100,6 +100,7 @@ type Scenario struct {
 	Header      `yaml:",inline"`
 	Providers   map[string]ProviderConfig `yaml:"providers"`
 	Vars        map[string]any            `yaml:"vars"`
+	Timeout     float64                   `yaml:"timeout"` // optional whole-scenario deadline in seconds
 	Setup       []Step                    `yaml:"setup"`
 	SteadyState []Step                    `yaml:"steadyState"`
 	Method      []Phase                   `yaml:"method"`

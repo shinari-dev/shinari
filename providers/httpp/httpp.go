@@ -21,14 +21,18 @@ import (
 )
 
 type Provider struct {
-	baseURL string
-	client  *http.Client
+	baseURL        string
+	client         *http.Client
+	defaultTimeout time.Duration // applied only when the caller passed no deadline
 }
 
 func init() { sdk.Register("http", New) }
 
 func New() sdk.Provider {
-	return &Provider{client: &http.Client{Timeout: 30 * time.Second}}
+	// No client-level timeout: the request context governs, so a per-step
+	// timeout: of any value is authoritative. Run() applies defaultTimeout
+	// only when the caller passed no deadline.
+	return &Provider{client: &http.Client{}, defaultTimeout: 30 * time.Second}
 }
 
 func (p *Provider) Type() string { return "http" }
@@ -82,6 +86,11 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 }
 
 func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
+	if _, ok := ctx.Deadline(); !ok && p.defaultTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.defaultTimeout)
+		defer cancel()
+	}
 	path, _ := args["path"].(string)
 	full := p.baseURL + path
 	if !strings.HasPrefix(path, "/") && p.baseURL == "" {
