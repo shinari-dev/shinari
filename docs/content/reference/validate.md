@@ -1,6 +1,6 @@
 ---
 title: Validate rules
-description: The ten static checks, what triggers each, and which are errors versus warnings.
+description: The twelve static checks, what triggers each, and which are errors versus warnings.
 weight: 70
 ---
 
@@ -20,6 +20,16 @@ file, scenario, step, and reason.
 | 9 | **steadyState idempotency**: warn when steadyState contains a mutating action, it re-runs after method | warn |
 | 10 | **Interpolation closure**: every `${...}` resolves to a var or an *earlier* capture, in execution order; composed-provider bodies are checked against their params | error |
 | 11 | **Degradation observed**: warn when a `degradation` fault is injected in `method` but nothing observes its effect (no `sample`, no `${...meta.durationMs}` assertion) | warn |
+| 12 | **Parallel branches**: a `parallel` step has a non-empty `branches:` list with no empty branch, and no branch references a capture bound only in a *sibling* branch (concurrent branches have no ordering, so reference it after the block) | error |
+
+## Branch steps
+
+Steps inside a `parallel` branch are validated **exactly like top-level steps**,
+recursively (including nested `parallel`). Rules 2, 5, 6, 9, and 10 all apply
+within a branch. References resolve against a branch-local scope: scenario vars,
+captures bound before the block, and that branch's own earlier captures; a
+sibling branch's captures are out of scope (rule 12 above), and captures a
+branch binds become visible to steps after the block.
 
 ## Exit behaviour
 
