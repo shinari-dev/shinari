@@ -137,7 +137,28 @@ written in pure YAML with zero Go (see
 Unprefixed language builtins round it out: `assert`, `sleep`, `wait_until`,
 `background`, `stop_background`.
 
+## Install
+
+Install the latest release (Linux and macOS, amd64/arm64):
+
+```sh
+curl -sSL https://raw.githubusercontent.com/shinari-dev/shinari/main/scripts/install.sh | sh
+```
+
+Pin a version or change the install directory:
+
+```sh
+SHINARI_VERSION=v0.2.0 BINDIR="$HOME/.local/bin" \
+  sh -c "$(curl -sSL https://raw.githubusercontent.com/shinari-dev/shinari/main/scripts/install.sh)"
+```
+
+Or download a prebuilt archive for your platform from the
+[Releases page](https://github.com/shinari-dev/shinari/releases), verify it against
+`checksums.txt`, extract, and put `shinari` on your `PATH`.
+
 ## Quickstart
+
+Build from source (requires Go 1.26+):
 
 ```sh
 go build -o shinari ./cli
