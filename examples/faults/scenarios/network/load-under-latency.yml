@@ -1,0 +1,48 @@
+apiVersion: shinari/v1
+kind: Scenario
+name: api-stays-fast-under-load-and-latency
+description: Under sustained load, the api's p95 degrades when its network is delayed, then recovers when the delay is cleared.
+
+setup:
+  - run: docker.up
+    with: [api]
+
+steadyState:
+  - run: http.get
+    with: "http://localhost:5678/"
+
+method:
+  - phase: "Drive load while delaying the network"
+    steps:
+      - run: parallel
+        with:
+          branches:
+            # Workload: sustained traffic for the whole window.
+            - - run: load.run
+                with: { target: "/", rate: 50, duration: 6 }
+                as: loaded
+            # Fault: gate on an observed healthy response, then inject latency
+            # mid-load (event-gated, never a timer).
+            - - run: wait_until
+                with:
+                  probe: { run: http.get, with: "http://localhost:5678/" }
+                  matches: "ok"
+                  timeout: 30
+              - run: netem.delay
+                with: { target: api, ms: 300 }
+      - run: assert
+        with: { of: "${.loaded.value.p95}", gt: 250 }
+        desc: "the 300ms delay shows up in p95 under load"
+  - phase: "Clear the fault and confirm recovery"
+    steps:
+      - run: netem.clear
+        with: api
+      - run: sample
+        with: { probe: { run: http.get, with: "http://localhost:5678/" }, count: 10 }
+        as: recovered
+      - run: assert
+        with: { of: "${.recovered.value.p99}", lt: 100 }
+        desc: "latency back to normal after clear"
+
+teardown:
+  - run: docker.down

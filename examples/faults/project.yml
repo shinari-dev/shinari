@@ -6,6 +6,9 @@ description: Demonstrates the netem and resource composed fault providers (requi
 providers:
   exec: {}
   http: {}
+  load:
+    config:
+      baseUrl: http://localhost:5678
   docker:
     config:
       composeFiles: [compose.yml]

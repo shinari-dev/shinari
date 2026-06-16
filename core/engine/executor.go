@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/shinari-dev/shinari/core/registry"
 	"github.com/shinari-dev/shinari/sdk"
 	"github.com/shinari-dev/shinari/utils/conv"
+	"github.com/shinari-dev/shinari/utils/stats"
 )
 
 // Options are run-level knobs. The CLI maps env (KEEP_UP=1) onto them —
@@ -554,58 +554,7 @@ func (r *runner) execSample(ctx context.Context, args map[string]any, scope inte
 			return sdk.VerbResult{}, err
 		}
 	}
-	sort.Float64s(lats)
-	return sdk.VerbResult{Value: map[string]any{
-		"n":         float64(n),
-		"errors":    float64(errs),
-		"errorRate": ratio(errs, n),
-		"min":       at(lats, 0),
-		"max":       at(lats, len(lats)-1),
-		"mean":      mean(lats),
-		"p50":       percentile(lats, 50),
-		"p95":       percentile(lats, 95),
-		"p99":       percentile(lats, 99),
-	}}, nil
-}
-
-func ratio(a, b int) float64 {
-	if b == 0 {
-		return 0
-	}
-	return float64(a) / float64(b)
-}
-
-func at(xs []float64, i int) float64 {
-	if i < 0 || i >= len(xs) {
-		return 0
-	}
-	return xs[i]
-}
-
-func mean(xs []float64) float64 {
-	if len(xs) == 0 {
-		return 0
-	}
-	s := 0.0
-	for _, x := range xs {
-		s += x
-	}
-	return s / float64(len(xs))
-}
-
-// percentile is the nearest-rank value of sorted xs at the p-th percentile.
-func percentile(sorted []float64, p int) float64 {
-	if len(sorted) == 0 {
-		return 0
-	}
-	idx := (p*len(sorted)+99)/100 - 1 // ceil(p/100 * n) - 1
-	if idx < 0 {
-		idx = 0
-	}
-	if idx >= len(sorted) {
-		idx = len(sorted) - 1
-	}
-	return sorted[idx]
+	return sdk.VerbResult{Value: stats.Summarize(lats, errs)}, nil
 }
 
 // execWaitUntil blocks the timeline on an observed event: poll the
