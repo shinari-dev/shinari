@@ -44,6 +44,12 @@ if [ -z "$version" ]; then
   [ -n "$version" ] || fail "could not resolve latest version from the GitHub API"
 fi
 
+# Normalize to the 'v'-prefixed tag form so SHINARI_VERSION=0.2.0 and v0.2.0 both work.
+case "$version" in
+  v*) ;;
+  *)  version="v$version" ;;
+esac
+
 # GoReleaser archive names use the plain version without a leading 'v'.
 plain_version=$(echo "$version" | sed 's/^v//')
 archive="${BINARY}_${plain_version}_${os}_${arch}.tar.gz"
