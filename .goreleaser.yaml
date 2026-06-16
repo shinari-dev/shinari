@@ -39,8 +39,9 @@ checksum:
 changelog:
   use: github
   sort: asc
-  # Short hash + commit subject; drop the default author/email noise.
-  format: "{{ slice .SHA 0 7 }} {{ .Message }}"
+  # Linked short hash + commit subject; drop the default author/email noise.
+  # Bare SHAs do not autolink in release bodies, so emit an explicit commit link.
+  format: "[{{ slice .SHA 0 7 }}](https://github.com/shinari-dev/shinari/commit/{{ .SHA }}) {{ .Message }}"
   groups:
     - title: Features
       regexp: '^.*?feat(\(.+\))??!?:.+$'
