@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 The Shinari Authors
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: shinari/v1
+kind: Scenario
+name: api-survives-repeated-restarts
+description: >
+  The api is killed and restarted several times in a row. It must come back
+  healthy after every bounce, not just the first one.
+
+setup:
+  - run: docker.up
+    with: [api]
+
+steadyState:
+  - run: http.get
+    with: "http://localhost:5678/"
+
+method:
+  - phase: "Bounce the api repeatedly"
+    steps:
+      - run: repeat
+        with:
+          times: 3
+          do:
+            - run: docker.kill
+              with: api
+            - run: docker.start
+              with: api
+            - run: wait_until
+              with:
+                probe: { run: http.get, with: "http://localhost:5678/" }
+                contains: ok
+                timeout: 20
+                interval: 0.5
+
+verify:
+  - run: http.get
+    with: "http://localhost:5678/"
+    as: final
+  - run: assert
+    with: { of: "${.final.output}", contains: ok }
+    desc: "api answering after repeated restarts"
+
+teardown:
+  - run: docker.down
