@@ -237,6 +237,9 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		// runStep and applies dry-run / verdict split / findings individually.
 		return r.runParallel(ctx, section, phase, st, finish)
 	}
+	if st.Run == "repeat" {
+		return r.runRepeat(ctx, section, phase, st, finish)
+	}
 	if r.opts.DryRun && kind == sdk.KindAction {
 		sr.SkipReason = "dry-run skips actions"
 		return finish(CheckSkip, "")

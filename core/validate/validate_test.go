@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinari-dev/shinari/core/discover"
@@ -616,5 +617,110 @@ method:
 	})
 	if f := findRule(Validate(set), 11); f != nil {
 		t.Fatalf("a branch that asserts latency observes the degradation; rule 11 should not fire, got %v", f)
+	}
+}
+
+// hasRepeatError returns true if any finding is a rule-13 Error whose message
+// contains phrase.
+func hasRepeatError(fs []Finding, phrase string) bool {
+	for _, f := range fs {
+		if f.Rule == 13 && f.Severity == Error && strings.Contains(f.Msg, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRepeatTimesMustBePositive(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: rt
+verify:
+  - { run: repeat, with: { times: 0, do: [ { run: sut.submit, with: a } ] } }
+`,
+	})
+	if !hasRepeatError(Validate(set), "times must be >= 1") {
+		t.Error("expected rule-13 error for times < 1")
+	}
+}
+
+func TestRepeatEmptyDo(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: rt
+verify:
+  - { run: repeat, with: { times: 2, do: [] } }
+`,
+	})
+	if !hasRepeatError(Validate(set), "non-empty") {
+		t.Error("expected rule-13 error for empty do")
+	}
+}
+
+func TestRepeatFindingInsideIsRejected(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: rt
+verify:
+  - run: repeat
+    with:
+      times: 2
+      do:
+        - { run: assert, with: { of: 1, equals: 2 }, finding: "x" }
+`,
+	})
+	if !hasRepeatError(Validate(set), "finding: is not allowed inside repeat") {
+		t.Error("expected rule-13 error for finding: inside repeat")
+	}
+}
+
+func TestRepeatUnpairedBackgroundIsRejected(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: rt
+method:
+  - phase: p
+    steps:
+      - run: repeat
+        with:
+          times: 2
+          do:
+            - { run: background, with: { name: gen, step: { run: sut.submit, with: x } } }
+`,
+	})
+	if !hasRepeatError(Validate(set), "paired with stop_background") {
+		t.Error("expected rule-13 error for unpaired background inside repeat")
+	}
+}
+
+func TestRepeatPairedBackgroundIsClean(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: rt
+method:
+  - phase: p
+    steps:
+      - run: repeat
+        with:
+          times: 2
+          do:
+            - { run: background, with: { name: gen, step: { run: sut.submit, with: x } } }
+            - { run: stop_background, with: gen }
+`,
+	})
+	for _, f := range Validate(set) {
+		if f.Rule == 13 {
+			t.Errorf("paired background must not trigger a rule-13 finding: %s", f)
+		}
 	}
 }

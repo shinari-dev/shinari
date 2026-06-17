@@ -178,6 +178,10 @@ func (v *scenarioValidator) checkStep(st *model.Step, section string, defined ma
 		v.checkParallel(st, section, defined)
 		return
 	}
+	if st.Run == "repeat" {
+		v.checkRepeat(st, section, defined)
+		return
+	}
 
 	// rule 9 — steadyState idempotency.
 	if section == "steadyState" && kind == sdk.KindAction && res.Spec.SideEffects {
@@ -300,6 +304,77 @@ func (v *scenarioValidator) checkParallel(st *model.Step, section string, define
 			defined[name] = true
 		}
 	}
+}
+
+// checkRepeat validates a repeat step: times >= 1, a non-empty do: body, no
+// finding: inside the body (deferred: repeat findings have no aggregate
+// semantics yet), and that any background started in the body is also stopped
+// in it (else it collides across iterations). The body is then validated in
+// order against a body-local scope seeded from the pre-block captures.
+func (v *scenarioValidator) checkRepeat(st *model.Step, section string, defined map[string]bool) {
+	var w struct {
+		Times int          `yaml:"times"`
+		Do    []model.Step `yaml:"do"`
+	}
+	_ = st.With.Decode(&w)
+	if w.Times < 1 {
+		v.add(Finding{Step: "repeat", Rule: 13, Msg: "repeat: times must be >= 1", Severity: Error})
+	}
+	if len(w.Do) == 0 {
+		v.add(Finding{Step: "repeat", Rule: 13, Msg: "repeat: do must be a non-empty list", Severity: Error})
+		return
+	}
+
+	started, stopped := map[string]bool{}, map[string]bool{}
+	for i := range w.Do {
+		bs := &w.Do[i]
+		if bs.Finding != "" {
+			v.add(Finding{Step: bs.Run, Rule: 13, Severity: Error,
+				Msg: "finding: is not allowed inside repeat (no aggregate semantics across iterations yet)"})
+		}
+		if bs.Run == "background" {
+			if m, ok := rawWith(bs).(map[string]any); ok {
+				if n, _ := m["name"].(string); n != "" {
+					started[n] = true
+				}
+			}
+		}
+		if bs.Run == "stop_background" {
+			if n := stopName(bs); n != "" {
+				stopped[n] = true
+			}
+		}
+	}
+	for n := range started {
+		if !stopped[n] {
+			v.add(Finding{Step: "background", Rule: 13, Severity: Error,
+				Msg: fmt.Sprintf("background %q inside repeat must be paired with stop_background in the same body (else it collides each iteration)", n)})
+		}
+	}
+
+	bodyScope := make(map[string]bool, len(defined))
+	for k := range defined {
+		bodyScope[k] = true
+	}
+	for i := range w.Do {
+		v.checkStep(&w.Do[i], section, bodyScope, nil, i)
+	}
+	for k := range bodyScope {
+		defined[k] = true // body captures become visible after the block
+	}
+}
+
+// stopName extracts the target name of a stop_background step, whether given as
+// a scalar (with: gen) or a map (with: { name: gen }).
+func stopName(st *model.Step) string {
+	switch w := rawWith(st).(type) {
+	case string:
+		return w
+	case map[string]any:
+		n, _ := w["name"].(string)
+		return n
+	}
+	return ""
 }
 
 func boundInSibling(siblings []map[string]bool, selfIdx int, name string) bool {

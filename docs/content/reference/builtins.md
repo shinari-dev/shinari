@@ -156,3 +156,45 @@ Semantics:
 This differs from `background`/`stop_background`: a `parallel` block has a fixed
 branch set and a defined join point, which makes it more deterministic than the
 manual fork/join over named handles.
+
+## repeat
+
+Kind: action. Runs a `do:` sequence a fixed number of `times`. It is count-based
+only; there is no duration form, so it never reintroduces wall-clock timing. Its
+main use is fault cycling: repeating an inject-then-heal sequence to verify that
+recovery survives repeated bounces, not just the first.
+
+| key | meaning |
+|---|---|
+| `times` | required integer `>= 1`: how many iterations to run |
+| `stopOnFail` | optional bool, default `true`: stop at the first failing iteration; set `false` to run all `times` and report the full failure pattern |
+| `do` | required non-empty list of steps, run in order each iteration |
+
+```yaml
+- run: repeat
+  desc: "bounce the cache 5 times"
+  with:
+    times: 5
+    do:
+      - { run: docker.kill, with: { service: cache } }
+      - { run: docker.start, with: { service: cache } }
+      - run: wait_until
+        with:
+          probe: { run: http.get, with: "http://localhost:8080/health" }
+          equals: 200
+          timeout: 10
+```
+
+Semantics:
+
+- **Per-step behavior.** Each inner step runs as a normal step, so actions,
+  probes, and assertions behave exactly as they do at the top level, and an
+  inner fault in `method` is tracked once per iteration.
+- **Captures** carry forward across iterations and hold the last iteration's
+  values after the block.
+- **Dry-run** runs the body once; the per-step action skips still apply.
+- **Nesting** with `parallel` works in both directions.
+
+Two restrictions apply (`validate` rule 13): `finding:` is not allowed on a step
+inside `do:`, and a `background` started in the body must be paired with a
+`stop_background` for the same name in the same body.
