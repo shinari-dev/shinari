@@ -4,6 +4,7 @@ name: worker-killed-mid-task
 description: >
   A worker dies mid-task and a peer recovers the job. Today the recovery
   re-runs the whole job — a known duplicate-work gap, tracked as a finding.
+tags: [recovery, finding]
 
 setup:
   - run: jobstore.reset

@@ -98,6 +98,7 @@ type Phase struct {
 // Scenario is the kind: Scenario resource.
 type Scenario struct {
 	Header      `yaml:",inline"`
+	Tags        []string                  `yaml:"tags"`
 	Providers   map[string]ProviderConfig `yaml:"providers"`
 	Vars        map[string]any            `yaml:"vars"`
 	Timeout     float64                   `yaml:"timeout"` // optional whole-scenario deadline in seconds

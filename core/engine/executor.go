@@ -24,9 +24,11 @@ import (
 // Options are run-level knobs. The CLI maps env (KEEP_UP=1) onto them —
 // core never reads the environment itself.
 type Options struct {
-	KeepUp bool // skip teardown, preserve the stack
-	DryRun bool // skip kind: action steps
-	Clock  func() time.Time
+	KeepUp      bool   // skip teardown, preserve the stack
+	DryRun      bool   // skip kind: action steps
+	IncludeTags string // tag expression; empty matches all
+	ExcludeTags string // tag expression; empty excludes none
+	Clock       func() time.Time
 }
 
 func (o Options) now() time.Time {
