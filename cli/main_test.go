@@ -200,3 +200,76 @@ func TestCoreNeverImportsCLIOrExits(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func taggedProject(t *testing.T) string {
+	t.Helper()
+	cliFail = false
+	dir := t.TempDir()
+	files := map[string]string{
+		"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: demo\nproviders:\n  sut: { source: clifake }\n",
+		"scenarios/core/fast.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: fast-one
+tags: [fast]
+setup:
+  - { run: sut.up, with: [app] }
+verify:
+  - { run: sut.count, with: job, as: total }
+  - { run: assert, with: { of: "${.total.value}", equals: 1 } }
+`,
+		"scenarios/core/slow.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: slow-one
+tags: [slow, flaky]
+setup:
+  - { run: sut.up, with: [app] }
+verify:
+  - { run: sut.count, with: job, as: total }
+  - { run: assert, with: { of: "${.total.value}", equals: 1 } }
+`,
+	}
+	for name, body := range files {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func TestListFiltersByTag(t *testing.T) {
+	dir := taggedProject(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-C", dir, "--include-tags", "fast", "list"}, &stdout, &stderr, os.Getenv)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "fast-one") || strings.Contains(out, "slow-one") {
+		t.Fatalf("list output did not filter by tag:\n%s", out)
+	}
+}
+
+func TestRunZeroMatchExitsZero(t *testing.T) {
+	dir := taggedProject(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-C", dir, "--include-tags", "missing", "run"}, &stdout, &stderr, os.Getenv)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "no scenarios matched") {
+		t.Fatalf("expected 'no scenarios matched', got:\n%s", stdout.String())
+	}
+}
+
+func TestRunBadTagExprIsUsageError(t *testing.T) {
+	dir := taggedProject(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-C", dir, "--include-tags", "slow &", "run"}, &stdout, &stderr, os.Getenv)
+	if code != exitUsage {
+		t.Fatalf("exit = %d, want %d (usage)", code, exitUsage)
+	}
+}

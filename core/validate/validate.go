@@ -7,6 +7,7 @@ package validate
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/shinari-dev/shinari/core/builtins"
@@ -122,6 +123,31 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 			Msg: "degradation fault injected but nothing observes it — assert a latency (${...meta.durationMs}) or use sample"})
 	}
 
+	out = append(out, validateTags(sc)...)
+
+	return out
+}
+
+// tagPattern is the legal tag shape: anything else cannot appear in a tag
+// expression (rule 14).
+var tagPattern = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`)
+
+// validateTags enforces rule 14: every tag must be expression-safe, and a
+// repeated tag is a smell.
+func validateTags(sc *model.Scenario) []Finding {
+	var out []Finding
+	seen := map[string]bool{}
+	for _, tag := range sc.Tags {
+		if !tagPattern.MatchString(tag) {
+			out = append(out, Finding{File: sc.File, Scenario: sc.Name, Rule: 14, Severity: Error,
+				Msg: fmt.Sprintf("tag %q has characters outside [A-Za-z0-9_./-]; it would be unparseable in a tag expression", tag)})
+		}
+		if seen[tag] {
+			out = append(out, Finding{File: sc.File, Scenario: sc.Name, Rule: 14, Severity: Warn,
+				Msg: fmt.Sprintf("duplicate tag %q", tag)})
+		}
+		seen[tag] = true
+	}
 	return out
 }
 

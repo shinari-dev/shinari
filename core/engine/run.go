@@ -12,6 +12,7 @@ import (
 	"github.com/shinari-dev/shinari/core/discover"
 	"github.com/shinari-dev/shinari/core/model"
 	"github.com/shinari-dev/shinari/core/registry"
+	"github.com/shinari-dev/shinari/core/selector"
 )
 
 // Run executes the targeted scenarios of a discovered project. A target is
@@ -19,6 +20,10 @@ import (
 // merged per scenario (project defaults + scenario overrides).
 func Run(ctx context.Context, set *discover.Set, targets []string, em Emitter, opts Options) (RunResult, error) {
 	scenarios, err := selectScenarios(set, targets)
+	if err != nil {
+		return RunResult{}, err
+	}
+	scenarios, err = selector.Filter(scenarios, opts.IncludeTags, opts.ExcludeTags)
 	if err != nil {
 		return RunResult{}, err
 	}

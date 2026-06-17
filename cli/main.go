@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"syscall"
 
 	"gopkg.in/yaml.v3"
@@ -23,6 +24,7 @@ import (
 	"github.com/shinari-dev/shinari/core/engine"
 	"github.com/shinari-dev/shinari/core/model"
 	"github.com/shinari-dev/shinari/core/registry"
+	"github.com/shinari-dev/shinari/core/selector"
 	"github.com/shinari-dev/shinari/core/validate"
 )
 
@@ -41,6 +43,8 @@ func run(args []string, stdout, stderr io.Writer, getenv func(string) string) in
 	dir := fs.String("C", ".", "project directory")
 	out := fs.String("out", "shinari-out", "report output directory (run)")
 	dryRun := fs.Bool("dry-run", false, "skip actions, run probes/assertions only")
+	includeTags := fs.String("include-tags", "", "run/list only scenarios matching this tag expression")
+	excludeTags := fs.String("exclude-tags", "", "exclude scenarios matching this tag expression")
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, `shinari %s — resilience integration testing
 
@@ -72,9 +76,9 @@ Flags:
 	case "validate":
 		return cmdValidate(*dir, stdout, stderr)
 	case "list":
-		return cmdList(*dir, stdout, stderr)
+		return cmdList(*dir, *includeTags, *excludeTags, stdout, stderr)
 	case "run":
-		return cmdRun(*dir, *out, targets, *dryRun, stdout, stderr, getenv)
+		return cmdRun(*dir, *out, targets, *dryRun, *includeTags, *excludeTags, stdout, stderr, getenv)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", cmd)
 		fs.Usage()
@@ -112,13 +116,18 @@ func cmdValidate(dir string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func cmdList(dir string, stdout, stderr io.Writer) int {
+func cmdList(dir, include, exclude string, stdout, stderr io.Writer) int {
 	set, ok := load(dir, stderr)
 	if !ok {
 		return 1
 	}
+	scenarios, err := selector.Filter(set.Scenarios, include, exclude)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return exitUsage
+	}
 	bySuite := map[string][]*model.Scenario{}
-	for _, sc := range set.Scenarios {
+	for _, sc := range scenarios {
 		bySuite[sc.Suite] = append(bySuite[sc.Suite], sc)
 	}
 	suites := make([]string, 0, len(bySuite))
@@ -138,6 +147,9 @@ func cmdList(dir string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stdout, "  %s", sc.Name)
 			if sc.Description != "" {
 				fmt.Fprintf(stdout, " — %s", sc.Description)
+			}
+			if len(sc.Tags) > 0 {
+				fmt.Fprintf(stdout, " [%s]", strings.Join(sc.Tags, ", "))
 			}
 			fmt.Fprintln(stdout)
 		}
@@ -202,7 +214,7 @@ func cmdInit(dir string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func cmdRun(dir, out string, targets []string, dryRun bool, stdout, stderr io.Writer, getenv func(string) string) int {
+func cmdRun(dir, out string, targets []string, dryRun bool, include, exclude string, stdout, stderr io.Writer, getenv func(string) string) int {
 	set, ok := load(dir, stderr)
 	if !ok {
 		return 2 // could not even establish the harness
@@ -218,13 +230,19 @@ func cmdRun(dir, out string, targets []string, dryRun bool, stdout, stderr io.Wr
 	rec := &engine.Recorder{}
 	console := &render.Console{W: stdout}
 	opts := engine.Options{
-		KeepUp: getenv("KEEP_UP") == "1",
-		DryRun: dryRun,
+		KeepUp:      getenv("KEEP_UP") == "1",
+		DryRun:      dryRun,
+		IncludeTags: include,
+		ExcludeTags: exclude,
 	}
 	res, err := engine.Run(context.Background(), set, targets, engine.Multi(rec, console), opts)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitUsage
+	}
+	if len(res.Scenarios) == 0 {
+		fmt.Fprintln(stdout, "no scenarios matched")
+		return 0
 	}
 	render.Summary(stdout, res)
 
