@@ -1,0 +1,74 @@
+apiVersion: shinari/v1
+kind: Scenario
+name: scenario-name
+description: >
+  One or two sentences: the fault injected and the resilience property asserted.
+
+# Optional: defaults for ${.var} interpolation, overridable by the project.
+vars:
+  job: demo-1
+
+# setup: one-shot actions that bring the system up.
+setup:
+  - run: docker.up
+    with: [api, db]
+
+# steadyState: probes/assertions ONLY (it re-runs after method to confirm
+# recovery, so it must be idempotent). This is the baseline gate.
+steadyState:
+  - run: http.get
+    with: { path: / }
+    as: baseline
+  - run: assert
+    with: { of: "${.baseline.meta.status}", equals: 200 }
+    desc: "api healthy before the fault"
+
+# method: phases of fault injection. Each phase is {phase:, steps:}.
+method:
+  - phase: "Inject the fault while work is in flight"
+    steps:
+      # Gate the fault on observed state inside a parallel block; the other
+      # branch drives the workload. Avoid bare sleep as a substitute for a probe.
+      - run: parallel
+        with:
+          branches:
+            - - run: load.run
+                with: { target: /, rate: 20, duration: 6 }
+                as: underFault
+            - - run: wait_until
+                with:
+                  probe: { run: http.get, with: { path: / } }
+                  equals: 200
+                  read: ".meta.status"
+                  timeout: 10
+                  interval: 0.2
+              - run: docker.kill
+                with: db
+  - phase: "Restore and let the system recover"
+    steps:
+      - run: docker.start
+        with: db
+
+# verify: the verdict. Assert the resilience property.
+verify:
+  - run: wait_until
+    with:
+      probe: { run: http.get, with: { path: / } }
+      equals: 200
+      read: ".meta.status"
+      timeout: 30
+      interval: 0.5
+  - run: assert
+    with: { of: "${.underFault.value.errorRate}", lt: 1 }
+    desc: "the api kept serving some requests during the outage"
+  # Recovery-shaped scenarios MUST assert exactly-once OR carry a finding (rule 7).
+  # Use a finding when the property is a known, not-yet-fixed gap; the scenario
+  # stays green and flips to FAILED once it starts passing.
+  - run: assert
+    with: { of: "${.underFault.value.errorRate}", equals: 0 }
+    desc: "no requests dropped during the outage"
+    finding: "the api drops in-flight requests when the db is killed; needs connection retry before this is a hard assertion"
+
+# teardown always runs; if omitted it defaults to [docker.down].
+teardown:
+  - run: docker.down
