@@ -40,7 +40,7 @@ their `apiVersion`/`kind` header, not by name or location.
 ## 3. Validate before running
 
 ```sh
-./shinari -C examples/quickstart validate
+./shinari -p examples/quickstart validate
 ```
 
 ```text
@@ -55,7 +55,7 @@ this project uses no docker stack.
 ## 4. List what was discovered
 
 ```sh
-./shinari -C examples/quickstart list
+./shinari -p examples/quickstart list
 ```
 
 ```text
@@ -70,7 +70,7 @@ Scenarios group into **suites** by directory convention (`scenarios/<suite>/`).
 ## 5. Run the suite
 
 ```sh
-./shinari -C examples/quickstart run
+./shinari -p examples/quickstart run
 ```
 
 Watch the stream. Three glyphs matter:
@@ -91,7 +91,7 @@ ignored red.
 
 ## 6. Read the reports
 
-Every run writes reports under `shinari-out/` (override with `-out`):
+Every run writes reports under `shinari-out/` (override with `--out`):
 
 ```sh
 cat shinari-out/findings.md

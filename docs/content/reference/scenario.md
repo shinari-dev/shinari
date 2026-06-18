@@ -9,6 +9,7 @@ apiVersion: shinari/v1          # required: recognition marker
 kind: Scenario                  # required
 name: data-loss/worker-killed   # required
 description: <text>             # optional
+tags: [slow, network]           # optional: labels for run/list filtering
 
 providers: ...                  # optional: per-scenario overrides, merged over the Project's (later wins)
 vars:                           # optional: merged over Project vars
@@ -44,6 +45,14 @@ method:
 
 There are no do/check/after buckets inside a phase; kind comes from the
 verb, and steps interleave acting and observing freely.
+
+## Tags
+
+`tags:` is a flat list of plain strings. They carry no execution semantics;
+they exist so `run` and `list` can select scenarios with `--include-tags` /
+`--exclude-tags` boolean expressions (see the [CLI reference](/reference/cli/)).
+Each tag must match `[A-Za-z0-9_./-]+` so it stays usable inside an expression;
+`validate` flags anything else (rule 14).
 
 ## Teardown default
 

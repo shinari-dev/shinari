@@ -163,9 +163,9 @@ Build from source (requires Go 1.26+):
 ```sh
 go build -o shinari ./cli
 
-./shinari -C examples/quickstart validate   # static checks, no run
-./shinari -C examples/quickstart list       # scenarios grouped by suite
-./shinari -C examples/quickstart run        # execute; exit code = verdict
+./shinari -p examples/quickstart validate   # static checks, no run
+./shinari -p examples/quickstart list       # scenarios grouped by suite
+./shinari -p examples/quickstart run        # execute; exit code = verdict
 ```
 
 The quickstart drives a toy job store through `exec` alone, with zero
