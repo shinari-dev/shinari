@@ -6,7 +6,7 @@ weight: 80
 
 ## Discovery
 
-Shinari is pointed at a directory (`-C`, default cwd). It finds the
+Shinari is pointed at a directory (`--project`/`-p`, default cwd). It finds the
 `kind: Project` resource to anchor the root, then **walks the whole tree**,
 parsing every `.yml`/`.yaml` and collecting resources by `kind`.
 

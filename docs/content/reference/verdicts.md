@@ -10,7 +10,7 @@ weight: 60
 |---|---|
 | `PASS` | the check held |
 | `FAIL` | the check did not hold (or errored) |
-| `SKIP` | tri-state skip via `onAbsent: skip`, or an action under `-dry-run` |
+| `SKIP` | tri-state skip via `onAbsent: skip`, or an action under `--dry-run` |
 | `FINDING` | a `finding:`-marked check failed **as expected**: counted separately, keeps the run green |
 
 ## Scenario level

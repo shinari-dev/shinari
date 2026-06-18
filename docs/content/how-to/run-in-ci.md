@@ -15,10 +15,10 @@ finding that started passing.
   run: go build -o shinari ./cli
 
 - name: Validate (fail fast, no run)
-  run: ./shinari -C tests/resilience validate
+  run: ./shinari -p tests/resilience validate
 
 - name: Run the suite
-  run: ./shinari -C tests/resilience -out reports run
+  run: ./shinari -p tests/resilience --out reports run
 
 - name: Publish JUnit results
   if: always()

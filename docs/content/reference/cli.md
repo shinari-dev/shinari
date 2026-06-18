@@ -5,11 +5,16 @@ weight: 10
 ---
 
 ```text
-shinari [flags] <command> [target...]
+shinari [--project <dir>] <command> [flags] [target...]
 ```
 
 A **target** is a scenario name or a suite name, resolved by discovery, never
 a file path. No targets means all scenarios.
+
+The CLI is built on Cobra, so flags use GNU style (`--long`, with single-letter
+shorthands like `-p`) and may appear before or after the command. Run
+`shinari --help` or `shinari <command> --help` for generated usage, and
+`shinari --version` for the version.
 
 ## Commands
 
@@ -22,11 +27,47 @@ a file path. No targets means all scenarios.
 
 ## Flags
 
+Global (any command, any position):
+
 | flag | default | meaning |
 |---|---|---|
-| `-C <dir>` | `.` | project directory (the discovery root) |
-| `-out <dir>` | `shinari-out` | report directory for `run` |
-| `-dry-run` | off | skip all *action* steps; probes and assertions still run |
+| `--project`, `-p <dir>` | `.` | project directory (the discovery root) |
+| `--version` | | print the version and exit |
+
+`run`:
+
+| flag | default | meaning |
+|---|---|---|
+| `--out`, `-o <dir>` | `shinari-out` | report directory |
+| `--dry-run` | off | skip all *action* steps; probes and assertions still run |
+| `--include-tags <expr>` | | run only scenarios matching the tag expression |
+| `--exclude-tags <expr>` | | drop scenarios matching the tag expression |
+
+`list`:
+
+| flag | default | meaning |
+|---|---|---|
+| `--include-tags <expr>` | | list only scenarios matching the tag expression |
+| `--exclude-tags <expr>` | | drop scenarios matching the tag expression |
+
+## Filtering by tag
+
+A scenario may declare `tags:` (a flat list of strings). `run` and `list`
+filter on them with JUnit5-style boolean expressions: `&` (and), `|` (or),
+`!` (not), and parentheses. Repeating the include/exclude flags is not needed;
+the strategy lives in the expression.
+
+```sh
+shinari run --include-tags 'slow & redis'        # both tags
+shinari run --include-tags 'net | slow'          # either tag
+shinari list --include-tags '(net | slow) & !flaky'
+shinari run --exclude-tags flaky                 # everything except flaky
+```
+
+The selected set is `(matches --include-tags, or none given) AND NOT (matches
+--exclude-tags)`; exclusion wins. A filter that matches nothing is not an error:
+`run` prints `no scenarios matched` and exits 0. Tag filters compose with
+positional targets by intersection.
 
 ## Environment
 
@@ -55,7 +96,7 @@ project exits 2 immediately.
 
 ## Report files
 
-`run` writes five renderings of the same result into `-out`:
+`run` writes five renderings of the same result into `--out`:
 
 | file | content |
 |---|---|

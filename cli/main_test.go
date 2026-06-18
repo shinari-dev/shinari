@@ -91,7 +91,7 @@ func TestUsageErrorIs64(t *testing.T) {
 func TestListGroupsBySuite(t *testing.T) {
 	dir := project(t, false)
 	var out, errOut bytes.Buffer
-	if code := run([]string{"-C", dir, "list"}, &out, &errOut, noEnv); code != 0 {
+	if code := run([]string{"--project", dir, "list"}, &out, &errOut, noEnv); code != 0 {
 		t.Fatalf("code = %d, err: %s", code, errOut.String())
 	}
 	if !strings.Contains(out.String(), "core") || !strings.Contains(out.String(), "exactly-once") {
@@ -102,7 +102,7 @@ func TestListGroupsBySuite(t *testing.T) {
 func TestValidateCleanProject(t *testing.T) {
 	dir := project(t, false)
 	var out, errOut bytes.Buffer
-	if code := run([]string{"-C", dir, "validate"}, &out, &errOut, noEnv); code != 0 {
+	if code := run([]string{"--project", dir, "validate"}, &out, &errOut, noEnv); code != 0 {
 		t.Fatalf("code = %d: %s%s", code, out.String(), errOut.String())
 	}
 }
@@ -112,7 +112,7 @@ func TestValidateBrokenProjectExits1(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(dir, "bad.yml"),
 		[]byte("apiVersion: shinari/v1\nkind: Scenario\nname: bad\nverify:\n  - { run: ghost.poke }\n"), 0o644)
 	var out, errOut bytes.Buffer
-	if code := run([]string{"-C", dir, "validate"}, &out, &errOut, noEnv); code != 1 {
+	if code := run([]string{"--project", dir, "validate"}, &out, &errOut, noEnv); code != 1 {
 		t.Fatalf("code = %d: %s", code, out.String())
 	}
 	if !strings.Contains(out.String(), "rule 3") {
@@ -124,7 +124,7 @@ func TestRunPassedWritesReportsAndExits0(t *testing.T) {
 	dir := project(t, false)
 	outDir := filepath.Join(t.TempDir(), "reports")
 	var out, errOut bytes.Buffer
-	code := run([]string{"-C", dir, "-out", outDir, "run"}, &out, &errOut, noEnv)
+	code := run([]string{"--project", dir, "--out", outDir, "run"}, &out, &errOut, noEnv)
 	if code != 0 {
 		t.Fatalf("code = %d: %s%s", code, out.String(), errOut.String())
 	}
@@ -143,7 +143,7 @@ func TestRunFailedExits1(t *testing.T) {
 	dir := project(t, true) // count returns 2 → regression
 	outDir := filepath.Join(t.TempDir(), "reports")
 	var out, errOut bytes.Buffer
-	code := run([]string{"-C", dir, "-out", outDir, "run"}, &out, &errOut, noEnv)
+	code := run([]string{"--project", dir, "--out", outDir, "run"}, &out, &errOut, noEnv)
 	if code != 1 {
 		t.Fatalf("code = %d: %s%s", code, out.String(), errOut.String())
 	}
@@ -152,7 +152,7 @@ func TestRunFailedExits1(t *testing.T) {
 func TestRunUnknownTargetIsUsageError(t *testing.T) {
 	dir := project(t, false)
 	var out, errOut bytes.Buffer
-	code := run([]string{"-C", dir, "-out", t.TempDir(), "run", "zzz"}, &out, &errOut, noEnv)
+	code := run([]string{"--project", dir, "--out", t.TempDir(), "run", "zzz"}, &out, &errOut, noEnv)
 	if code != 64 {
 		t.Fatalf("code = %d", code)
 	}
@@ -161,7 +161,7 @@ func TestRunUnknownTargetIsUsageError(t *testing.T) {
 func TestInitWritesLockFile(t *testing.T) {
 	dir := project(t, false)
 	var out, errOut bytes.Buffer
-	if code := run([]string{"-C", dir, "init"}, &out, &errOut, noEnv); code != 0 {
+	if code := run([]string{"--project", dir, "init"}, &out, &errOut, noEnv); code != 0 {
 		t.Fatalf("code = %d: %s", code, errOut.String())
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "shinari.lock.yml"))
@@ -243,7 +243,7 @@ verify:
 func TestListFiltersByTag(t *testing.T) {
 	dir := taggedProject(t)
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"-C", dir, "--include-tags", "fast", "list"}, &stdout, &stderr, os.Getenv)
+	code := run([]string{"--project", dir, "--include-tags", "fast", "list"}, &stdout, &stderr, os.Getenv)
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
 	}
@@ -256,7 +256,7 @@ func TestListFiltersByTag(t *testing.T) {
 func TestRunZeroMatchExitsZero(t *testing.T) {
 	dir := taggedProject(t)
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"-C", dir, "--include-tags", "missing", "run"}, &stdout, &stderr, os.Getenv)
+	code := run([]string{"--project", dir, "--include-tags", "missing", "run"}, &stdout, &stderr, os.Getenv)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0; stderr=%s", code, stderr.String())
 	}
@@ -268,8 +268,53 @@ func TestRunZeroMatchExitsZero(t *testing.T) {
 func TestRunBadTagExprIsUsageError(t *testing.T) {
 	dir := taggedProject(t)
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"-C", dir, "--include-tags", "slow &", "run"}, &stdout, &stderr, os.Getenv)
+	code := run([]string{"--project", dir, "--include-tags", "slow &", "run"}, &stdout, &stderr, os.Getenv)
 	if code != exitUsage {
 		t.Fatalf("exit = %d, want %d (usage)", code, exitUsage)
+	}
+}
+
+func TestListFilterFlagAfterSubcommand(t *testing.T) {
+	dir := taggedProject(t)
+	var stdout, stderr bytes.Buffer
+	// Flag AFTER the subcommand must work now (the whole point of pflag).
+	code := run([]string{"--project", dir, "list", "--include-tags", "fast"}, &stdout, &stderr, noEnv)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "fast-one") || strings.Contains(out, "slow-one") {
+		t.Fatalf("filter (flag after subcommand) did not apply:\n%s", out)
+	}
+}
+
+func TestProjectFlagAfterSubcommand(t *testing.T) {
+	dir := project(t, false)
+	var stdout, stderr bytes.Buffer
+	// Persistent --project is valid in any position.
+	code := run([]string{"list", "--project", dir}, &stdout, &stderr, noEnv)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "exactly-once") {
+		t.Fatalf("list did not run with --project after subcommand:\n%s", stdout.String())
+	}
+}
+
+func TestProjectShorthand(t *testing.T) {
+	dir := project(t, false)
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-p", dir, "list"}, &stdout, &stderr, noEnv); code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+}
+
+func TestVersionFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--version"}, &stdout, &stderr, noEnv); code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), version) {
+		t.Fatalf("--version output %q does not contain %q", stdout.String(), version)
 	}
 }

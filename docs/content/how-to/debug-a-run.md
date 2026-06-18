@@ -21,10 +21,10 @@ clean up manually (`docker compose down -v`).
 ## Dry-run the timeline
 
 ```sh
-./shinari run -dry-run worker-killed-mid-task
+./shinari run --dry-run worker-killed-mid-task
 ```
 
-`-dry-run` skips every **action** (anything that mutates: `docker.kill`,
+`--dry-run` skips every **action** (anything that mutates: `docker.kill`,
 `http.post`, `exec.run` unless overridden) and still executes probes and
 assertions. Use it to check wiring (do the probes resolve, do the captures
 flow) without touching the system.
