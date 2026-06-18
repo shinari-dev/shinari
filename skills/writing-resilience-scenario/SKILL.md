@@ -13,13 +13,13 @@ how the system survives, then tears down. A scenario is data, not narrative:
 every step names a verb and the engine runs them in a fixed lifecycle.
 
 **Core loop: write a little, then run `validate`.** The validator is a static
-judge with eleven rules that catch the mistakes that are easy to make and hard
+judge whose rules catch the mistakes that are easy to make and hard
 to spot (recovery contract, idempotency, reference order, fault observed).
 Treat a clean `validate` as the definition of "well-formed", not your reading.
 
 ```sh
-./shinari -C <project-dir> validate    # static checks, no infra
-./shinari -C <project-dir> list        # scenarios grouped by suite
+./shinari -p <project-dir> validate    # static checks, no infra
+./shinari -p <project-dir> list        # scenarios grouped by suite
 ```
 
 ## Workflow

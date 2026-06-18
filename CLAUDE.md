@@ -17,10 +17,16 @@ go test ./core/engine/             # one package
 go test ./core/engine/ -run TestRunScenario   # one test
 go vet ./...
 
-./shinari -C examples/quickstart validate   # static checks, no run
-./shinari -C examples/quickstart list       # scenarios grouped by suite
-./shinari -C examples/quickstart run        # execute; exit code = verdict
+./shinari -p examples/quickstart validate   # static checks, no run
+./shinari -p examples/quickstart list       # scenarios grouped by suite
+./shinari -p examples/quickstart run        # execute; exit code = verdict
+./shinari -p examples/quickstart run --include-tags 'slow & !flaky'  # filter by tag expression
 ```
+
+The CLI is built on Cobra (`-p`/`--project` is the persistent project dir; flags
+work before or after the command). `run`/`list` take `--include-tags` /
+`--exclude-tags` boolean tag expressions (`&` `|` `!`, parens); `run` also takes
+`--out`/`-o` and `--dry-run`.
 
 Tests are hermetic — there are no `//go:build integration` tags or skipped infra tests; the whole
 suite runs offline. Reports from `run` land in `shinari-out/` (gitignored).
