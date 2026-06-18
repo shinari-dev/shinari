@@ -142,7 +142,7 @@ one level only (rule 4).
 
 ## Validation rules
 
-`./shinari -C <dir> validate` runs these (Error blocks, Warn informs):
+`./shinari -p <dir> validate` runs these (Error blocks, Warn informs):
 
 | Rule | Checks |
 |---|---|
@@ -157,3 +157,5 @@ one level only (rule 4).
 | 10 | every `${ref}` resolves to a var or an earlier capture, in order |
 | 11 | a `degradation` fault is observed (latency assert or `sample`) |
 | 12 | no reference to a capture bound only in a sibling `parallel` branch |
+| 13 | `repeat`: `times >= 1`, non-empty `do:`, no `finding:` in the body, background started in the body is also stopped there |
+| 14 | every `tags:` entry matches `[A-Za-z0-9_./-]+` (error); no duplicate tag (warn) |
