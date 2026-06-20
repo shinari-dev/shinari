@@ -125,7 +125,9 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
 
 A YAML macro over other verbs, zero Go. `params:` are bound as `${.params.name}`
 (trailing `?` = optional). A verb is either a `do:` sequence or a single
-`probe:`.
+`probe:`. A composed body may also read the project's `${.env.NAME}` allowlist
+directly (ambient config like tenant or credentials) and its own earlier
+`.outputs` captures; it cannot reach caller `.vars`.
 
 ```yaml
 apiVersion: shinari/v1
