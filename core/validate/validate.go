@@ -52,8 +52,12 @@ func (f Finding) String() string {
 // before this runs.
 func Validate(set *discover.Set) []Finding {
 	var out []Finding
+	envSet := map[string]bool{}
+	for k := range set.Project.Env {
+		envSet[k] = true
+	}
 	for _, def := range set.Providers {
-		out = append(out, validateComposedDef(def)...)
+		out = append(out, validateComposedDef(def, envSet)...)
 	}
 	for _, sc := range set.Scenarios {
 		out = append(out, validateScenario(set, sc)...)
@@ -437,9 +441,12 @@ func boundInSibling(siblings []map[string]bool, selfIdx int, name string) bool {
 }
 
 // validateComposedDef checks a kind: Provider body: every ${ref} in a verb
-// body must reference a param or an earlier body capture. Composed verbs
-// declare their inputs as params rather than reaching into caller vars.
-func validateComposedDef(def *model.ProviderDef) []Finding {
+// body must reference a param, an earlier body capture, or a declared .env
+// value. Composed verbs declare their per-call inputs as params rather than
+// reaching into caller vars, but .env is ambient project config (tenant,
+// credentials) the engine already passes into the macro scope, so a composed
+// REST verb can read it directly instead of threading creds through params.
+func validateComposedDef(def *model.ProviderDef, envSet map[string]bool) []Finding {
 	var out []Finding
 	for verb, cv := range def.Verbs {
 		names, _ := cv.ParamNames()
@@ -467,9 +474,14 @@ func validateComposedDef(def *model.ProviderDef) []Finding {
 							out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
 								Msg: fmt.Sprintf("provider %s verb %s: ${.outputs.%s} is not an earlier capture", def.Name, verb, r.Name)})
 						}
+					case "env":
+						if !envSet[r.Name] {
+							out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
+								Msg: fmt.Sprintf("provider %s verb %s: ${.env.%s} is not declared in the project env: block", def.Name, verb, r.Name)})
+						}
 					default:
 						out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
-							Msg: fmt.Sprintf("provider %s verb %s: ${.%s...} — composed verbs reference .params or an earlier .outputs capture", def.Name, verb, r.Namespace)})
+							Msg: fmt.Sprintf("provider %s verb %s: ${.%s...} — composed verbs reference .params, .env, or an earlier .outputs capture", def.Name, verb, r.Namespace)})
 					}
 				}
 			}

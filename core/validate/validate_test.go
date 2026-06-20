@@ -724,3 +724,59 @@ method:
 		}
 	}
 }
+
+func TestComposedBodyCanReadDeclaredEnv(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": `apiVersion: shinari/v1
+kind: Project
+name: p
+env:
+  API_TOKEN:
+providers:
+  http: { config: { baseUrl: http://x } }
+  app: { use: ./providers/app }
+`,
+		"providers/app.yml": `apiVersion: shinari/v1
+kind: Provider
+name: app
+verbs:
+  deploy:
+    params: [flow]
+    do:
+      - run: http.post
+        with:
+          path: "/flows/${.params.flow}"
+          headers: { Authorization: "Bearer ${.env.API_TOKEN}" }
+`,
+		"s.yml": "apiVersion: shinari/v1\nkind: Scenario\nname: s\nverify:\n  - { run: assert, with: { of: 1, equals: 1 } }\n",
+	})
+	if f := findRule(Validate(set), 10); f != nil {
+		t.Fatalf("declared .env in a composed body must validate, got: %s", f)
+	}
+}
+
+func TestComposedBodyUndeclaredEnvIsRule10(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": `apiVersion: shinari/v1
+kind: Project
+name: p
+providers:
+  http: { config: { baseUrl: http://x } }
+  app: { use: ./providers/app }
+`,
+		"providers/app.yml": `apiVersion: shinari/v1
+kind: Provider
+name: app
+verbs:
+  deploy:
+    params: [flow]
+    do:
+      - run: http.post
+        with: { path: "/x", headers: { Authorization: "${.env.NOPE}" } }
+`,
+		"s.yml": "apiVersion: shinari/v1\nkind: Scenario\nname: s\nverify:\n  - { run: assert, with: { of: 1, equals: 1 } }\n",
+	})
+	if f := findRule(Validate(set), 10); f == nil {
+		t.Fatal("want rule 10 error for undeclared .env in composed body")
+	}
+}
