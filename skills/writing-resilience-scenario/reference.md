@@ -81,6 +81,17 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
     interval: 0.1
 ```
 
+### Step guards and result side-channels
+
+- **`when: "${.outputs.n > 1}"`** — a jq predicate over the scope, evaluated
+  before the verb runs. Falsey ⇒ the step is `SKIP`. A guard, not a branch (no
+  `then`/`else`). jq truthiness: only `false`/`null` are falsey. A `when:`-guarded
+  exactly-once assertion does not satisfy rule 7.
+- In `read:`/`capture:`/`wait_until read:`, the value is `.`, and the result's
+  other channels are jq variables: **`$meta`** (`$meta.status`, `bytes`,
+  `durationMs`) and **`$output`** (raw text). Lets a probe gate on a status code
+  without binding the whole envelope: `read: "$meta.status"`, `in: [200, 401, 403]`.
+
 ## Native providers
 
 ### exec — shell escape hatch

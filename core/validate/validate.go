@@ -311,7 +311,9 @@ func (v *scenarioValidator) checkStep(st *model.Step, section string, defined ma
 		if st.Finding != "" {
 			v.verifyHasFinding = true
 		}
-		if st.Run == "assert" {
+		if st.Run == "assert" && st.When == "" {
+			// A when:-guarded exactly-once assertion can dissolve at runtime, so
+			// it does not satisfy the recovery invariant (rule 7 still fires).
 			if m, ok := raw.(map[string]any); ok {
 				if eq, has := m["equals"]; has && fmt.Sprintf("%v", eq) == "1" {
 					v.verifyHasExactlyOnce = true
@@ -588,5 +590,6 @@ func refsOf(st *model.Step) []string {
 		}
 	}
 	walk(rawWith(st))
+	refs = append(refs, interp.Refs(st.When)...) // the when: guard is a reference too
 	return refs
 }
