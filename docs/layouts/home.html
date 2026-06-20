@@ -2,6 +2,8 @@
 <main class="home">
 
   <section class="hero">
+    {{ $sprites := resources.Get "img/kaiju-sprites.png" | fingerprint }}
+    <canvas id="hero-grid" aria-hidden="true" data-sprites="{{ $sprites.RelPermalink }}"></canvas>
     <div class="wrap">
       <p class="hero-kicker">// RESILIENCE TESTING FRAMEWORK</p>
       <h1 class="hero-title">RESILIENCE TESTING<br>FOR EVERY ENGINEER<span class="vermilion">.</span></h1>
@@ -126,4 +128,7 @@
   </section>
 
 </main>
+{{ with resources.Get "js/hero-grid.js" | minify | fingerprint }}
+<script src="{{ .RelPermalink }}" defer></script>
+{{ end }}
 {{ end }}

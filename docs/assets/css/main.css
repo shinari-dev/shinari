@@ -180,15 +180,16 @@ pre {
   background-position: center top;
 }
 
-/* cinematic glow — drifts slowly, ambient not decorative */
+/* cinematic glow — drifts slowly, ambient not decorative.
+   dimmed so it sits under the fault-field canvas without fighting it */
 .hero::before {
   content: "";
   position: absolute;
   inset: -20%;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 720px 420px at 22% 8%, rgba(255, 79, 43, 0.14), transparent 64%),
-    radial-gradient(ellipse 900px 520px at 88% 94%, rgba(120, 40, 90, 0.18), transparent 60%);
+    radial-gradient(ellipse 720px 420px at 22% 8%, rgba(255, 79, 43, 0.10), transparent 64%),
+    radial-gradient(ellipse 900px 520px at 88% 94%, rgba(120, 40, 90, 0.13), transparent 60%);
   animation: hero-glow 16s ease-in-out infinite alternate;
 }
 
@@ -197,7 +198,22 @@ pre {
   to   { transform: translate3d(1.5%, 1%, 0) scale(1.05); opacity: 1; }
 }
 
-.hero .wrap { position: relative; }
+/* fault-and-recovery field — a live system breathing under test.
+   sits on the blueprint grid, below the hero copy */
+#hero-grid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+  /* fade out the left so the city/kaiju sit on the right, clear of the
+     left-aligned headline copy */
+  -webkit-mask-image: linear-gradient(90deg, transparent 6%, rgba(0,0,0,0.5) 32%, #000 60%);
+  mask-image: linear-gradient(90deg, transparent 6%, rgba(0,0,0,0.5) 32%, #000 60%);
+}
+
+.hero .wrap { position: relative; z-index: 1; }
 
 .hero-kicker {
   display: inline-block;
@@ -648,6 +664,11 @@ h2:hover .hanchor, h3:hover .hanchor { opacity: 1; }
   .nav-links { flex-wrap: wrap; }
   .nav-links a { white-space: nowrap; }
   .nav-links a:not(.gh) { padding: 6px 7px; }
+}
+
+/* no hero kaiju animation on mobile */
+@media (max-width: 768px) {
+  #hero-grid { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
