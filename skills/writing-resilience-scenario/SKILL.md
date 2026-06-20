@@ -59,6 +59,7 @@ top-level key is a parse error.
   read: <jq>                    # transform the result value before as:/capture:
   capture: { id: <jq> }         # bind extracted fields
   desc: <string>                # human label
+  when: <jq predicate>          # value-gated SKIP: run only if the predicate is truthy
   kind: <action|probe|assertion>  # override the verb's kind (the exec.run escape)
   effect: <outage|degradation>     # declare a fault a polymorphic verb injects
   finding: <string>             # mark this assertion a known, expected gap
@@ -67,8 +68,14 @@ top-level key is a parse error.
 ```
 
 Reserved envelope keys (the only ones allowed): `run, with, as, read, capture,
-desc, onAbsent, skipReason, finding, kind, effect, timeout`. Note `finding:` is
-a **step key**, not a `with:` key.
+desc, when, onAbsent, skipReason, finding, kind, effect, timeout`. Note `finding:`
+is a **step key**, not a `with:` key.
+
+**`when:`** is a jq predicate over the scope (`when: "${.outputs.n > 1}"`),
+evaluated before the verb runs; falsey ⇒ the step is `SKIP`. It is a *guard, not
+a branch* — there is no `then`/`else` and no nested body. jq truthiness applies
+(only `false`/`null` are falsey). A `when:`-guarded exactly-once assertion does
+**not** satisfy the recovery contract (rule 7 still fires).
 
 ### Interpolation, namespaces, and the result envelope
 
@@ -98,6 +105,12 @@ fields (under `.outputs.<name>`):
 There is **no top-level `.status`, and no `.error` field.** A failed call fails
 the step; you do not test for an error field. After `as: r`, use
 `${.outputs.r.value...}` or `${.outputs.r.meta...}`.
+
+In `read:`/`capture:` (and `wait_until`'s `read:`) the jq input `.` is the
+**value**, and the envelope's other channels are bound as jq variables: `$meta`
+(`$meta.status`, `$meta.bytes`, `$meta.durationMs`) and `$output` (raw text).
+This lets a probe gate directly on a status code without binding the whole
+envelope, e.g. `read: "$meta.status"` with `in: [200, 401, 403]`.
 
 ### Environment injection (`env:`)
 
@@ -152,7 +165,7 @@ duplicate-work gap as a finding. See the `worker-killed` example.
 - **[reference.md](reference.md)** — the full catalog: every native provider
   (exec, http, docker, toxiproxy, net, sql, prom, load) with config and verbs,
   every builtin (assert, sleep, wait_until, background, stop_background, sample,
-  parallel, repeat), the assert operators, composed providers, and all eleven
+  parallel, repeat), the assert operators, composed providers, and all fourteen
   validation rules. Read it instead of reverse-engineering verb signatures from
   Go source.
 - **[template.yml](template.yml)** — an annotated, validate-clean scaffold to
