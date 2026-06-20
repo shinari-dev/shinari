@@ -8,6 +8,29 @@ import (
 	"testing"
 )
 
+func TestEvalWithMetaVariable(t *testing.T) {
+	// The value stays the `.` input; metadata arrives as $meta.
+	v, err := EvalWith("$meta.status", map[string]any{"id": "j-1"},
+		map[string]any{"$meta": map[string]any{"status": 401}})
+	if err != nil || v != float64(401) {
+		t.Fatalf("got %v (%T), %v", v, v, err)
+	}
+	// `.` is still the value, untouched by the bound variable.
+	v, err = EvalWith(".id", map[string]any{"id": "j-1"},
+		map[string]any{"$meta": map[string]any{"status": 200}})
+	if err != nil || v != "j-1" {
+		t.Fatalf("got %v, %v", v, err)
+	}
+}
+
+func TestEvalWithUndefinedVariableErrors(t *testing.T) {
+	// A read: referencing a variable the engine did not bind must surface as a
+	// jq error, not silently yield null.
+	if _, err := EvalWith("$nope", nil, nil); err == nil {
+		t.Fatal("want error for undefined variable, got nil")
+	}
+}
+
 func TestDotPath(t *testing.T) {
 	v, err := Eval(".id", map[string]any{"id": "j-42"})
 	if err != nil || v != "j-42" {
