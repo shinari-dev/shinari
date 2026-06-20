@@ -53,10 +53,10 @@ func (p *Provider) Configure(cfg map[string]any) error {
 }
 
 func (p *Provider) Verbs() []sdk.VerbSpec {
-	services := []sdk.ArgSpec{{Name: "services", Type: "list"}}
+	upArgs := []sdk.ArgSpec{{Name: "services", Type: "list"}, {Name: "wait", Type: "bool"}}
 	service := []sdk.ArgSpec{{Name: "service", Type: "string", Required: true}}
 	return []sdk.VerbSpec{
-		{Name: "up", Kind: sdk.KindAction, SideEffects: true, Primary: "services", Args: services},
+		{Name: "up", Kind: sdk.KindAction, SideEffects: true, Primary: "services", Args: upArgs},
 		{Name: "down", Kind: sdk.KindAction, SideEffects: true},
 		{Name: "kill", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
 		{Name: "stop", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
@@ -95,7 +95,13 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	var err error
 	switch verb {
 	case "up":
-		cmdArgs := []string{"up", "-d", "--wait"}
+		cmdArgs := []string{"up", "-d"}
+		// --wait blocks until services are healthy; opt out with wait: false to
+		// start a service that is meant to crash or hang (--wait would abort the
+		// step before any assertion could observe it).
+		if w, ok := args["wait"].(bool); !ok || w {
+			cmdArgs = append(cmdArgs, "--wait")
+		}
 		if list, ok := args["services"].([]any); ok {
 			for _, s := range list {
 				cmdArgs = append(cmdArgs, fmt.Sprintf("%v", s))
