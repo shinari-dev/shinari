@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -173,5 +174,75 @@ func TestNoDeadlineFallsBackToDefault(t *testing.T) {
 	}
 	if elapsed > time.Second {
 		t.Fatalf("default deadline (~50ms) did not apply, took %s", elapsed)
+	}
+}
+
+func TestRawBodyWithContentType(t *testing.T) {
+	var gotCT, gotBody string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCT = r.Header.Get("Content-Type")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(s.Close)
+	p := provider(t, s.URL)
+	if _, err := p.Run(context.Background(), "post", map[string]any{
+		"path": "/flows", "raw": "id: hello\nnamespace: demo\n", "contentType": "application/x-yaml",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if gotCT != "application/x-yaml" {
+		t.Errorf("content-type = %q, want application/x-yaml", gotCT)
+	}
+	if gotBody != "id: hello\nnamespace: demo\n" {
+		t.Errorf("body = %q (raw must not be JSON-marshalled)", gotBody)
+	}
+}
+
+func TestBasicAuthFromConfig(t *testing.T) {
+	var user, pass string
+	var ok bool
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok = r.BasicAuth()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(s.Close)
+	p := New().(*Provider)
+	if err := p.Configure(map[string]any{
+		"baseUrl":   s.URL,
+		"basicAuth": map[string]any{"username": "admin", "password": "s3cret"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Run(context.Background(), "get", map[string]any{"path": "/"}); err != nil {
+		t.Fatal(err)
+	}
+	if !ok || user != "admin" || pass != "s3cret" {
+		t.Errorf("basic auth = %q/%q (ok=%v), want admin/s3cret", user, pass, ok)
+	}
+}
+
+func TestPerStepBasicAuthOverridesConfig(t *testing.T) {
+	var user string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, _, _ = r.BasicAuth()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(s.Close)
+	p := New().(*Provider)
+	if err := p.Configure(map[string]any{
+		"baseUrl":   s.URL,
+		"basicAuth": map[string]any{"username": "admin", "password": "x"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Run(context.Background(), "get", map[string]any{
+		"path": "/", "basicAuth": map[string]any{"username": "tenant", "password": "y"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if user != "tenant" {
+		t.Errorf("basic auth user = %q, want per-step override 'tenant'", user)
 	}
 }
