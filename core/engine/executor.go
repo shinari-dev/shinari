@@ -229,6 +229,24 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		return r.judge(st, finish, err)
 	}
 
+	// when: is a value-gated guard — a jq predicate over the scope. Falsey skips
+	// the whole step (resolution included), the same SKIP verdict onAbsent uses,
+	// but keyed on an observed value rather than an unconfigured verb. It is a
+	// guard, not a branch: no then/else, no nested body.
+	if st.When != "" {
+		v, werr := r.scope().Value(st.When)
+		if werr != nil {
+			return skipOrFail(fmt.Errorf("evaluating when: %w", werr))
+		}
+		if !truthy(v) {
+			sr.SkipReason = st.SkipReason
+			if sr.SkipReason == "" {
+				sr.SkipReason = fmt.Sprintf("when: %s is false", st.When)
+			}
+			return finish(CheckSkip, "")
+		}
+	}
+
 	res, err := r.reg.Resolve(st.Run)
 	if err != nil {
 		return skipOrFail(err)
@@ -326,6 +344,19 @@ func (r *runner) judge(st *model.Step, finish func(CheckVerdict, string) StepRes
 
 func (r *runner) scope() interp.Scope {
 	return interp.Scope{Vars: r.vars, Outputs: r.outputs, Env: r.env}
+}
+
+// truthy applies jq truthiness to a when: result: only false and null are
+// falsey; every other value (including 0 and "") is true, as in jq.
+func truthy(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return t
+	default:
+		return true
+	}
 }
 
 func (r *runner) decodeWith(st *model.Step, scope interp.Scope) (any, error) {
@@ -431,6 +462,15 @@ func (r *runner) execComposed(ctx context.Context, run string, res registry.Reso
 	var last sdk.VerbResult
 	for i := range steps {
 		st := &steps[i]
+		if st.When != "" {
+			v, werr := scope.Value(st.When)
+			if werr != nil {
+				return sdk.VerbResult{}, fmt.Errorf("%s → %s: evaluating when: %w", run, st.Run, werr)
+			}
+			if !truthy(v) {
+				continue
+			}
+		}
 		leafRes, err := r.reg.Resolve(st.Run)
 		if err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("%s: %w", run, err)

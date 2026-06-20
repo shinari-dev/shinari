@@ -14,6 +14,7 @@ same shape. The verb is a **value**, never a key:
   read: <jq expr>               # transform the result value first
   capture: { <name>: <jq expr>, ... }   # named captures from the result
   desc: <text>                  # narrative; used in reports and failure messages
+  when: <jq predicate>          # value-gated SKIP: falsey skips the step
   onAbsent: skip                # tri-state SKIP instead of failure
   skipReason: <text>            # rendered when skipped
   finding: <text>               # mark an expected failure (assertion-kind checks only)
@@ -32,6 +33,7 @@ Unknown keys are a **parse error**, not ignored.
 | `read` | jq over the result value, applied **before** `as:`/`capture:`. The result's other side-channels are bound as jq variables `$meta` and `$output`, so a transform can reach a status code that is not in the value: `$meta.status`. Real jq: `.state`, `.items \| length` |
 | `as` | binds the result as an Observation envelope `{value, output, meta}` (the post-`read` payload under `.value`, plus `meta.durationMs` and provider facts) into the scenario-global capture scope. Read it with jq: `${.outputs.name.value}`, `${.outputs.name.meta.durationMs}` |
 | `capture` | each entry binds `name := jq(expr, value)` over the payload, with `$meta`/`$output` also in scope (`code: "$meta.status"`), for plucking several fields at once |
+| `when` | a jq predicate over the scope (`when: "${.outputs.n > 1}"`); evaluated **first**, before resolution. Falsey ⇒ the step is `SKIP` (with `skipReason`). jq truthiness applies: only `false` and `null` are falsey. This is a *guard*, not a branch — there is no `then`/`else` and no nested body. A `when:`-guarded exactly-once assertion does not satisfy the recovery invariant (validate rule 7 still fires) |
 | `onAbsent: skip` | when resolution or interpolation fails, the check becomes `SKIP` with `skipReason` instead of `FAIL` |
 | `finding` | inverts the contract: failure ⇒ `FINDING` (green), success ⇒ `FAILED` with "promote this". Allowed only on assertion-kind checks (validate rule 5) |
 | `kind` | overrides the verb's declared kind for this step. In practice: `exec.run` defaults to `action`; mark a read-only script `kind: probe` so dry-run and steadyState treat it correctly |
@@ -41,8 +43,8 @@ Unknown keys are a **parse error**, not ignored.
 ## Evaluation order
 
 ```text
-resolve run → interpolate with → bind args → execute verb
-            → read → as / capture → verdict (finding logic last)
+when (skip if falsey) → resolve run → interpolate with → bind args → execute verb
+                      → read → as / capture → verdict (finding logic last)
 ```
 
 ## Flow style

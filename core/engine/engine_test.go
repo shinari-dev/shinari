@@ -708,3 +708,38 @@ func TestBindingsExposeMeta(t *testing.T) {
 		t.Errorf("captured raw = %v, want raw-body", captured["raw"])
 	}
 }
+
+// TestWhenGuardSkipsAndRuns covers the value-gated guard: a falsey when: skips
+// the step (SKIP, scenario unaffected), a truthy one runs it. The predicate is
+// a jq expression over the scope, including a runtime-captured output.
+func TestWhenGuardSkipsAndRuns(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: guarded
+vars: { n: 1 }
+setup:
+  - { run: sut.up, with: [app] }
+verify:
+  - { run: sut.count, with: sleep, as: total }
+  - { run: assert, when: "${.outputs.total.value > 1}", with: { of: 1, equals: 2 }, desc: "guarded-off" }
+  - { run: assert, when: "${.vars.n > 0}", with: { of: 1, equals: 1 }, desc: "guarded-on" }
+`)
+	sut.script["count"] = []any{1}
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+	byDesc := map[string]StepResult{}
+	for _, s := range res.Steps {
+		if s.Desc != "" {
+			byDesc[s.Desc] = s
+		}
+	}
+	if got := byDesc["guarded-off"]; got.Verdict != CheckSkip {
+		t.Errorf("guarded-off verdict = %s, want SKIP (the failing assert must not run)", got.Verdict)
+	}
+	if got := byDesc["guarded-on"]; got.Verdict != CheckPass {
+		t.Errorf("guarded-on verdict = %s, want PASS", got.Verdict)
+	}
+}

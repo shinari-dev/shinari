@@ -780,3 +780,46 @@ verbs:
 		t.Fatal("want rule 10 error for undeclared .env in composed body")
 	}
 }
+
+func TestWhenReferenceCheckedAsRule10(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: badwhen
+verify:
+  - { run: assert, when: "${.vars.ghost > 1}", with: { of: 1, equals: 1 } }
+`,
+	})
+	f := findRule(Validate(set), 10)
+	if f == nil || !strings.Contains(f.Msg, "ghost") {
+		t.Fatalf("want rule 10 for unresolved when: reference, got %v", f)
+	}
+}
+
+func TestWhenGuardedExactlyOnceDoesNotSatisfyRule7(t *testing.T) {
+	// A guarded exactly-once assertion can dissolve at runtime, so the recovery
+	// invariant (rule 7) must still fire.
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: rec
+vars: { n: 1 }
+setup:
+  - { run: sut.up, with: [app] }
+method:
+  - phase: f
+    steps:
+      - { run: sut.submit, with: job, as: id }
+      - { run: sut.kill, with: app }
+verify:
+  - { run: sut.await, with: "${.outputs.id}" }
+  - { run: sut.count, with: job, as: total }
+  - { run: assert, when: "${.vars.n > 0}", with: { of: "${.outputs.total}", equals: 1 } }
+`,
+	})
+	if findRule(Validate(set), 7) == nil {
+		t.Fatal("want rule 7 to still fire when the exactly-once assertion is when:-guarded")
+	}
+}
