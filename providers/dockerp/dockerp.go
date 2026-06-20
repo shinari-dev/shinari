@@ -8,6 +8,7 @@ package dockerp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -68,7 +69,39 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 			{Name: "tail", Type: "string"},
 			{Name: "since", Type: "string"},
 		}},
+		{Name: "ps", Kind: sdk.KindProbe, Primary: "service", Args: []sdk.ArgSpec{
+			{Name: "service", Type: "string"},
+		}},
 	}
+}
+
+// parsePS decodes `compose ps --format json`, which emits either a JSON array
+// or one JSON object per line depending on the compose version.
+func parsePS(out string) ([]any, error) {
+	s := strings.TrimSpace(out)
+	if s == "" {
+		return []any{}, nil
+	}
+	if strings.HasPrefix(s, "[") {
+		var arr []any
+		if err := json.Unmarshal([]byte(s), &arr); err != nil {
+			return nil, err
+		}
+		return arr, nil
+	}
+	var arr []any
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var obj any
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			return nil, err
+		}
+		arr = append(arr, obj)
+	}
+	return arr, nil
 }
 
 func (p *Provider) compose(ctx context.Context, args ...string) (string, error) {
@@ -130,6 +163,29 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		}
 		cmdArgs = append(cmdArgs, service)
 		out, err = p.compose(ctx, cmdArgs...)
+	case "ps":
+		// --all so exited/dead containers still report (a crashed worker is
+		// exactly what a fail-fast check wants to inspect).
+		cmdArgs := []string{"ps", "--all", "--format", "json"}
+		if service != "" {
+			cmdArgs = append(cmdArgs, service)
+		}
+		out, err = p.compose(ctx, cmdArgs...)
+		if err != nil {
+			return sdk.VerbResult{Output: out}, err
+		}
+		list, perr := parsePS(out)
+		if perr != nil {
+			return sdk.VerbResult{Output: out}, fmt.Errorf("docker ps: parsing --format json: %w — %s", perr, conv.Truncate(strings.TrimSpace(out), 200))
+		}
+		meta := map[string]any{"count": len(list)}
+		// A single named service binds its object directly, so read:/capture:
+		// reach .State / .ExitCode / .Health without indexing a one-element list.
+		var value any = list
+		if service != "" && len(list) == 1 {
+			value = list[0]
+		}
+		return sdk.VerbResult{Value: value, Output: out, Meta: meta}, nil
 	default:
 		return sdk.VerbResult{}, fmt.Errorf("docker has no verb %q", verb)
 	}

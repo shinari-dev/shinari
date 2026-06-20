@@ -24,6 +24,7 @@ providers:
 | `start` | action | `service` | restart a stopped service |
 | `pause` / `unpause` | action | `service` | freeze / thaw the process |
 | `logs` | probe | `service` (primary), `tail?`, `since?` | container log text; `tail`/`since` fetch an incremental slice (gate on it with `wait_until`) |
+| `ps` | probe | `service?` (primary) | container state from `compose ps --all --format json` |
 
 Relative `composeFiles` paths resolve against the project root.
 
@@ -37,4 +38,21 @@ dropped and the step returns once the container is created:
 ```yaml
 - run: docker.up
   with: { services: [worker], wait: false }
+```
+
+## Inspecting exit state
+
+`ps` returns the parsed `compose ps --all --format json` output (`--all` so
+exited and dead containers still report). With a `service` named it binds that
+container's object directly, so `read:`/`capture:` reach `.State`, `.ExitCode`,
+and `.Health` without indexing a list; with no service it returns the full list.
+
+```yaml
+- run: docker.ps
+  with: worker
+  capture: { state: ".State", code: ".ExitCode" }
+- run: assert                              # crashed clean, did not hang
+  with: { of: "${.outputs.state}", equals: "exited" }
+- run: assert
+  with: { of: "${.outputs.code}", equals: 0 }
 ```

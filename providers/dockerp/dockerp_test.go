@@ -126,3 +126,47 @@ func TestUpWaitFalseOmitsWait(t *testing.T) {
 		t.Errorf("argv = %q, want 'up -d worker'", got)
 	}
 }
+
+// jsonStubProvider returns a docker provider whose stub emits canned NDJSON,
+// the shape `compose ps --format json` produces.
+func jsonStubProvider(t *testing.T, line string) *Provider {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "fake-docker")
+	script := "#!/bin/sh\nprintf '%s\\n' '" + line + "'\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := New().(*Provider)
+	if err := p.Configure(map[string]any{"bin": bin}); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestPsNamedServiceBindsExitState(t *testing.T) {
+	p := jsonStubProvider(t, `{"Service":"worker","State":"exited","ExitCode":0}`)
+	res, err := p.Run(context.Background(), "ps", map[string]any{"service": "worker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := res.Value.(map[string]any)
+	if !ok {
+		t.Fatalf("value = %#v, want a single object for a named service", res.Value)
+	}
+	if m["State"] != "exited" || m["ExitCode"] != float64(0) {
+		t.Errorf("ps state = %v / exit = %v (%T)", m["State"], m["ExitCode"], m["ExitCode"])
+	}
+}
+
+func TestPsNoServiceReturnsList(t *testing.T) {
+	p := jsonStubProvider(t, `{"Service":"a","State":"running"}`)
+	res, err := p.Run(context.Background(), "ps", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	arr, ok := res.Value.([]any)
+	if !ok || len(arr) != 1 {
+		t.Fatalf("value = %#v, want a one-element list", res.Value)
+	}
+}
