@@ -647,6 +647,7 @@ h2:hover .hanchor, h3:hover .hanchor { opacity: 1; }
   background: var(--bg-raise);
 }
 .footer-meta { font-size: 13px; color: var(--text-dim); margin: 0; }
+.footer-meta a { text-decoration: underline; text-underline-offset: 3px; }
 
 /* ---------- responsive ---------- */
 
