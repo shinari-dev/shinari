@@ -24,6 +24,8 @@ type Provider struct {
 	baseURL        string
 	client         *http.Client
 	defaultTimeout time.Duration // applied only when the caller passed no deadline
+	basicUser      string        // project-level basic auth, applied to every request
+	basicPass      string
 }
 
 func init() { sdk.Register("http", New) }
@@ -39,15 +41,31 @@ func (p *Provider) Type() string { return "http" }
 
 func (p *Provider) Configure(cfg map[string]any) error {
 	p.baseURL = conv.BaseURL(cfg)
+	p.basicUser, p.basicPass = basicAuthOf(cfg["basicAuth"])
 	return nil
+}
+
+// basicAuthOf extracts { username, password } from a basicAuth map (config
+// default or per-step override). A missing/non-map value yields empty strings.
+func basicAuthOf(v any) (user, pass string) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return "", ""
+	}
+	user, _ = m["username"].(string)
+	pass, _ = m["password"].(string)
+	return user, pass
 }
 
 func argSpecs() []sdk.ArgSpec {
 	return []sdk.ArgSpec{
 		{Name: "path", Type: "string", Required: true},
 		{Name: "body", Type: "map"},
+		{Name: "raw", Type: "string"},
+		{Name: "contentType", Type: "string"},
 		{Name: "form", Type: "map"},
 		{Name: "headers", Type: "map"},
+		{Name: "basicAuth", Type: "map"},
 		{Name: "expectStatus", Type: "list"},
 	}
 }
@@ -91,7 +109,12 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 
 	var reqBody io.Reader
 	contentType := ""
-	if body, ok := args["body"]; ok && body != nil {
+	if raw, ok := args["raw"].(string); ok && raw != "" {
+		// A verbatim string body (raw YAML, NDJSON, plain text) — no JSON
+		// marshalling. Pair with contentType: to label it.
+		reqBody = strings.NewReader(raw)
+		contentType = "text/plain; charset=utf-8"
+	} else if body, ok := args["body"]; ok && body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("http.%s %s: encoding body: %w", verb, path, err)
@@ -106,6 +129,9 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		reqBody = strings.NewReader(vals.Encode())
 		contentType = "application/x-www-form-urlencoded"
 	}
+	if ct, ok := args["contentType"].(string); ok && ct != "" {
+		contentType = ct
+	}
 
 	req, err := http.NewRequestWithContext(ctx, strings.ToUpper(verb), full, reqBody)
 	if err != nil {
@@ -113,6 +139,14 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	// Basic auth: the project-level default, overridden per step by basicAuth:.
+	// Set before headers: so an explicit Authorization: header still wins.
+	if user, pass := p.basicUser, p.basicPass; user != "" || pass != "" {
+		req.SetBasicAuth(user, pass)
+	}
+	if user, pass := basicAuthOf(args["basicAuth"]); user != "" || pass != "" {
+		req.SetBasicAuth(user, pass)
 	}
 	if headers, ok := args["headers"].(map[string]any); ok {
 		for k, v := range headers {
