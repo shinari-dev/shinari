@@ -17,7 +17,7 @@ providers:
 
 | verb | kind | args | effect |
 |---|---|---|---|
-| `up` | action | `services` (list, primary), `wait?` | `compose up -d --wait` |
+| `up` | action | `services` (list, primary), `wait?`, `profiles?` | `compose up -d --wait` |
 | `down` | action | — | `compose down -v --remove-orphans` |
 | `kill` | action | `service` (primary) | SIGKILL |
 | `stop` | action | `service` | SIGTERM (graceful path) |
@@ -39,6 +39,23 @@ dropped and the step returns once the container is created:
 - run: docker.up
   with: { services: [worker], wait: false }
 ```
+
+## Service variants (compose profiles)
+
+To run the same role in different shapes (a baseline worker, a round-robin
+worker, a partition-failover worker) keep one compose file and tag each variant
+service with a [compose profile](https://docs.docker.com/compose/profiles/), then
+select one per scenario with `profiles:`. This stays hermetic and keeps a single
+lifecycle owner — there is no per-scenario compose-file swapping or second docker
+provider (a scenario can still override `composeFiles` in its own `providers:`
+block if it genuinely needs a different stack).
+
+```yaml
+- run: docker.up
+  with: { profiles: [rr], wait: true }   # → compose --profile rr up -d --wait
+```
+
+`down` tears the whole project down regardless of profile.
 
 ## Inspecting exit state
 
