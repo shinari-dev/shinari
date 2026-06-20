@@ -24,11 +24,11 @@ type exitError struct{ code int }
 func (e *exitError) Error() string { return fmt.Sprintf("exit %d", e.code) }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, os.Getenv))
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr, os.Getenv, os.LookupEnv))
 }
 
-func run(args []string, stdout, stderr io.Writer, getenv func(string) string) int {
-	root := newRootCmd(stdout, stderr, getenv)
+func run(args []string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
+	root := newRootCmd(stdout, stderr, getenv, lookupEnv)
 	root.SetArgs(args)
 	root.SetOut(stdout)
 	root.SetErr(stderr)

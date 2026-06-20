@@ -25,6 +25,7 @@ type Project struct {
 	Header    `yaml:",inline"`
 	Providers map[string]ProviderConfig `yaml:"providers"`
 	Vars      map[string]any            `yaml:"vars"`
+	Env       map[string]any            `yaml:"env"`
 
 	File string `yaml:"-"`
 	Dir  string `yaml:"-"`

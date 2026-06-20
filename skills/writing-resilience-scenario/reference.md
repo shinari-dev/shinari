@@ -27,7 +27,10 @@ apiVersion: shinari/v1
 kind: Project
 name: myapp
 vars:
-  job: sleep-1
+  job: sleep-1            # referenced as ${.vars.job}
+env:                      # injected environment, allowlist for ${.env.NAME}
+  DATABASE_URL:           # required (null default); run errors (exit 2) if unset
+  PORT: 8080              # default 8080, overridden by $PORT when set
 providers:
   exec: {}
   http:
@@ -42,6 +45,11 @@ providers:
 ```
 
 `sql` drivers: `postgres`, `sqlite`. (Note: `sqlite`, not `sqlite3`.)
+
+`env:` is project-level only and shaped like `vars:`: each value is a default,
+the matching process variable overrides it, and a null value (no default) makes
+the key required (run errors with exit code 2 if it is unset). It is an
+allowlist: only declared names may be referenced as `${.env.NAME}`.
 
 ## Builtins (unprefixed)
 
@@ -63,11 +71,11 @@ providers:
 
 ```yaml
 - run: assert
-  with: { of: "${.r.meta.status}", equals: 200 }
+  with: { of: "${.outputs.r.meta.status}", equals: 200 }
   desc: "status is 200"
 - run: wait_until
   with:
-    probe: { run: jobstore.status, with: "${.job}" }
+    probe: { run: jobstore.status, with: "${.vars.job}" }
     equals: RUNNING
     timeout: 5
     interval: 0.1
@@ -115,7 +123,7 @@ providers:
 
 ## Composed providers (kind: Provider)
 
-A YAML macro over other verbs, zero Go. `params:` are bound as `${.name}`
+A YAML macro over other verbs, zero Go. `params:` are bound as `${.params.name}`
 (trailing `?` = optional). A verb is either a `do:` sequence or a single
 `probe:`.
 
@@ -128,12 +136,12 @@ verbs:
     params: [job]
     do:
       - run: exec.run
-        with: "sh scripts/jobstore.sh submit ${.job}"
+        with: "sh scripts/jobstore.sh submit ${.params.job}"
   status:
     params: [job]
     probe:
       run: exec.run
-      with: "sh scripts/jobstore.sh status ${.job}"
+      with: "sh scripts/jobstore.sh status ${.params.job}"
       kind: probe
 ```
 
@@ -154,8 +162,8 @@ one level only (rule 4).
 | 7 | recovery-shaped scenario (outage + captured work + verify awaits it) asserts exactly-once or carries a `finding:` |
 | 8 | exactly one lifecycle provider (0 = warn, >1 = error) |
 | 9 | `steadyState` has no one-shot mutating action (it re-runs) |
-| 10 | every `${ref}` resolves to a var or an earlier capture, in order |
+| 10 | every `${ref}` is namespaced and resolves: `.vars.X` to a declared var, `.outputs.X` to an earlier capture in execution order, `.env.X` to a name declared in the project `env:` block |
 | 11 | a `degradation` fault is observed (latency assert or `sample`) |
-| 12 | no reference to a capture bound only in a sibling `parallel` branch |
+| 12 | no `.outputs.` reference to a capture bound only in a sibling `parallel` branch |
 | 13 | `repeat`: `times >= 1`, non-empty `do:`, no `finding:` in the body, background started in the body is also stopped there |
 | 14 | every `tags:` entry matches `[A-Za-z0-9_./-]+` (error); no duplicate tag (warn) |

@@ -55,7 +55,7 @@ top-level key is a parse error.
 ```yaml
 - run: <instance>.<verb>   # or an unprefixed builtin (assert, sleep, ...)
   with: <scalar | list | map>   # verb args; scalar/list bind the verb's primary arg
-  as: <name>                    # capture the whole result under ${.<name>}
+  as: <name>                    # capture the whole result under ${.outputs.<name>}
   read: <jq>                    # transform the result value before as:/capture:
   capture: { id: <jq> }         # bind extracted fields
   desc: <string>                # human label
@@ -70,22 +70,52 @@ Reserved envelope keys (the only ones allowed): `run, with, as, read, capture,
 desc, onAbsent, skipReason, finding, kind, effect, timeout`. Note `finding:` is
 a **step key**, not a `with:` key.
 
-### Interpolation and the result envelope
+### Interpolation, namespaces, and the result envelope
 
-Every string is interpolated with `${...}` jq expressions against vars and
-captures. A captured result is an **envelope**, not a bare value. Address it
-through its fields:
+Every string is interpolated with `${...}` jq expressions, and **every reference
+is namespaced** into one of four engine-owned scopes:
+
+| Namespace | Holds | Bound by |
+|---|---|---|
+| `.vars.NAME` | a declared variable | a `vars:` block (scenario or project) |
+| `.outputs.NAME` | a step result or capture | `as: NAME` or `capture: { NAME: ... }` |
+| `.env.NAME` | an injected environment value | the project's `env:` block (see below) |
+| `.params.NAME` | a composed-provider parameter | a `params:` list, only inside `kind: Provider` bodies |
+
+There are no bare references: a var declared as `job` is `${.vars.job}`, a capture
+bound by `as: r` is `${.outputs.r...}`.
+
+A captured result is an **envelope**, not a bare value. Address it through its
+fields (under `.outputs.<name>`):
 
 | Path | Is | Example |
 |---|---|---|
-| `${.r.value}` | structured result (decoded JSON, rows, stats) | `${.state.value}`, `${.load.value.p99}` |
-| `${.r.output}` | raw text output | logs/diagnostics |
-| `${.r.meta.status}` | HTTP status code | `${.r.meta.status}` |
-| `${.r.meta.durationMs}` | call latency, on every result | latency asserts |
+| `${.outputs.r.value}` | structured result (decoded JSON, rows, stats) | `${.outputs.state.value}`, `${.outputs.load.value.p99}` |
+| `${.outputs.r.output}` | raw text output | logs/diagnostics |
+| `${.outputs.r.meta.status}` | HTTP status code | `${.outputs.r.meta.status}` |
+| `${.outputs.r.meta.durationMs}` | call latency, on every result | latency asserts |
 
 There is **no top-level `.status`, and no `.error` field.** A failed call fails
-the step; you do not test for an error field. After `as: r`, use `${.r.value...}`
-or `${.r.meta...}`.
+the step; you do not test for an error field. After `as: r`, use
+`${.outputs.r.value...}` or `${.outputs.r.meta...}`.
+
+### Environment injection (`env:`)
+
+A **project** (`kind: Project`) may declare an `env:` block, shaped like `vars:`.
+Each key's value is a **default**; the matching process environment variable
+overrides it. A key with a **null** value (no default) is **required**: the run
+fails with exit code 2 if it is unset.
+
+```yaml
+env:
+  DATABASE_URL:        # required (null default); run errors (exit 2) if unset
+  PORT: 8080           # default 8080, overridden by $PORT when set
+```
+
+Reference declared env values as `${.env.DATABASE_URL}`. The `env:` block is an
+**allowlist**: referencing an env name not declared there is a validate error.
+Env is project-level only; there is no scenario-level `env:` block. The CLI
+resolves the block (core never reads the process environment).
 
 ## Two semantics that drive the design
 
@@ -110,7 +140,7 @@ duplicate-work gap as a finding. See the `worker-killed` example.
   branch while another branch drives `load.run`. Use `sleep` only for a real
   physical settle (e.g. waiting for a sidecar to attach).
 - **Observe degradation.** A `degradation` fault that nothing measures is a
-  warning (rule 11). Assert on `${...meta.durationMs}` or use `sample`/`load`
+  warning (rule 11). Assert on `${.outputs....meta.durationMs}` or use `sample`/`load`
   percentiles.
 - **References resolve in execution order** (rules 6, 10, 12). A capture is
   visible only to later steps; a capture bound only in a sibling `parallel`
@@ -132,8 +162,8 @@ duplicate-work gap as a finding. See the `worker-killed` example.
 
 | Mistake | Fix |
 |---|---|
-| `${.r.status}` / `${.r.error}` | use `${.r.meta.status}`; there is no error field |
-| Bare value where envelope expected | `${.r.value}`, not `${.r}` |
+| `${.outputs.r.status}` / `${.outputs.r.error}` | use `${.outputs.r.meta.status}`; there is no error field |
+| Bare/un-namespaced ref (`${.r}`, `${.job}`) | namespace it: `${.outputs.r.value}`, `${.vars.job}` |
 | Recovery test fails rule 7 | assert exactly-once or add a `finding:` |
 | One-shot mutating verb in `steadyState` | move it to `setup`; steadyState re-runs |
 | `finding:` under `with:` | `finding:` is a step-level key |

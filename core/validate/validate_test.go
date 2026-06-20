@@ -88,9 +88,9 @@ method:
       - { run: sut.submit, with: job, as: id }
       - { run: sut.kill, with: app }
 verify:
-  - { run: sut.await, with: "${.id}" }
+  - { run: sut.await, with: "${.outputs.id}" }
   - { run: sut.count, with: job, as: total }
-  - { run: assert, with: { of: "${.total}", equals: 1 } }
+  - { run: assert, with: { of: "${.outputs.total}", equals: 1 } }
 `,
 	})
 	for _, f := range Validate(set) {
@@ -121,7 +121,7 @@ method:
 	}
 	observed := `verify:
   - { run: sut.count, with: job, as: rsp }
-  - { run: assert, with: { of: "${.rsp.meta.durationMs}", lt: 200 } }
+  - { run: assert, with: { of: "${.outputs.rsp.meta.durationMs}", lt: 200 } }
 `
 	if f := findRule(withFault(observed), 11); f != nil {
 		t.Fatalf("rule 11 should not fire when latency is observed: %v", f)
@@ -235,7 +235,7 @@ method:
   - phase: p
     steps:
       - { run: background, with: { name: load, step: { run: sut.count, with: x } } }
-      - { run: assert, with: { of: "${.load}", equals: 1 } }
+      - { run: assert, with: { of: "${.outputs.load}", equals: 1 } }
       - { run: stop_background, with: load, as: load }
 `,
 	})
@@ -254,7 +254,7 @@ method:
       - { run: sut.submit, with: job, as: id }
       - { run: sut.kill, with: app }
 verify:
-  - { run: sut.await, with: "${.id}" }
+  - { run: sut.await, with: "${.outputs.id}" }
 `
 	set := load(t, map[string]string{"project.yml": projectWithSut, "s.yml": scenario})
 	f := findRule(Validate(set), 7)
@@ -264,7 +264,7 @@ verify:
 
 	// satisfied by a finding:
 	withFinding := scenario + `  - { run: sut.count, with: job, as: n }
-  - { run: assert, with: { of: "${.n}", equals: 1 }, finding: "dupes happen" }
+  - { run: assert, with: { of: "${.outputs.n}", equals: 1 }, finding: "dupes happen" }
 `
 	set2 := load(t, map[string]string{"project.yml": projectWithSut, "s2.yml": withFinding})
 	if f := findRule(Validate(set2), 7); f != nil {
@@ -297,7 +297,7 @@ method:
       - { run: sut.submit, with: job, as: id }
       - { run: chaos.cripple }
 verify:
-  - { run: sut.await, with: "${.id}" }
+  - { run: sut.await, with: "${.outputs.id}" }
 `
 	set := load(t, map[string]string{
 		"project.yml":         project,
@@ -321,7 +321,7 @@ method:
       - { run: sut.submit, with: job, as: id }
       - { run: sut.submit, with: boom, effect: outage }
 verify:
-  - { run: sut.await, with: "${.id}" }
+  - { run: sut.await, with: "${.outputs.id}" }
 `
 	set := load(t, map[string]string{"project.yml": projectWithSut, "s.yml": scenario})
 	if findRule(Validate(set), 7) == nil {
@@ -337,7 +337,7 @@ method:
     steps:
       - { run: sut.submit, with: job, as: id }
 verify:
-  - { run: sut.await, with: "${.id}" }
+  - { run: sut.await, with: "${.outputs.id}" }
 `
 	set2 := load(t, map[string]string{"project.yml": projectWithSut, "s2.yml": noFault})
 	if f := findRule(Validate(set2), 7); f != nil {
@@ -370,7 +370,7 @@ method:
       - { run: sut.submit, with: job, as: id }
       - { run: chaos.script_kill }
 verify:
-  - { run: sut.await, with: "${.id}" }
+  - { run: sut.await, with: "${.outputs.id}" }
 `
 	set := load(t, map[string]string{
 		"project.yml":         project,
@@ -433,7 +433,7 @@ func TestRule10UnresolvedRef(t *testing.T) {
 kind: Scenario
 name: s
 verify:
-  - { run: sut.await, with: "${.ghost}" }
+  - { run: sut.await, with: "${.outputs.ghost}" }
 `,
 	})
 	if f := findRule(Validate(set), 10); f == nil {
@@ -456,7 +456,7 @@ name: app
 verbs:
   bad:
     params: [job]
-    do: [ { run: http.get, with: { path: "/x/${.nope}" } } ]
+    do: [ { run: http.get, with: { path: "/x/${.params.nope}" } } ]
 `,
 		"s.yml": "apiVersion: shinari/v1\nkind: Scenario\nname: s\nverify:\n  - { run: assert, with: { of: 1, equals: 1 } }\n",
 	})
@@ -491,7 +491,7 @@ verify:
     with:
       branches:
         - - { run: sut.count, as: fromA }
-        - - { run: assert, with: { of: "${.fromA.value}", equals: 1 } }
+        - - { run: assert, with: { of: "${.outputs.fromA.value}", equals: 1 } }
 `,
 	})
 	if findRule(Validate(set), 12) == nil {
@@ -510,7 +510,7 @@ verify:
     with:
       branches:
         - - { run: sut.count, as: shared }
-  - { run: assert, with: { of: "${.shared.value}", equals: 1 } }
+  - { run: assert, with: { of: "${.outputs.shared.value}", equals: 1 } }
 `,
 	})
 	if findRule(Validate(set), 10) != nil {
@@ -547,7 +547,7 @@ verify:
     with:
       branches:
         - - { run: sut.count, as: c }
-          - { run: assert, with: { of: "${.nope}", equals: 1 } }
+          - { run: assert, with: { of: "${.outputs.nope}", equals: 1 } }
 `,
 	})
 	if findRule(Validate(set), 10) == nil {
@@ -566,7 +566,7 @@ verify:
     with:
       branches:
         - - { run: sut.count, as: c }
-          - { run: assert, with: { of: "${.c.value}", equals: 1 } }
+          - { run: assert, with: { of: "${.outputs.c.value}", equals: 1 } }
 `,
 	})
 	for _, f := range Validate(set) {
@@ -590,7 +590,7 @@ verify:
             with:
               branches:
                 - - { run: sut.count, as: deep }
-                - - { run: assert, with: { of: "${.deep.value}", equals: 1 } }
+                - - { run: assert, with: { of: "${.outputs.deep.value}", equals: 1 } }
 `,
 	})
 	if findRule(Validate(set), 12) == nil {
@@ -612,7 +612,7 @@ method:
           branches:
             - - { run: sut.submit, with: j, effect: degradation }
             - - { run: sut.count, as: c }
-              - { run: assert, with: { of: "${.c.meta.durationMs}", lt: 100 } }
+              - { run: assert, with: { of: "${.outputs.c.meta.durationMs}", lt: 100 } }
 `,
 	})
 	if f := findRule(Validate(set), 11); f != nil {

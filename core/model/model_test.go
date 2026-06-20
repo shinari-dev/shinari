@@ -27,8 +27,8 @@ steadyState:
 method:
   - phase: "Submit a long job and confirm it is RUNNING on worker-a"
     steps:
-      - { run: app.submit, with: { job: sleep, inputs: { seconds: "${.sleepSecs}" } }, as: job }
-      - { run: app.await_state, with: { of: "${.job}", state: RUNNING, timeout: 30 }, desc: "job RUNNING before crash" }
+      - { run: app.submit, with: { job: sleep, inputs: { seconds: "${.vars.sleepSecs}" } }, as: job }
+      - { run: app.await_state, with: { of: "${.outputs.job}", state: RUNNING, timeout: 30 }, desc: "job RUNNING before crash" }
   - phase: "SIGKILL worker-a; a peer recovers the job"
     steps:
       - { run: docker.up, with: [worker-b] }
@@ -36,10 +36,10 @@ method:
       - { run: sleep, with: 50 }
 
 verify:
-  - { run: app.await, with: { of: "${.job}", timeout: 420 } }
-  - { run: app.succeeded, with: { of: "${.job}" }, desc: "job completed after the crash" }
+  - { run: app.await, with: { of: "${.outputs.job}", timeout: 420 } }
+  - { run: app.succeeded, with: { of: "${.outputs.job}" }, desc: "job completed after the crash" }
   - { run: app.count, with: { job: sleep }, as: total }
-  - { run: assert, with: { of: "${.total}", equals: 1 }, desc: "no duplicate job (exactly once)" }
+  - { run: assert, with: { of: "${.outputs.total}", equals: 1 }, desc: "no duplicate job (exactly once)" }
 
 teardown:
   - { run: toxiproxy.reset }
@@ -116,14 +116,14 @@ verbs:
     # NOTE: writing [job, inputs?] unquoted is invalid YAML: a flow
     # scalar cannot end with '?]'. The optional marker must be quoted.
     params: [job, "inputs?"]
-    do: [ { run: http.post, with: { path: "/jobs/${.job}", form: "${.inputs}" }, capture: { id: ".id" } } ]
+    do: [ { run: http.post, with: { path: "/jobs/${.params.job}", form: "${.params.inputs}" }, capture: { id: ".id" } } ]
   await:
     params: [of, timeout]
-    do: [ { run: wait_until, with: { probe: { run: http.get, with: { path: "/jobs/${.of}" } },
-            read: ".state", in: [SUCCESS,FAILED], timeout: "${.timeout}" } } ]
+    do: [ { run: wait_until, with: { probe: { run: http.get, with: { path: "/jobs/${.params.of}" } },
+            read: ".state", in: [SUCCESS,FAILED], timeout: "${.params.timeout}" } } ]
   count:
     params: [job]
-    probe: { run: http.get, with: { path: "/jobs?type=${.job}" }, read: ".items | length" }
+    probe: { run: http.get, with: { path: "/jobs?type=${.params.job}" }, read: ".items | length" }
 `
 
 func TestParseSpecProvider(t *testing.T) {
@@ -180,6 +180,23 @@ func TestRecognizedButNamelessIsError(t *testing.T) {
 	_, ok, err := ParseHeader([]byte("apiVersion: shinari/v1\nkind: Scenario\n"))
 	if !ok || err == nil {
 		t.Fatalf("recognized header without name must be an error, got ok=%v err=%v", ok, err)
+	}
+}
+
+func TestParseProjectEnv(t *testing.T) {
+	data := []byte("apiVersion: shinari/v1\nkind: Project\nname: x\nenv:\n  DATABASE_URL:\n  PORT: 8080\n")
+	p, err := ParseProject(data, "project.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p.Env["DATABASE_URL"]; !ok {
+		t.Fatal("DATABASE_URL should be a declared key")
+	}
+	if v := p.Env["DATABASE_URL"]; v != nil {
+		t.Fatalf("DATABASE_URL default = %#v, want nil (required)", v)
+	}
+	if v := p.Env["PORT"]; v != 8080 {
+		t.Fatalf("PORT default = %#v, want 8080", v)
 	}
 }
 

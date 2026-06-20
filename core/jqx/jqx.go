@@ -34,6 +34,34 @@ func RootRefs(expr string) []string {
 	return out
 }
 
+// nsRefRe matches a namespaced reference `.<ns>.<name>` (name optional): the
+// same leading-boundary rule as rootRefRe, then a first path segment and an
+// optional second. Best-effort, for static validation only.
+var nsRefRe = regexp.MustCompile(`(^|[^.\w\])])\.([A-Za-z_]\w*)(?:\.([A-Za-z_]\w*))?`)
+
+// Ref is a namespaced reference: `.vars.region` -> {Namespace:"vars", Name:"region"}.
+type Ref struct {
+	Namespace string
+	Name      string
+}
+
+// NSRefs returns the distinct namespaced references a jq expression reads. A
+// single-segment reference like `.foo` yields {Namespace:"foo", Name:""} so a
+// caller can flag a reference that is not namespaced.
+func NSRefs(expr string) []Ref {
+	seen := map[string]bool{}
+	var out []Ref
+	for _, m := range nsRefRe.FindAllStringSubmatch(expr, -1) {
+		r := Ref{Namespace: m[2], Name: m[3]}
+		key := r.Namespace + "." + r.Name
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // Eval runs a jq expression against a value and returns the first result.
 // The value must be JSON-shaped (maps, slices, scalars).
 func Eval(expr string, value any) (any, error) {

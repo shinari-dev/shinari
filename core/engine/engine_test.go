@@ -129,7 +129,7 @@ method:
       - { run: sut.kill, with: app }
 verify:
   - { run: sut.count, with: sleep, as: total }
-  - { run: assert, with: { of: "${.total.value}", equals: "${.n}" }, desc: "exactly once" }
+  - { run: assert, with: { of: "${.outputs.total.value}", equals: "${.vars.n}" }, desc: "exactly once" }
 `
 
 func TestPassedScenario(t *testing.T) {
@@ -162,6 +162,22 @@ func TestPassedScenario(t *testing.T) {
 	}
 }
 
+func TestRunScenarioInjectsEnv(t *testing.T) {
+	const src = `
+apiVersion: shinari/v1
+kind: Scenario
+name: env-read
+verify:
+  - { run: assert, with: { of: "${.env.REGION}", equals: "us-east-1" } }
+`
+	_, sc, reg := newWorld(t, src)
+	res := RunScenario(context.Background(), sc, nil, reg, &Recorder{},
+		Options{Env: map[string]any{"REGION": "us-east-1"}})
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s, reason = %s", res.Verdict, res.Reason)
+	}
+}
+
 func TestAsBindsEnvelopeWithDuration(t *testing.T) {
 	const src = `
 apiVersion: shinari/v1
@@ -169,8 +185,8 @@ kind: Scenario
 name: envelope
 verify:
   - { run: sut.count, as: rsp }
-  - { run: assert, with: { of: "${.rsp.value}", equals: "ok" } }
-  - { run: assert, with: { of: "${.rsp.meta.durationMs}", gte: 0 } }
+  - { run: assert, with: { of: "${.outputs.rsp.value}", equals: "ok" } }
+  - { run: assert, with: { of: "${.outputs.rsp.meta.durationMs}", gte: 0 } }
 `
 	sut, sc, reg := newWorld(t, src)
 	res, _ := run(t, sut, sc, reg)
@@ -262,9 +278,9 @@ kind: Scenario
 name: sample
 verify:
   - { run: sample, with: { probe: { run: sut.count }, count: 5 }, as: load }
-  - { run: assert, with: { of: "${.load.value.n}", equals: 5 } }
-  - { run: assert, with: { of: "${.load.value.errorRate}", equals: 0 } }
-  - { run: assert, with: { of: "${.load.value.p99}", gte: 0 } }
+  - { run: assert, with: { of: "${.outputs.load.value.n}", equals: 5 } }
+  - { run: assert, with: { of: "${.outputs.load.value.errorRate}", equals: 0 } }
+  - { run: assert, with: { of: "${.outputs.load.value.p99}", gte: 0 } }
 `
 	sut, sc, reg := newWorld(t, src)
 	res, _ := run(t, sut, sc, reg)
@@ -280,8 +296,8 @@ kind: Scenario
 name: sample-errors
 verify:
   - { run: sample, with: { probe: { run: sut.count }, count: 4 }, as: load }
-  - { run: assert, with: { of: "${.load.value.errors}", equals: 4 } }
-  - { run: assert, with: { of: "${.load.value.errorRate}", equals: 1 } }
+  - { run: assert, with: { of: "${.outputs.load.value.errors}", equals: 4 } }
+  - { run: assert, with: { of: "${.outputs.load.value.errorRate}", equals: 1 } }
 `
 	sut, sc, reg := newWorld(t, src)
 	sut.fails["count"] = fmt.Errorf("boom") // every probe call errors
@@ -298,7 +314,7 @@ kind: Scenario
 name: sample-duration
 verify:
   - { run: sample, with: { probe: { run: sut.count }, duration: 0.2, interval: 0.05 }, as: load }
-  - { run: assert, with: { of: "${.load.value.n}", gte: 1 } }
+  - { run: assert, with: { of: "${.outputs.load.value.n}", gte: 1 } }
 `
 	sut, sc, reg := newWorld(t, src)
 	res, _ := run(t, sut, sc, reg)
@@ -397,7 +413,7 @@ setup:
   - { run: sut.up, with: [app] }
 verify:
   - { run: sut.count, with: sleep, as: total }
-  - { run: assert, with: { of: "${.total.value}", equals: 1 }, desc: "exactly once",
+  - { run: assert, with: { of: "${.outputs.total.value}", equals: 1 }, desc: "exactly once",
       finding: "duplicates occur after a crash; operator dedupes manually" }
 `
 
@@ -510,7 +526,7 @@ method:
     steps:
       - { run: sut.submit, with: b, as: x }
 verify:
-  - { run: assert, with: { of: "${.x.value}", equals: second }, desc: "last write wins" }
+  - { run: assert, with: { of: "${.outputs.x.value}", equals: second }, desc: "last write wins" }
 `)
 	sut.script["submit"] = []any{"first", "second"}
 	res, _ := run(t, sut, sc, reg)
@@ -580,7 +596,7 @@ method:
       - { run: background, with: { name: load, step: { run: sut.status, with: x } } }
       - { run: stop_background, with: load, as: loadResult }
 verify:
-  - { run: assert, with: { of: "${.loadResult.value}", equals: ok } }
+  - { run: assert, with: { of: "${.outputs.loadResult.value}", equals: ok } }
 `)
 	res, _ := run(t, sut, sc, reg)
 	if res.Verdict != ScenarioPassed {

@@ -30,7 +30,7 @@ Unknown keys are a **parse error**, not ignored.
 | `run` | resolved against the configured providers' verb specs, or the builtin table when unprefixed. Unresolvable ⇒ failure (or SKIP under `onAbsent: skip`) |
 | `with` | a scalar or list binds to the verb's *primary* arg (`with: worker-a` ≡ `with: { service: worker-a }`); a map is checked key-by-key: unknown and missing-required args are errors |
 | `read` | jq over the result value, applied **before** `as:`/`capture:`. Real jq: `.state`, `.items \| length` |
-| `as` | binds the result as an Observation envelope `{value, output, meta}` (the post-`read` payload under `.value`, plus `meta.durationMs` and provider facts) into the scenario-global capture scope. Read it with jq: `${.name.value}`, `${.name.meta.durationMs}` |
+| `as` | binds the result as an Observation envelope `{value, output, meta}` (the post-`read` payload under `.value`, plus `meta.durationMs` and provider facts) into the scenario-global capture scope. Read it with jq: `${.outputs.name.value}`, `${.outputs.name.meta.durationMs}` |
 | `capture` | each entry binds `name := jq(expr, value)` over the payload, for plucking several fields at once |
 | `onAbsent: skip` | when resolution or interpolation fails, the check becomes `SKIP` with `skipReason` instead of `FAIL` |
 | `finding` | inverts the contract: failure ⇒ `FINDING` (green), success ⇒ `FAILED` with "promote this". Allowed only on assertion-kind checks (validate rule 5) |

@@ -32,3 +32,28 @@ func TestRootRefs(t *testing.T) {
 		}
 	}
 }
+
+func TestNSRefs(t *testing.T) {
+	cases := []struct {
+		expr string
+		want []Ref
+	}{
+		{".vars.region", []Ref{{"vars", "region"}}},
+		{".outputs.rsp.value.total", []Ref{{"outputs", "rsp"}}},
+		{".env.DATABASE_URL // \"x\"", []Ref{{"env", "DATABASE_URL"}}},
+		{"\"${.params.target}-${.vars.n}\"", []Ref{{"params", "target"}, {"vars", "n"}}},
+		{".foo", []Ref{{"foo", ""}}},
+		{"length", nil},
+	}
+	for _, c := range cases {
+		got := NSRefs(c.expr)
+		if len(got) != len(c.want) {
+			t.Fatalf("NSRefs(%q) = %v, want %v", c.expr, got, c.want)
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Fatalf("NSRefs(%q)[%d] = %v, want %v", c.expr, i, got[i], c.want[i])
+			}
+		}
+	}
+}

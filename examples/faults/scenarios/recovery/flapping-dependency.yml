@@ -38,7 +38,7 @@ verify:
     with: "http://localhost:5678/"
     as: final
   - run: assert
-    with: { of: "${.final.output}", contains: ok }
+    with: { of: "${.outputs.final.output}", contains: ok }
     desc: "api answering after repeated restarts"
 
 teardown:

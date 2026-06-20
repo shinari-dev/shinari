@@ -45,13 +45,13 @@ method:
   - phase: "Do the thing"
     steps:
       - run: exec.run
-        with: "echo ${.greeting}"
+        with: "echo ${.vars.greeting}"
         as: said
 
 verify:
   - run: assert
     with:
-      of: "${.said.value}"
+      of: "${.outputs.said.value}"
       equals: hello
     desc: "we said hello"
 
@@ -87,8 +87,11 @@ shinari run
   => PASSED
 ```
 
-Note the capture: `as: said` stored the step's output, and `${.said.value}` read it
-back in `verify`. Captures are scenario-global, ordered, last-write-wins.
+Note the capture: `as: said` stored the step's output under the `outputs`
+namespace, and `${.outputs.said.value}` read it back in `verify`. The var read
+earlier (`${.vars.greeting}`) lives in its own namespace; every `${...}`
+reference names the namespace it resolves against. Captures are scenario-global,
+ordered, last-write-wins.
 
 ## 4. Break it, on purpose
 

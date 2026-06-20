@@ -38,8 +38,9 @@ with a strict dependency direction (every arrow points down: `cli → core → s
 
 - **`core/`** — the engine library. It emits a structured `RunResult` + a typed event stream and
   **never prints and never calls `os.Exit`**. Core also never reads the environment (env like
-  `KEEP_UP=1` is mapped onto `engine.Options` by the CLI). Core is **provider-agnostic**: it imports
-  no concrete provider.
+  `KEEP_UP=1` is mapped onto `engine.Options` by the CLI; the project's declared `env:` block is
+  resolved against the process environment by the CLI and passed in as `engine.Options.Env`). Core is
+  **provider-agnostic**: it imports no concrete provider.
 - **`cli/`** — the front end and **composition root**: argv parsing, all rendering (console, TSV,
   JSON, JUnit XML, journal, findings report), and the mapping of verdict → exit code. It decides which
   providers ship in the binary by blank-importing `providers/all` (`wiring.go`); it is the only
@@ -75,7 +76,10 @@ with a strict dependency direction (every arrow points down: `cli → core → s
   **setup → steadyState (gate) → method phases → steadyState (recovery) → verify → teardown (always)**
   (`executor.go`). `events.go`/`result.go` define the stream and result; `Reduce` rebuilds the result
   from events alone (the design constraint that Result is the stream's deterministic reduction).
-- `interp/` — `${...}` variable/capture interpolation. `jqx/` — gojq transforms (the `read:` key).
+- `interp/` — `${...}` interpolation. Each `${...}` is a jq expression over four engine-owned
+  namespaces and every reference is namespaced: `.vars` (project + scenario vars), `.outputs`
+  (author-named `as:`/`capture:` results), `.env` (declared environment), `.params` (composed-provider
+  parameters, populated only during macro expansion). `jqx/` — gojq transforms (the `read:` key).
 - `builtins/` — the unprefixed language verbs: `assert`, `sleep`, `wait_until`, `background`,
   `stop_background`, plus the shared assert-operator set.
 - `validate/` — static checks producing severities (`Error`/`Warning`).
@@ -101,7 +105,8 @@ per-step override pattern as `kind:`.
 ### Verdicts → exit codes
 
 `PASSED`→0, `FAILED`→1, `ERRORED` (setup failed)→2, `INCONCLUSIVE` (steadyState failed before
-method)→3. CLI **usage** errors exit `64` (EX_USAGE) to stay distinct from verdicts.
+method)→3. CLI **usage** errors exit `64` (EX_USAGE) to stay distinct from verdicts. A required
+`env:` var (declared with no default) that is unset is a setup precondition failure and exits `2`.
 
 ## Providers are composable in two ways
 

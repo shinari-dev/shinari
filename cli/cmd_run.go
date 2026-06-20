@@ -18,14 +18,14 @@ import (
 	"github.com/shinari-dev/shinari/core/engine"
 )
 
-func newRunCmd(project *string, stdout, stderr io.Writer, getenv func(string) string) *cobra.Command {
+func newRunCmd(project *string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) *cobra.Command {
 	var out, include, exclude string
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "run [target...]",
 		Short: "execute scenarios (target = scenario name or suite)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code := cmdRun(*project, out, args, dryRun, include, exclude, stdout, stderr, getenv); code != 0 {
+			if code := cmdRun(*project, out, args, dryRun, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
 				return &exitError{code}
 			}
 			return nil
@@ -38,10 +38,16 @@ func newRunCmd(project *string, stdout, stderr io.Writer, getenv func(string) st
 	return cmd
 }
 
-func cmdRun(dir, out string, targets []string, dryRun bool, include, exclude string, stdout, stderr io.Writer, getenv func(string) string) int {
+func cmdRun(dir, out string, targets []string, dryRun bool, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
 	set, ok := load(dir, stderr)
 	if !ok {
 		return 2 // could not even establish the harness
+	}
+
+	resolvedEnv, eerr := resolveEnv(set.Project.Env, lookupEnv)
+	if eerr != nil {
+		fmt.Fprintln(stderr, eerr)
+		return 2 // ERRORED: setup precondition, not a usage error
 	}
 
 	unlock, err := lockRun(set.Root)
@@ -58,6 +64,7 @@ func cmdRun(dir, out string, targets []string, dryRun bool, include, exclude str
 		DryRun:      dryRun,
 		IncludeTags: include,
 		ExcludeTags: exclude,
+		Env:         resolvedEnv,
 	}
 	res, err := engine.Run(context.Background(), set, targets, engine.Multi(rec, console), opts)
 	if err != nil {

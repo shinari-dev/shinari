@@ -6,6 +6,9 @@ description: A toy job store driven entirely through exec — zero infrastructur
 vars:
   job: sleep-1
 
+env:
+  GREETING: hello   # default; $GREETING from the environment overrides it
+
 providers:
   exec: {}
   jobstore:
