@@ -679,3 +679,32 @@ func TestRunTargets(t *testing.T) {
 		t.Errorf("run verdict = %s", all.Verdict())
 	}
 }
+
+// TestBindingsExposeMeta locks in that read: and capture: can reach a probe
+// result's side-channels ($meta, $output), not just its value — so a check can
+// gate on an HTTP status or container exit code that never lives in the body.
+func TestBindingsExposeMeta(t *testing.T) {
+	result := sdk.VerbResult{
+		Value:  map[string]any{"id": "j-1"},
+		Output: "raw-body",
+		Meta:   map[string]any{"status": 403},
+	}
+	st := &model.Step{
+		Read:    ".id",
+		Capture: map[string]string{"code": "$meta.status", "raw": "$output"},
+	}
+	captured := map[string]any{}
+	value, err := applyBindings(st, result, func(n string, v any) { captured[n] = v })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != "j-1" {
+		t.Errorf("read value = %v, want j-1", value)
+	}
+	if captured["code"] != float64(403) {
+		t.Errorf("captured code = %v (%T), want 403", captured["code"], captured["code"])
+	}
+	if captured["raw"] != "raw-body" {
+		t.Errorf("captured raw = %v, want raw-body", captured["raw"])
+	}
+}

@@ -65,11 +65,30 @@ func NSRefs(expr string) []Ref {
 // Eval runs a jq expression against a value and returns the first result.
 // The value must be JSON-shaped (maps, slices, scalars).
 func Eval(expr string, value any) (any, error) {
+	return EvalWith(expr, value, nil)
+}
+
+// EvalWith is Eval with named jq variables bound alongside the input document.
+// It is how the engine exposes a probe result's metadata to read:/capture:/
+// wait_until: the result value stays the `.` input (so `.id` keeps working)
+// while facts like the HTTP status arrive as $meta (`$meta.status`). Keys must
+// include the leading `$` (e.g. "$meta"); a nil/empty map behaves like Eval.
+func EvalWith(expr string, value any, vars map[string]any) (any, error) {
 	q, err := gojq.Parse(expr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid jq expression %q: %w", expr, err)
 	}
-	iter := q.Run(normalize(value))
+	names := make([]string, 0, len(vars))
+	vals := make([]any, 0, len(vars))
+	for name, v := range vars {
+		names = append(names, name)
+		vals = append(vals, normalize(v))
+	}
+	code, err := gojq.Compile(q, gojq.WithVariables(names))
+	if err != nil {
+		return nil, fmt.Errorf("invalid jq expression %q: %w", expr, err)
+	}
+	iter := code.Run(normalize(value), vals...)
 	v, ok := iter.Next()
 	if !ok {
 		return nil, nil

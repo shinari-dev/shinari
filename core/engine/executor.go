@@ -346,8 +346,9 @@ func (r *runner) decodeWith(st *model.Step, scope interp.Scope) (any, error) {
 // captures vs. a macro-local scope), which the sink abstracts.
 func applyBindings(st *model.Step, result sdk.VerbResult, sink func(name string, v any)) (any, error) {
 	value := result.Value
+	vars := resultVars(result)
 	if st.Read != "" {
-		v, err := jqx.Eval(st.Read, value)
+		v, err := jqx.EvalWith(st.Read, value, vars)
 		if err != nil {
 			return nil, err
 		}
@@ -357,13 +358,25 @@ func applyBindings(st *model.Step, result sdk.VerbResult, sink func(name string,
 		sink(st.As, envelope(result.Output, value, result.Meta))
 	}
 	for name, expr := range st.Capture {
-		v, err := jqx.Eval(expr, value)
+		v, err := jqx.EvalWith(expr, value, vars)
 		if err != nil {
 			return nil, err
 		}
 		sink(name, v)
 	}
 	return value, nil
+}
+
+// resultVars exposes a verb result's side-channels to the jq expressions in
+// read:/capture:/wait_until as named variables, so a probe can gate on facts
+// that never live in the value — chiefly $meta.status (HTTP/exit codes) and
+// the raw $output text. The value itself stays the `.` input.
+func resultVars(result sdk.VerbResult) map[string]any {
+	meta := result.Meta
+	if meta == nil {
+		meta = map[string]any{}
+	}
+	return map[string]any{"$meta": meta, "$output": result.Output}
 }
 
 // envelope wraps a verb result for `as:`: the payload, its raw output, and
@@ -595,7 +608,7 @@ func (r *runner) execWaitUntil(ctx context.Context, args map[string]any, scope i
 		if perr == nil {
 			value := result.Value
 			if readExpr != "" {
-				value, perr = jqx.Eval(readExpr, value)
+				value, perr = jqx.EvalWith(readExpr, value, resultVars(result))
 			}
 			if perr == nil {
 				lastObserved = value
@@ -640,7 +653,7 @@ func (r *runner) execStepMap(ctx context.Context, m map[string]any, scope interp
 		return result, err
 	}
 	if readExpr, _ := m["read"].(string); readExpr != "" {
-		v, rerr := jqx.Eval(readExpr, result.Value)
+		v, rerr := jqx.EvalWith(readExpr, result.Value, resultVars(result))
 		if rerr != nil {
 			return result, rerr
 		}
