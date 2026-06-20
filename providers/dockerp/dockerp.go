@@ -54,7 +54,7 @@ func (p *Provider) Configure(cfg map[string]any) error {
 }
 
 func (p *Provider) Verbs() []sdk.VerbSpec {
-	upArgs := []sdk.ArgSpec{{Name: "services", Type: "list"}, {Name: "wait", Type: "bool"}}
+	upArgs := []sdk.ArgSpec{{Name: "services", Type: "list"}, {Name: "wait", Type: "bool"}, {Name: "profiles", Type: "list"}}
 	service := []sdk.ArgSpec{{Name: "service", Type: "string", Required: true}}
 	return []sdk.VerbSpec{
 		{Name: "up", Kind: sdk.KindAction, SideEffects: true, Primary: "services", Args: upArgs},
@@ -128,7 +128,16 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	var err error
 	switch verb {
 	case "up":
-		cmdArgs := []string{"up", "-d"}
+		// --profile selects a compose profile (a service variant), so one
+		// compose file can carry worker/worker-rr/worker-pf and a scenario picks
+		// one. It is a top-level flag, so it precedes the up subcommand.
+		var cmdArgs []string
+		if profiles, ok := args["profiles"].([]any); ok {
+			for _, p := range profiles {
+				cmdArgs = append(cmdArgs, "--profile", fmt.Sprintf("%v", p))
+			}
+		}
+		cmdArgs = append(cmdArgs, "up", "-d")
 		// --wait blocks until services are healthy; opt out with wait: false to
 		// start a service that is meant to crash or hang (--wait would abort the
 		// step before any assertion could observe it).

@@ -170,3 +170,18 @@ func TestPsNoServiceReturnsList(t *testing.T) {
 		t.Fatalf("value = %#v, want a one-element list", res.Value)
 	}
 }
+
+func TestUpProfilesPrecedeSubcommand(t *testing.T) {
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "up", map[string]any{
+		"profiles": []any{"rr"}, "services": []any{"worker"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := recorded(t, argsFile)
+	// --profile is a top-level flag and must come before `up`.
+	want := "-f assets/stack.yml -p chaos-run --profile rr up -d --wait worker"
+	if got != want {
+		t.Errorf("argv = %q, want %q", got, want)
+	}
+}

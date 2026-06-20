@@ -105,9 +105,11 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
   Result: `.value` (parsed body), `.output` (raw), `.meta.status`, `.meta.bytes`.
 
 ### docker — `config: {composeFiles, project}` (the lifecycle provider)
-- `up` (`with: [svc, ..]` primary `services`), `down`, `kill`/`stop`/`pause`
-  (primary `service`, effect outage), `start`/`unpause`, `logs` (`{service, tail,
-  since}`).
+- `up` (`with: [svc, ..]` primary `services`; `wait: false` to start a crash/hang
+  service without `--wait`; `profiles: [name]` selects a compose-profile variant),
+  `down`, `kill`/`stop`/`pause` (primary `service`, effect outage),
+  `start`/`unpause`, `logs` (`{service, tail, since}`), `ps` (probe, optional
+  `service`; returns `.State`/`.ExitCode`/`.Health` for exit-state checks).
 
 ### toxiproxy — `config: {baseUrl}` (Toxiproxy admin API)
 - `add_latency` (`{proxy, latencyMs, jitterMs}`, degradation)
