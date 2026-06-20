@@ -110,3 +110,19 @@ func TestFailureSurfacesOutput(t *testing.T) {
 		t.Fatalf("want compose stderr in error, got %v", err)
 	}
 }
+
+func TestUpWaitFalseOmitsWait(t *testing.T) {
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "up", map[string]any{
+		"services": []any{"worker"}, "wait": false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := recorded(t, argsFile)
+	if strings.Contains(got, "--wait") {
+		t.Errorf("argv = %q, should not contain --wait when wait:false", got)
+	}
+	if !strings.Contains(got, "up -d worker") {
+		t.Errorf("argv = %q, want 'up -d worker'", got)
+	}
+}
