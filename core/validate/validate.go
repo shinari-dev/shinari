@@ -85,13 +85,18 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 			Msg: "no lifecycle provider (up/down) configured — no default teardown, no stack lifecycle"})
 	}
 
-	defined := map[string]bool{}
+	varsSet := map[string]bool{}
 	for k := range set.Project.Vars {
-		defined[k] = true
+		varsSet[k] = true
 	}
 	for k := range sc.Vars {
-		defined[k] = true
+		varsSet[k] = true
 	}
+	envSet := map[string]bool{}
+	for k := range set.Project.Env {
+		envSet[k] = true
+	}
+	defined := map[string]bool{} // outputs (captures), grown in execution order
 	// Pre-scan every binding (recursively, including inside parallel branches)
 	// so a forward/out-of-order reference can be told apart from a typo.
 	laterBound := map[string]string{}
@@ -99,7 +104,7 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 		collectBindings(sec.Steps, func(name, verb string) { laterBound[name] = verb })
 	}
 
-	v := &scenarioValidator{sc: sc, reg: reg, laterBound: laterBound, bgRunning: map[string]bool{}}
+	v := &scenarioValidator{sc: sc, reg: reg, laterBound: laterBound, bgRunning: map[string]bool{}, varsSet: varsSet, envSet: envSet}
 	for _, sec := range sc.Sections() {
 		for i := range sec.Steps {
 			v.checkStep(&sec.Steps[i], sec.Name, defined, nil, 0)
@@ -160,6 +165,8 @@ type scenarioValidator struct {
 	reg        *registry.Registry
 	laterBound map[string]string
 	bgRunning  map[string]bool
+	varsSet    map[string]bool // declared vars (project + scenario)
+	envSet     map[string]bool // declared env: names (project)
 	out        []Finding
 
 	methodHasOutage      bool
@@ -215,30 +222,47 @@ func (v *scenarioValidator) checkStep(st *model.Step, section string, defined ma
 			Msg: "steadyState re-runs after method — a one-shot mutating verb here is not idempotent", Severity: Warn})
 	}
 
-	// rules 6, 10 & 12 — references resolve, in execution order.
+	// rules 6, 10 & 12 — references resolve, by namespace, in execution order.
 	for _, ref := range refsOf(st) {
-		for _, name := range jqx.RootRefs(ref) {
-			if defined[name] {
-				continue
-			}
-			// inside a parallel branch: a capture bound only by a sibling
-			// branch has no ordering relative to this one.
-			if siblings != nil && boundInSibling(siblings, selfIdx, name) {
-				v.add(Finding{Step: st.Run, Rule: 12,
-					Msg: fmt.Sprintf("${%s} is bound in a sibling parallel branch — concurrent branches have no ordering; reference it after the block", name), Severity: Error})
-				continue
-			}
-			if binder, later := v.laterBound[name]; later {
-				rule, msg := 10, fmt.Sprintf("${%s} is referenced before %s binds it", name, binder)
-				if binder == "stop_background" || v.bgRunning[name] {
-					rule = 6
-					msg = fmt.Sprintf("${%s} is a background capture — it settles only at stop_background; reference it after", name)
+		for _, r := range jqx.NSRefs(ref) {
+			switch r.Namespace {
+			case "vars":
+				if !v.varsSet[r.Name] {
+					v.add(Finding{Step: st.Run, Rule: 10,
+						Msg: fmt.Sprintf("unresolved reference ${.vars.%s} — no var by that name", r.Name), Severity: Error})
 				}
-				v.add(Finding{Step: st.Run, Rule: rule, Msg: msg, Severity: Error})
-				continue
+			case "env":
+				if !v.envSet[r.Name] {
+					v.add(Finding{Step: st.Run, Rule: 10,
+						Msg: fmt.Sprintf("unresolved reference ${.env.%s} — declare it in the project env: block", r.Name), Severity: Error})
+				}
+			case "outputs":
+				name := r.Name
+				if defined[name] {
+					continue
+				}
+				// inside a parallel branch: a capture bound only by a sibling
+				// branch has no ordering relative to this one.
+				if siblings != nil && boundInSibling(siblings, selfIdx, name) {
+					v.add(Finding{Step: st.Run, Rule: 12,
+						Msg: fmt.Sprintf("${.outputs.%s} is bound in a sibling parallel branch — concurrent branches have no ordering; reference it after the block", name), Severity: Error})
+					continue
+				}
+				if binder, later := v.laterBound[name]; later {
+					rule, msg := 10, fmt.Sprintf("${.outputs.%s} is referenced before %s binds it", name, binder)
+					if binder == "stop_background" || v.bgRunning[name] {
+						rule = 6
+						msg = fmt.Sprintf("${.outputs.%s} is a background capture — it settles only at stop_background; reference it after", name)
+					}
+					v.add(Finding{Step: st.Run, Rule: rule, Msg: msg, Severity: Error})
+					continue
+				}
+				v.add(Finding{Step: st.Run, Rule: 10,
+					Msg: fmt.Sprintf("unresolved reference ${.outputs.%s} — no earlier capture by that name", name), Severity: Error})
+			default:
+				v.add(Finding{Step: st.Run, Rule: 10,
+					Msg: fmt.Sprintf("unresolved reference ${.%s...} — references must be namespaced (.vars/.outputs/.env)", r.Namespace), Severity: Error})
 			}
-			v.add(Finding{Step: st.Run, Rule: 10,
-				Msg: fmt.Sprintf("unresolved reference ${%s} — no var and no earlier capture by that name", name), Severity: Error})
 		}
 	}
 
@@ -419,10 +443,11 @@ func validateComposedDef(def *model.ProviderDef) []Finding {
 	var out []Finding
 	for verb, cv := range def.Verbs {
 		names, _ := cv.ParamNames()
-		known := map[string]bool{}
+		paramSet := map[string]bool{}
 		for _, n := range names {
-			known[n] = true
+			paramSet[n] = true
 		}
+		outputs := map[string]bool{} // body captures, grown in order
 		steps := cv.Do
 		if cv.Probe != nil {
 			steps = []model.Step{*cv.Probe}
@@ -430,16 +455,26 @@ func validateComposedDef(def *model.ProviderDef) []Finding {
 		for i := range steps {
 			st := &steps[i]
 			for _, ref := range refsOf(st) {
-				for _, name := range jqx.RootRefs(ref) {
-					if known[name] {
-						continue
+				for _, r := range jqx.NSRefs(ref) {
+					switch r.Namespace {
+					case "params":
+						if !paramSet[r.Name] {
+							out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
+								Msg: fmt.Sprintf("provider %s verb %s: ${.params.%s} is not a declared param", def.Name, verb, r.Name)})
+						}
+					case "outputs":
+						if !outputs[r.Name] {
+							out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
+								Msg: fmt.Sprintf("provider %s verb %s: ${.outputs.%s} is not an earlier capture", def.Name, verb, r.Name)})
+						}
+					default:
+						out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
+							Msg: fmt.Sprintf("provider %s verb %s: ${.%s...} — composed verbs reference .params or an earlier .outputs capture", def.Name, verb, r.Namespace)})
 					}
-					out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
-						Msg: fmt.Sprintf("provider %s verb %s: ${%s} is neither a param nor an earlier capture", def.Name, verb, name)})
 				}
 			}
 			for name := range bindings(st) {
-				known[name] = true
+				outputs[name] = true
 			}
 		}
 	}

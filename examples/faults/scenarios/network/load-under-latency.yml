@@ -31,7 +31,7 @@ method:
               - run: netem.delay
                 with: { target: api, ms: 300 }
       - run: assert
-        with: { of: "${.loaded.value.p95}", gt: 250 }
+        with: { of: "${.outputs.loaded.value.p95}", gt: 250 }
         desc: "the 300ms delay shows up in p95 under load"
   - phase: "Clear the fault and confirm recovery"
     steps:
@@ -41,7 +41,7 @@ method:
         with: { probe: { run: http.get, with: "http://localhost:5678/" }, count: 10 }
         as: recovered
       - run: assert
-        with: { of: "${.recovered.value.p99}", lt: 100 }
+        with: { of: "${.outputs.recovered.value.p99}", lt: 100 }
         desc: "latency back to normal after clear"
 
 teardown:

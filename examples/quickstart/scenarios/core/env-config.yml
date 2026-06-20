@@ -1,0 +1,15 @@
+apiVersion: shinari/v1
+kind: Scenario
+name: env-config
+description: >
+  Demonstrates environment injection: ${.env.GREETING} resolves to the
+  project's declared default (hello) or to $GREETING when set in the
+  environment. Declared env vars are an allowlist — referencing one that is
+  not in the project's env: block is a validate error.
+
+verify:
+  - run: assert
+    with:
+      of: "${.env.GREETING}"
+      in: [hello, hi]
+    desc: "greeting comes from the declared env default or the environment"

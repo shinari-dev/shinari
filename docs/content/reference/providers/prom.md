@@ -28,5 +28,5 @@ histogram-bucket math, since the endpoint exposes the quantile):
   with: { metric: http_request_duration_seconds, labels: { quantile: "0.99" } }
   as: p99
 - run: assert
-  with: { of: "${.p99.value}", lt: 0.2 }
+  with: { of: "${.outputs.p99.value}", lt: 0.2 }
 ```

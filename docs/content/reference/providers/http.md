@@ -21,7 +21,7 @@ providers:
 JSON responses decode into structured values, so `read:`/`capture:` jq
 expressions work on them directly. The response carries `meta.status` and
 `meta.bytes` (plus the engine's `meta.durationMs`), so after `as: rsp` you can
-`assert of: "${.rsp.meta.status}"` and `assert of: "${.rsp.meta.durationMs}"`.
+`assert of: "${.outputs.rsp.meta.status}"` and `assert of: "${.outputs.rsp.meta.durationMs}"`.
 Status ≥ 400 is a step failure unless the code is listed in `expectStatus`
 (e.g. `expectStatus: [200, 503]` to observe graceful degradation), in which case
 it returns normally with the status in `meta`.

@@ -52,7 +52,7 @@ verify:
     as: a
   - run: assert
     with:
-      of: "${.a.value}"
+      of: "${.outputs.a.value}"
       equals: SUCCESS
     desc: "job-a completed"
   - run: jobstore.status
@@ -60,7 +60,7 @@ verify:
     as: b
   - run: assert
     with:
-      of: "${.b.value}"
+      of: "${.outputs.b.value}"
       equals: SUCCESS
     desc: "job-b completed"
 

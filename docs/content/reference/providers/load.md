@@ -49,7 +49,7 @@ another, gating the injection on an observed event:
         - run: netem.delay
           with: { target: api, ms: 300 }
 - run: assert
-  with: { of: "${.loaded.value.p95}", gt: 250 }
+  with: { of: "${.outputs.loaded.value.p95}", gt: 250 }
   desc: "the injected delay shows up in p95 under load"
 ```
 

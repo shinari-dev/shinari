@@ -28,6 +28,10 @@ description: <text>
 vars:                            # defaults; scenario vars merge over these
   sleepSecs: 30
 
+env:                             # declared environment variables (allowlist)
+  DATABASE_URL:                  # required: run ERRORs (exit 2) if unset
+  PORT: 8080                     # default 8080, overridden by $PORT when set
+
 providers:
   docker:
     config:
@@ -43,6 +47,39 @@ providers:
     use: ./providers/app
     config:
       apiBase: http://localhost:8080
+```
+
+## The env block
+
+A `kind: Project` may declare an `env:` block, shaped like `vars:`. It is the
+project's **allowlist** of environment variables: a scenario reads one as
+`${.env.NAME}`, and referencing a name the block does not declare is a `validate`
+error (rule 10). Environment is project-level only; scenarios do not declare it.
+
+Each key's value is a **default**, and the process environment overrides it:
+
+```yaml
+env:
+  DATABASE_URL:        # null value: required, no default
+  PORT: 8080           # default 8080, used unless $PORT is set
+```
+
+- A key with a value provides a default. The matching process variable, when
+  set, overrides it.
+- A key with a **null** value (no default) is **required**. If the variable is
+  unset at run time the run is `ERRORED` (exit code 2), the same class as a
+  failed setup: the run never happened.
+- The engine never reads the process environment itself. The CLI resolves the
+  `env:` block (applying defaults and overrides, enforcing required keys) and
+  passes the resolved values to the engine, which exposes them under the `.env`
+  namespace.
+
+Reference a declared variable from any `${...}`:
+
+```yaml
+- run: db.query
+  with: "SELECT 1"
+  desc: "connects to ${.env.DATABASE_URL}"
 ```
 
 ## The providers block

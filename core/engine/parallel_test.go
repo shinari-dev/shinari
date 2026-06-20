@@ -45,7 +45,7 @@ verify:
       branches:
         - - { run: sut.submit, with: a }
         - - { run: sut.status, as: s }
-          - { run: assert, with: { of: "${.s.value}", equals: "never" } }
+          - { run: assert, with: { of: "${.outputs.s.value}", equals: "never" } }
 `
 	sut, sc, reg := newWorld(t, src)
 	res, _ := run(t, sut, sc, reg)
@@ -88,7 +88,7 @@ verify:
         - - { run: sut.submit, with: a }
         - - { run: sut.status, as: s }
           - run: assert
-            with: { of: "${.s.value}", equals: "never" }
+            with: { of: "${.outputs.s.value}", equals: "never" }
             finding: "known gap: status not yet 'never'"
 `
 	sut, sc, reg := newWorld(t, src)
@@ -212,7 +212,7 @@ verify:
       branches:
         - - { run: sut.echo, with: low, as: shared }
         - - { run: sut.echo, with: high, as: shared }
-  - { run: assert, with: { of: "${.shared.value}", equals: "high" } }
+  - { run: assert, with: { of: "${.outputs.shared.value}", equals: "high" } }
 `
 	sut, sc, reg := newWorld(t, src)
 	res, _ := run(t, sut, sc, reg)

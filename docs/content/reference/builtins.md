@@ -14,7 +14,7 @@ Kind: assertion. Exactly **one** operator key per step.
 ```yaml
 - run: assert
   with:
-    of: "${.total.value}"
+    of: "${.outputs.total.value}"
     equals: 1
   desc: "exactly once"
 ```
@@ -51,7 +51,7 @@ until a condition holds or a timeout expires.
     probe:                    # any probe step: run/with/read
       run: http.get
       with:
-        path: "/jobs/${.job}"
+        path: "/jobs/${.outputs.job}"
     read: ".state"            # optional jq over the probe's value
     in: [SUCCESS, FAILED]     # exactly one assert operator (any from the table above)
     timeout: 420              # seconds (required)
@@ -108,9 +108,9 @@ Returns an Observation whose `value` is
     interval: 0.1
   as: load
 - run: assert
-  with: { of: "${.load.value.errorRate}", lt: 0.01 }
+  with: { of: "${.outputs.load.value.errorRate}", lt: 0.01 }
 - run: assert
-  with: { of: "${.load.value.p99}", lt: 200 }
+  with: { of: "${.outputs.load.value.p99}", lt: 200 }
 ```
 
 Sampling is sequential (one call at a time). For concurrent load, drive a
@@ -134,7 +134,7 @@ may act, probe, assert, carry a `finding:`, and even nest another `parallel`.
         - run: http.get
           as: resp
         - run: assert
-          with: { of: "${.resp.meta.durationMs}", lt: 800 }
+          with: { of: "${.outputs.resp.meta.durationMs}", lt: 800 }
 ```
 
 Semantics:

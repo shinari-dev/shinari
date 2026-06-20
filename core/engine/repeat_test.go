@@ -78,7 +78,7 @@ verify:
       times: 5
       do:
         - { run: sut.status, with: x, as: s }
-        - { run: assert, with: { of: "${.s.value}", equals: ok } }
+        - { run: assert, with: { of: "${.outputs.s.value}", equals: ok } }
 `
 	sut, sc, reg := newWorld(t, src)
 	sut.script["status"] = []any{"ok", "bad"} // iter1 ok, iter2 bad (last repeats)
@@ -103,7 +103,7 @@ verify:
       stopOnFail: false
       do:
         - { run: sut.status, with: x, as: s }
-        - { run: assert, with: { of: "${.s.value}", equals: ok } }
+        - { run: assert, with: { of: "${.outputs.s.value}", equals: ok } }
 `
 	sut, sc, reg := newWorld(t, src)
 	sut.script["status"] = []any{"ok", "bad"} // iter1 ok, then bad forever
@@ -127,7 +127,7 @@ verify:
       times: 3
       do:
         - { run: sut.submit, with: a, as: last }
-  - { run: assert, with: { of: "${.last.value}", equals: third }, desc: "last iteration's capture persists" }
+  - { run: assert, with: { of: "${.outputs.last.value}", equals: third }, desc: "last iteration's capture persists" }
 `
 	sut, sc, reg := newWorld(t, src)
 	sut.script["submit"] = []any{"first", "second", "third"}

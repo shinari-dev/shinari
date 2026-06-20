@@ -12,9 +12,9 @@ import (
 	"github.com/shinari-dev/shinari/core/discover"
 )
 
-// newRootCmd assembles the command tree. stdout/stderr/getenv are captured by
-// each subcommand's RunE so the whole tree is testable through run().
-func newRootCmd(stdout, stderr io.Writer, getenv func(string) string) *cobra.Command {
+// newRootCmd assembles the command tree. stdout/stderr/getenv/lookupEnv are
+// captured by each subcommand's RunE so the whole tree is testable through run().
+func newRootCmd(stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) *cobra.Command {
 	var project string
 	root := &cobra.Command{
 		Use:           "shinari",
@@ -28,7 +28,7 @@ func newRootCmd(stdout, stderr io.Writer, getenv func(string) string) *cobra.Com
 		newInitCmd(&project, stdout, stderr),
 		newValidateCmd(&project, stdout, stderr),
 		newListCmd(&project, stdout, stderr),
-		newRunCmd(&project, stdout, stderr, getenv),
+		newRunCmd(&project, stdout, stderr, getenv, lookupEnv),
 	)
 	return root
 }

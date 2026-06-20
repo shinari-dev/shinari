@@ -69,20 +69,31 @@ steadyState step resolves to a mutating action (rule 9).
 ## Interpolation
 
 Each `${...}` is a **jq expression** evaluated over the scope, the same jq used
-in `read:`/`capture:`, so there is one expression language. The jq input is the
-vars overlaid by the captures (a captured name shadows a var), both top-level
-fields: `${.job}` reads a var or capture named `job`, `${.rsp.value.total}`
-reaches into a captured object, and full jq is available (`${.total // 0}`,
-`${.runs | length}`). A reference that is the entire value (`with: ${.job}`)
-preserves the result's type; embedded references stringify, and a jq result of
-null renders as empty. Captures are scenario-global, ordered, last-write-wins,
-visible across sections.
+in `read:`/`capture:`, so there is one expression language. Every reference is
+**namespaced**: the jq input is an object with four engine-owned namespaces, and
+the first path segment names which one to read from.
+
+| namespace | holds | bound by |
+|---|---|---|
+| `.vars.NAME` | a declared variable | a `vars:` block (project or scenario) |
+| `.outputs.NAME` | a step result or capture | `as: NAME` or `capture: { NAME: ... }` |
+| `.env.NAME` | a declared environment variable | the project's `env:` block (see [Project & discovery](/reference/project/)) |
+| `.params.NAME` | a composed-verb parameter | a `params:` list, only inside a `kind: Provider` body |
+
+So `${.vars.job}` reads a var, `${.outputs.rsp.value.total}` reaches into a
+captured object, and full jq is available past the first two segments
+(`${.outputs.total.value // 0}`, `${.outputs.runs.value | length}`). A reference
+that is the entire value (`with: ${.outputs.job}`) preserves the result's type;
+embedded references stringify, and a jq result of null renders as empty.
+Captures are scenario-global, ordered, last-write-wins, visible across sections.
+A reference to a name that no namespace declares is a `validate` error (rule 10).
 
 A step's result is captured as an **Observation envelope** `{value, output,
-meta}`: `as: rsp` binds the whole envelope, so the payload is `${.rsp.value}`
-and the call's facts are `${.rsp.meta.durationMs}` / `${.rsp.meta.status}`.
-`read:` and `capture:` operate on the payload. A per-step `timeout:` (seconds)
-fails the step if the verb runs longer.
+meta}`: `as: rsp` binds the whole envelope, so the payload is
+`${.outputs.rsp.value}` and the call's facts are
+`${.outputs.rsp.meta.durationMs}` / `${.outputs.rsp.meta.status}`. `read:` and
+`capture:` operate on the payload. A per-step `timeout:` (seconds) fails the step
+if the verb runs longer.
 
 ## Timeouts
 

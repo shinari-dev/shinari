@@ -32,8 +32,8 @@ verbs:
     do:
       - run: http.post
         with:
-          path: "/jobs/${.job}"
-          form: "${.inputs}"
+          path: "/jobs/${.params.job}"
+          form: "${.params.inputs}"
         capture:
           id: ".id"
 ```

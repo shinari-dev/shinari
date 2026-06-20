@@ -4,7 +4,7 @@ name: scenario-name
 description: >
   One or two sentences: the fault injected and the resilience property asserted.
 
-# Optional: defaults for ${.var} interpolation, overridable by the project.
+# Optional: defaults for ${.vars.NAME} interpolation, overridable by the project.
 vars:
   job: demo-1
 
@@ -20,7 +20,7 @@ steadyState:
     with: { path: / }
     as: baseline
   - run: assert
-    with: { of: "${.baseline.meta.status}", equals: 200 }
+    with: { of: "${.outputs.baseline.meta.status}", equals: 200 }
     desc: "api healthy before the fault"
 
 # method: phases of fault injection. Each phase is {phase:, steps:}.
@@ -59,13 +59,13 @@ verify:
       timeout: 30
       interval: 0.5
   - run: assert
-    with: { of: "${.underFault.value.errorRate}", lt: 1 }
+    with: { of: "${.outputs.underFault.value.errorRate}", lt: 1 }
     desc: "the api kept serving some requests during the outage"
   # Recovery-shaped scenarios MUST assert exactly-once OR carry a finding (rule 7).
   # Use a finding when the property is a known, not-yet-fixed gap; the scenario
   # stays green and flips to FAILED once it starts passing.
   - run: assert
-    with: { of: "${.underFault.value.errorRate}", equals: 0 }
+    with: { of: "${.outputs.underFault.value.errorRate}", equals: 0 }
     desc: "no requests dropped during the outage"
     finding: "the api drops in-flight requests when the db is killed; needs connection retry before this is a hard assertion"
 

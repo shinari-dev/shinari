@@ -76,7 +76,7 @@ func (r *runner) runParallel(ctx context.Context, section, phase string, st *mod
 		r.res.Injected = append(r.res.Injected, br.res.Injected...)
 		r.res.Held = append(r.res.Held, br.res.Held...)
 		for k := range br.writes {
-			r.captures[k] = br.captures[k] // higher-indexed branch wins on collision
+			r.outputs[k] = br.outputs[k] // higher-indexed branch wins on collision
 		}
 		if failures[bi] != "" {
 			reasons = append(reasons, failures[bi])
@@ -93,20 +93,21 @@ func (r *runner) runParallel(ctx context.Context, section, phase string, st *mod
 // buffered emitter, result accumulator, capture copy + write-set, and
 // background-handle map, so concurrent branches never share mutable state.
 func (r *runner) branchRunner() *runner {
-	caps := make(map[string]any, len(r.captures))
-	for k, v := range r.captures {
+	caps := make(map[string]any, len(r.outputs))
+	for k, v := range r.outputs {
 		caps[k] = v
 	}
 	return &runner{
-		reg:      r.reg,
-		emit:     &Recorder{},
-		sc:       r.sc,
-		opts:     r.opts,
-		captures: caps,
-		writes:   map[string]bool{},
-		vars:     r.vars,
-		bg:       map[string]*bgHandle{},
-		res:      &ScenarioResult{},
-		limiter:  r.limiter,
+		reg:     r.reg,
+		emit:    &Recorder{},
+		sc:      r.sc,
+		opts:    r.opts,
+		outputs: caps,
+		writes:  map[string]bool{},
+		vars:    r.vars,
+		env:     r.env,
+		bg:      map[string]*bgHandle{},
+		res:     &ScenarioResult{},
+		limiter: r.limiter,
 	}
 }

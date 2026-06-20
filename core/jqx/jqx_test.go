@@ -35,3 +35,16 @@ func TestInvalidExprNamesExpr(t *testing.T) {
 		t.Fatalf("want error naming the expr, got %v", err)
 	}
 }
+
+func TestEnvBuiltinCannotReadOSEnv(t *testing.T) {
+	t.Setenv("SHINARI_ENV_GUARD", "leaked")
+	for _, expr := range []string{`env.SHINARI_ENV_GUARD`, `$ENV.SHINARI_ENV_GUARD`} {
+		v, err := Eval(expr, nil)
+		if err != nil {
+			t.Fatalf("Eval(%q) error: %v", expr, err)
+		}
+		if v != nil {
+			t.Fatalf("Eval(%q) = %#v, want nil — the bare env builtin must not read the OS environment", expr, v)
+		}
+	}
+}

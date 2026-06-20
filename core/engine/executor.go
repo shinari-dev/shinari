@@ -24,10 +24,11 @@ import (
 // Options are run-level knobs. The CLI maps env (KEEP_UP=1) onto them —
 // core never reads the environment itself.
 type Options struct {
-	KeepUp      bool   // skip teardown, preserve the stack
-	DryRun      bool   // skip kind: action steps
-	IncludeTags string // tag expression; empty matches all
-	ExcludeTags string // tag expression; empty excludes none
+	KeepUp      bool           // skip teardown, preserve the stack
+	DryRun      bool           // skip kind: action steps
+	IncludeTags string         // tag expression; empty matches all
+	ExcludeTags string         // tag expression; empty excludes none
+	Env         map[string]any // resolved environment values; the CLI populates it
 	Clock       func() time.Time
 }
 
@@ -46,16 +47,17 @@ type bgHandle struct {
 }
 
 type runner struct {
-	reg      *registry.Registry
-	emit     Emitter
-	sc       *model.Scenario
-	opts     Options
-	captures map[string]any
-	writes   map[string]bool // non-nil only in a branch runner: records capture writes to merge back
-	vars     map[string]any
-	bg       map[string]*bgHandle
-	res      *ScenarioResult
-	limiter  *atomic.Int32 // shared across the nesting tree: caps concurrent branches
+	reg     *registry.Registry
+	emit    Emitter
+	sc      *model.Scenario
+	opts    Options
+	outputs map[string]any
+	writes  map[string]bool // non-nil only in a branch runner: records capture writes to merge back
+	vars    map[string]any
+	env     map[string]any
+	bg      map[string]*bgHandle
+	res     *ScenarioResult
+	limiter *atomic.Int32 // shared across the nesting tree: caps concurrent branches
 }
 
 // RunScenario executes one scenario: setup → steadyState (gate) → method
@@ -73,10 +75,11 @@ func RunScenario(ctx context.Context, sc *model.Scenario, projectVars map[string
 	}
 	r := &runner{
 		reg: reg, emit: em, sc: sc, opts: opts,
-		captures: map[string]any{},
-		vars:     vars,
-		bg:       map[string]*bgHandle{},
-		limiter:  &atomic.Int32{},
+		outputs: map[string]any{},
+		vars:    vars,
+		env:     opts.Env,
+		bg:      map[string]*bgHandle{},
+		limiter: &atomic.Int32{},
 		res: &ScenarioResult{
 			Name: sc.Name, Description: sc.Description, Suite: sc.Suite,
 			Start: opts.now(),
@@ -267,7 +270,7 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 	}
 
 	if _, err = applyBindings(st, result, func(name string, v any) {
-		r.captures[name] = v
+		r.outputs[name] = v
 		if r.writes != nil {
 			r.writes[name] = true
 		}
@@ -322,7 +325,7 @@ func (r *runner) judge(st *model.Step, finish func(CheckVerdict, string) StepRes
 }
 
 func (r *runner) scope() interp.Scope {
-	return interp.Scope{Vars: r.vars, Captures: r.captures}
+	return interp.Scope{Vars: r.vars, Outputs: r.outputs, Env: r.env}
 }
 
 func (r *runner) decodeWith(st *model.Step, scope interp.Scope) (any, error) {
@@ -401,11 +404,12 @@ func (r *runner) execVerb(ctx context.Context, res registry.Resolution, run stri
 // (params as captures, caller vars); the result is the last step's value.
 func (r *runner) execComposed(ctx context.Context, run string, res registry.Resolution, args map[string]any) (sdk.VerbResult, error) {
 	names, _ := res.Composed.ParamNames()
-	local := map[string]any{}
+	params := map[string]any{}
 	for _, n := range names {
-		local[n] = args[n] // missing optional params bind to nil → ""
+		params[n] = args[n] // missing optional params bind to nil → ""
 	}
-	scope := interp.Scope{Vars: r.vars, Captures: local}
+	localOutputs := map[string]any{}
+	scope := interp.Scope{Vars: r.vars, Env: r.env, Params: params, Outputs: localOutputs}
 
 	steps := res.Composed.Do
 	if res.Composed.Probe != nil {
@@ -430,7 +434,7 @@ func (r *runner) execComposed(ctx context.Context, run string, res registry.Reso
 		if err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("%s → %s: %w", run, st.Run, err)
 		}
-		value, err := applyBindings(st, result, func(name string, v any) { local[name] = v })
+		value, err := applyBindings(st, result, func(name string, v any) { localOutputs[name] = v })
 		if err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("%s → %s: %w", run, st.Run, err)
 		}

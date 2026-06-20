@@ -20,23 +20,32 @@ import (
 // reach for those shapes in a read:/capture: step instead.
 var refRe = regexp.MustCompile(`\$\{([^}]*)\}`)
 
-// Scope resolves references. The jq input is vars overlaid by captures, so a
-// captured name shadows a var of the same name.
+// Scope resolves references. The jq input document has one key per namespace:
+// vars (project + scenario vars), outputs (author-named step results), env
+// (declared environment), params (composed-provider parameters). A reference is
+// always namespaced, e.g. ${.vars.x}, ${.outputs.rsp.value}, ${.env.PORT}.
 type Scope struct {
-	Vars     map[string]any
-	Captures map[string]any
+	Vars    map[string]any
+	Outputs map[string]any
+	Env     map[string]any
+	Params  map[string]any
 }
 
-// root builds the jq input document from the scope.
+// root builds the jq input document: a fixed set of namespace keys, each an
+// empty object when unset so a reference into a missing namespace yields null.
 func (sc Scope) root() map[string]any {
-	root := make(map[string]any, len(sc.Vars)+len(sc.Captures))
-	for k, v := range sc.Vars {
-		root[k] = v
+	orEmpty := func(m map[string]any) map[string]any {
+		if m == nil {
+			return map[string]any{}
+		}
+		return m
 	}
-	for k, v := range sc.Captures {
-		root[k] = v
+	return map[string]any{
+		"vars":    orEmpty(sc.Vars),
+		"outputs": orEmpty(sc.Outputs),
+		"env":     orEmpty(sc.Env),
+		"params":  orEmpty(sc.Params),
 	}
-	return root
 }
 
 // Refs returns every ${...} expression in s, in order.
@@ -69,7 +78,7 @@ func (sc Scope) String(s string) (string, error) {
 }
 
 // Value interpolates s, preserving the jq result's type when the whole string
-// is exactly one ${...} (`with: ${.job}`); otherwise it behaves like String.
+// is exactly one ${...} (`with: ${.outputs.job}`); otherwise it behaves like String.
 func (sc Scope) Value(s string) (any, error) {
 	trimmed := strings.TrimSpace(s)
 	if m := refRe.FindStringSubmatch(trimmed); m != nil && m[0] == trimmed {

@@ -68,15 +68,15 @@ name: app
 verbs:
   submit:
     params: [job, "inputs?"]
-    do: [ { run: http.post, with: { path: "/jobs/${.job}", form: "${.inputs}" }, capture: { id: ".id" } } ]
+    do: [ { run: http.post, with: { path: "/jobs/${.params.job}", form: "${.params.inputs}" }, capture: { id: ".id" } } ]
   count:
     params: [job]
-    probe: { run: http.get, with: { path: "/jobs?type=${.job}" }, read: ".items | length" }
+    probe: { run: http.get, with: { path: "/jobs?type=${.params.job}" }, read: ".items | length" }
   check_count:
     params: [job]
     do:
-      - { run: http.get, with: { path: "/jobs?type=${.job}" }, read: ".items | length", as: n }
-      - { run: assert, with: { of: "${.n}", equals: 1 } }
+      - { run: http.get, with: { path: "/jobs?type=${.params.job}" }, read: ".items | length", as: n }
+      - { run: assert, with: { of: "${.outputs.n}", equals: 1 } }
 `
 
 func TestResolveNativeComposedAndBuiltin(t *testing.T) {
