@@ -191,11 +191,26 @@ func isAssertionLike(reg *registry.Registry, st *model.Step) bool {
 	if err != nil {
 		return false
 	}
-	kind := res.Spec.Kind
+	return EffectiveKind(res.Spec, st) == sdk.KindAssertion
+}
+
+// EffectiveKind / EffectiveEffect apply a step's per-step overrides over the
+// verb spec: `kind:` reclassifies a polymorphic verb (the exec.run escape
+// hatch), `effect:` declares a fault injected through one (exec.run running
+// tc, http.post to a chaos endpoint). The single source of truth for both the
+// executor and the `explain` preview.
+func EffectiveKind(spec sdk.VerbSpec, st *model.Step) sdk.Kind {
 	if st.Kind != "" {
-		kind = sdk.Kind(st.Kind)
+		return sdk.Kind(st.Kind)
 	}
-	return kind == sdk.KindAssertion
+	return spec.Kind
+}
+
+func EffectiveEffect(spec sdk.VerbSpec, st *model.Step) sdk.Effect {
+	if st.Effect != "" {
+		return sdk.Effect(st.Effect)
+	}
+	return spec.Effect
 }
 
 // runStep executes one step envelope: resolve → interpolate → bind →
@@ -205,11 +220,19 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 	r.emit.Emit(Event{Type: EvStepStarted, Time: sr.Start, Scenario: r.sc.Name,
 		Section: section, Phase: phase, Step: stepLabel(st), Verb: st.Run})
 
+	// stepValue is the verb result's payload value, surfaced on the step event
+	// so the verbose console and the journal can show what a step produced.
+	var stepValue any
+
 	finish := func(v CheckVerdict, errMsg string) StepResult {
 		sr.Verdict = v
 		sr.Err = errMsg
 		sr.End = r.opts.now()
-		payload := map[string]any{"verdict": string(v), "error": errMsg}
+		payload := map[string]any{"verdict": string(v), "error": errMsg,
+			"durationMs": sr.End.Sub(sr.Start).Milliseconds()}
+		if stepValue != nil {
+			payload["value"] = stepValue
+		}
 		if sr.TimedOut {
 			payload["timedOut"] = true
 		}
@@ -251,10 +274,7 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 	if err != nil {
 		return skipOrFail(err)
 	}
-	kind := res.Spec.Kind
-	if st.Kind != "" {
-		kind = sdk.Kind(st.Kind) // the exec.run override
-	}
+	kind := EffectiveKind(res.Spec, st)
 	if st.Run == "parallel" {
 		// Not gated by the block's kind: each inner step flows back through
 		// runStep and applies dry-run / verdict split / findings individually.
@@ -286,6 +306,7 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		}
 		return r.judge(st, finish, err)
 	}
+	stepValue = result.Value
 
 	if _, err = applyBindings(st, result, r.scope(), func(name string, v any) {
 		r.outputs[name] = v
@@ -300,10 +321,7 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		return r.judge(st, finish, err)
 	}
 
-	effect := res.Spec.Effect
-	if st.Effect != "" {
-		effect = sdk.Effect(st.Effect) // a fault injected via a polymorphic verb (exec.run, http.post)
-	}
+	effect := EffectiveEffect(res.Spec, st)
 	if effect != sdk.EffectNone && section == "method" {
 		r.emit.Emit(Event{Type: EvFaultInjected, Time: r.opts.now(), Scenario: r.sc.Name,
 			Section: section, Phase: phase, Step: stepLabel(st), Verb: st.Run})

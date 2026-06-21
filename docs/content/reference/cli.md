@@ -24,6 +24,7 @@ shorthands like `-p`) and may appear before or after the command. Run
 | `init` | resolve every configured provider; write `shinari.lock.yml` (builtin versions, local-provider checksums) |
 | `validate` | run the [static rules](/reference/validate/); no execution. Exit 1 on errors, 0 on warnings only |
 | `list` | print discovered scenarios grouped by suite |
+| `explain` | print a scenario's lifecycle timeline (resolved verb, kind, fault effect) without running it |
 | `run` | execute targeted scenarios; write reports; exit by verdict |
 
 ### new
@@ -47,6 +48,20 @@ shinari -p my-service run
 `new` never overwrites: if `<dir>` already holds a `project.yml`, or any file it
 would write already exists, it writes nothing and exits `64`.
 
+### explain
+
+```sh
+shinari explain worker-killed-mid-task
+```
+
+`explain [target...]` prints what a scenario would do without running it: the
+lifecycle timeline (`setup` → `steadyState` → `method` phases → `verify` →
+`teardown`), each step annotated with its resolved kind (`[action]`, `[probe]`,
+`[assertion]`), any fault effect (`fault: outage` / `fault: degradation`), and a
+`finding` marker. Actions are the steps `--dry-run` would skip. It executes
+nothing and touches no system, so it is safe to run anywhere. A verb that does
+not resolve is flagged `[unresolved]`; use `validate` for the hard check.
+
 ## Flags
 
 Global (any command, any position):
@@ -62,6 +77,8 @@ Global (any command, any position):
 |---|---|---|
 | `--out`, `-o <dir>` | `shinari-out` | report directory |
 | `--dry-run` | off | skip all *action* steps; probes and assertions still run |
+| `--keep-up` | off | skip `teardown`, preserving the stack for inspection (same as `KEEP_UP=1`) |
+| `--verbose`, `-v` | off | stream per-step values and durations, with section banners |
 | `--include-tags <expr>` | | run only scenarios matching the tag expression |
 | `--exclude-tags <expr>` | | drop scenarios matching the tag expression |
 
@@ -95,7 +112,7 @@ positional targets by intersection.
 
 | variable | effect |
 |---|---|
-| `KEEP_UP=1` | skip the entire `teardown` section, preserving the stack for inspection |
+| `KEEP_UP=1` | skip the entire `teardown` section, preserving the stack for inspection (the `--keep-up` flag does the same) |
 
 ## Exit codes
 

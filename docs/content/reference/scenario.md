@@ -31,7 +31,7 @@ teardown:    [ <step>... ]      # optional: replaces the default when present
 | `steadyState` | **twice**: before `method` (gate) and after it (recovery check) | gate failure ⇒ `INCONCLUSIVE`; recovery failure ⇒ `FAILED` |
 | `method` | ordered phases, each an ordered `steps:` list | first failure stops the timeline ⇒ `FAILED` |
 | `verify` | once, at the end (**all** steps run even after failures, cumulative) | any non-finding failure ⇒ `FAILED` |
-| `teardown` | **always**, even after ERRORED/FAILED; skipped under `KEEP_UP=1` | recorded, never changes the verdict |
+| `teardown` | **always**, even after ERRORED/FAILED; skipped under `--keep-up` / `KEEP_UP=1` | recorded, never changes the verdict |
 
 A **phase** is:
 

@@ -19,7 +19,7 @@ import (
 // a scenario name or a suite; empty targets means all. Providers are
 // merged per scenario (project defaults + scenario overrides).
 func Run(ctx context.Context, set *discover.Set, targets []string, em Emitter, opts Options) (RunResult, error) {
-	scenarios, err := selectScenarios(set, targets)
+	scenarios, err := SelectScenarios(set, targets)
 	if err != nil {
 		return RunResult{}, err
 	}
@@ -46,7 +46,10 @@ func Run(ctx context.Context, set *discover.Set, targets []string, em Emitter, o
 	return result, nil
 }
 
-func selectScenarios(set *discover.Set, targets []string) ([]*model.Scenario, error) {
+// SelectScenarios resolves positional targets (a scenario name or a suite
+// name) to scenarios; empty targets means all. An unknown target is an error
+// naming the known scenarios. Shared by Run and the explain preview.
+func SelectScenarios(set *discover.Set, targets []string) ([]*model.Scenario, error) {
 	if len(targets) == 0 {
 		return set.Scenarios, nil
 	}

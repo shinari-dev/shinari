@@ -20,12 +20,12 @@ import (
 
 func newRunCmd(project *string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) *cobra.Command {
 	var out, include, exclude string
-	var dryRun bool
+	var dryRun, keepUp, verbose bool
 	cmd := &cobra.Command{
 		Use:   "run [target...]",
 		Short: "execute scenarios (target = scenario name or suite)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code := cmdRun(*project, out, args, dryRun, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
+			if code := cmdRun(*project, out, args, dryRun, keepUp, verbose, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
 				return &exitError{code}
 			}
 			return nil
@@ -33,12 +33,14 @@ func newRunCmd(project *string, stdout, stderr io.Writer, getenv func(string) st
 	}
 	cmd.Flags().StringVarP(&out, "out", "o", "shinari-out", "report output directory")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "skip actions, run probes/assertions only")
+	cmd.Flags().BoolVar(&keepUp, "keep-up", false, "skip teardown, preserving the stack for inspection")
+	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "stream per-step values, durations, and section banners")
 	cmd.Flags().StringVar(&include, "include-tags", "", "run only scenarios matching this tag expression")
 	cmd.Flags().StringVar(&exclude, "exclude-tags", "", "exclude scenarios matching this tag expression")
 	return cmd
 }
 
-func cmdRun(dir, out string, targets []string, dryRun bool, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
+func cmdRun(dir, out string, targets []string, dryRun, keepUp, verbose bool, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
 	set, ok := load(dir, stderr)
 	if !ok {
 		return 2 // could not even establish the harness
@@ -58,9 +60,9 @@ func cmdRun(dir, out string, targets []string, dryRun bool, include, exclude str
 	defer unlock()
 
 	rec := &engine.Recorder{}
-	console := &render.Console{W: stdout}
+	console := &render.Console{W: stdout, Verbose: verbose}
 	opts := engine.Options{
-		KeepUp:      getenv("KEEP_UP") == "1",
+		KeepUp:      keepUp || getenv("KEEP_UP") == "1",
 		DryRun:      dryRun,
 		IncludeTags: include,
 		ExcludeTags: exclude,

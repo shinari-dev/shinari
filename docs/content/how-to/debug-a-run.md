@@ -1,22 +1,49 @@
 ---
 title: Debug a failing run
-description: Keep the stack alive, dry-run the timeline, and replay the event journal.
+description: Preview the timeline, keep the stack alive, stream values, and replay the event journal.
 weight: 50
 ---
 
 **Goal:** figure out why a scenario failed without re-running blind.
+
+## Preview what it would do
+
+Before running anything, see the whole timeline statically:
+
+```sh
+./shinari explain worker-killed-mid-task
+```
+
+`explain` prints the lifecycle (`setup` → `steadyState` → `method` phases →
+`verify` → `teardown`) with each step's resolved verb, its kind (`[action]`,
+`[probe]`, `[assertion]`), any fault effect, and the `finding` markers. It
+executes nothing and touches no system. Use it to confirm the shape of a
+scenario, spot a misordered phase, or check which steps are faults before
+committing to a run.
+
+## Stream values and durations
+
+```sh
+./shinari run --verbose worker-killed-mid-task   # or -v
+```
+
+`--verbose` adds section banners and, for every step, the value it produced and
+how long it took (`✓ jobstore.status → RUNNING (12ms)`). It turns the console
+into a live trace, so a probe returning the wrong value or a step running far
+too long shows up inline rather than only in the journal.
 
 ## Keep the stack up
 
 Teardown destroys the evidence. Skip it:
 
 ```sh
-KEEP_UP=1 ./shinari run worker-killed-mid-task
+./shinari run --keep-up worker-killed-mid-task
 ```
 
 The whole `teardown` section is skipped: containers, toxics, and DNS
 overrides stay exactly as the failure left them. Poke at the system, then
-clean up manually (`docker compose down -v`).
+clean up manually (`docker compose down -v`). The `KEEP_UP=1` environment
+variable does the same thing.
 
 ## Dry-run the timeline
 
