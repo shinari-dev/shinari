@@ -45,3 +45,8 @@ verbs:
       run: exec.run
       with: "sh scripts/jobstore.sh runs ${.params.job}"
       kind: probe
+  list:
+    probe:
+      run: exec.run
+      with: "sh scripts/jobstore.sh list"
+      kind: probe

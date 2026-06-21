@@ -1,43 +1,29 @@
 // SPDX-FileCopyrightText: 2026 The Shinari Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package jqx wraps gojq so the spec's jq expressions (".id",
-// ".items | length") work verbatim in read:/capture:.
+// Package jqx wraps gojq, the single expression language across Shinari. jq is
+// chosen not for power Shinari needs everywhere but because it is a standard
+// users already know that degrades gracefully across three tiers without
+// Shinari ever owning a parser:
+//
+//   - navigation, for ${...} interpolation and with: references
+//     (.vars.job, .outputs.rsp.value.p95);
+//   - predicates, for the when: guard (.outputs.total.value > 1, .vars.n > 0);
+//   - transforms, for read:/capture: ([.runs[] | select(.failed)] | length,
+//     .env.PORT // 8080).
+//
+// Comparisons and aggregation that could live in jq deliberately do not:
+// assertions keep their predicate in an operator (gt:, contains:) for
+// diagnostics and the findings ledger, and window statistics are computed in
+// Go. So the language earns its keep at the navigation and guard tiers, with
+// the transform tier as the escape hatch nobody has to learn until they need it.
 package jqx
 
 import (
 	"fmt"
-	"regexp"
 
 	"github.com/itchyny/gojq"
 )
-
-// rootRefRe matches a top-level input field access `.name`: a dot that is NOT
-// preceded by another field, identifier, or closing bracket (which would make
-// it a nested access like .a.b). Best-effort, for static validation only;
-// dynamic keys (.["x"]) are not reported.
-var rootRefRe = regexp.MustCompile(`(^|[^.\w\])])\.([A-Za-z_]\w*)`)
-
-// RootRefs returns the distinct top-level input fields a jq expression reads,
-// e.g. RootRefs(".rsp.value.total") == ["rsp"]. Used by validate to check a
-// reference resolves to a known var or capture.
-func RootRefs(expr string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, m := range rootRefRe.FindAllStringSubmatch(expr, -1) {
-		name := m[2]
-		if !seen[name] {
-			seen[name] = true
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
-// nsRefRe matches a namespaced reference `.<ns>.<name>` (name optional): the
-// same leading-boundary rule as rootRefRe, then a first path segment and an
-// optional second. Best-effort, for static validation only.
-var nsRefRe = regexp.MustCompile(`(^|[^.\w\])])\.([A-Za-z_]\w*)(?:\.([A-Za-z_]\w*))?`)
 
 // Ref is a namespaced reference: `.vars.region` -> {Namespace:"vars", Name:"region"}.
 type Ref struct {
@@ -45,20 +31,81 @@ type Ref struct {
 	Name      string
 }
 
-// NSRefs returns the distinct namespaced references a jq expression reads. A
-// single-segment reference like `.foo` yields {Namespace:"foo", Name:""} so a
-// caller can flag a reference that is not namespaced.
+// NSRefs returns the distinct namespaced references a jq expression reads from
+// its root input, in source order. `.vars.region` yields {vars, region}; a
+// single-segment `.foo` yields {foo, ""} so a caller can flag a reference that
+// is not namespaced. It walks the parsed jq, so only field accesses that read
+// the engine root document are reported: a field after a pipe (`.runs |
+// length`) or inside a function argument (`map(.state)`) reads a rebound `.`,
+// not the root, and is correctly left out. A parse error yields no refs; the
+// evaluator reports it when the expression actually runs.
 func NSRefs(expr string) []Ref {
+	q, err := gojq.Parse(expr)
+	if err != nil {
+		return nil
+	}
 	seen := map[string]bool{}
 	var out []Ref
-	for _, m := range nsRefRe.FindAllStringSubmatch(expr, -1) {
-		r := Ref{Namespace: m[2], Name: m[3]}
+	add := func(r Ref) {
 		key := r.Namespace + "." + r.Name
 		if !seen[key] {
 			seen[key] = true
 			out = append(out, r)
 		}
 	}
+	var walkQuery func(q *gojq.Query, root bool)
+	var walkTerm func(t *gojq.Term, root bool)
+	walkQuery = func(q *gojq.Query, root bool) {
+		if q == nil {
+			return
+		}
+		if q.Term != nil {
+			walkTerm(q.Term, root)
+			return
+		}
+		// Binary form `Left <Op> Right`: every operator feeds both sides the
+		// same input except pipe, which feeds the right side the left's output
+		// (so a field on the right reads a rebound `.`, not the root). A
+		// pattern binding (`… as $x | …`) is conservatively treated like pipe.
+		walkQuery(q.Left, root)
+		walkQuery(q.Right, root && q.Op != gojq.OpPipe && len(q.Patterns) == 0)
+	}
+	walkTerm = func(t *gojq.Term, root bool) {
+		if t == nil || !root {
+			return
+		}
+		switch t.Type {
+		case gojq.TermTypeIndex, gojq.TermTypeIdentity:
+			// Collect the static leading path, e.g. .outputs.rsp.value -> the
+			// first two field names. Dynamic keys (.["x"], .[0]) and iterators
+			// (.[]) contribute no name and stop the namespace/name pair early.
+			var path []string
+			if t.Type == gojq.TermTypeIndex && t.Index != nil && t.Index.Name != "" {
+				path = append(path, t.Index.Name)
+			}
+			for _, s := range t.SuffixList {
+				if s.Index == nil || s.Index.Name == "" {
+					break
+				}
+				path = append(path, s.Index.Name)
+			}
+			if len(path) == 0 {
+				return // bare identity `.`, or a dynamic leading index
+			}
+			r := Ref{Namespace: path[0]}
+			if len(path) > 1 {
+				r.Name = path[1]
+			}
+			add(r)
+		case gojq.TermTypeQuery:
+			walkQuery(t.Query, root) // parenthesized: same input as the term
+		case gojq.TermTypeArray:
+			if t.Array != nil {
+				walkQuery(t.Array.Query, root) // [EXPR]: EXPR reads the same input
+			}
+		}
+	}
+	walkQuery(q, true)
 	return out
 }
 

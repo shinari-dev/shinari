@@ -42,6 +42,19 @@ case "$cmd" in
     job=$1
     wc -l < "$DIR/$job.runs" | tr -d ' '
     ;;
+  list)
+    # Emit every job as a JSON array: [{"job":"x","state":"RUNNING"}, ...].
+    # exec.run decodes JSON output, so read:/capture: can transform it with jq.
+    printf '['
+    sep=
+    for f in "$DIR"/*.state; do
+      [ -e "$f" ] || continue
+      job=$(basename "$f" .state)
+      printf '%s{"job":"%s","state":"%s"}' "$sep" "$job" "$(cat "$f")"
+      sep=,
+    done
+    printf ']\n'
+    ;;
   *)
     echo "unknown command: $cmd" >&2
     exit 2
