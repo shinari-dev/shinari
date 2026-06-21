@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/shinari-dev/shinari/sdk"
+	"github.com/shinari-dev/shinari/utils/conv"
 )
 
 type Provider struct {
@@ -49,7 +50,9 @@ func hostArg() []sdk.ArgSpec {
 func (p *Provider) Verbs() []sdk.VerbSpec {
 	return []sdk.VerbSpec{
 		{Name: "set_dns", Kind: sdk.KindAction, SideEffects: true, Primary: "host",
-			Args: append(hostArg(), sdk.ArgSpec{Name: "ip", Type: "string", Required: true})},
+			Args: append(hostArg(),
+				sdk.ArgSpec{Name: "ip", Type: "string"},
+				sdk.ArgSpec{Name: "ips", Type: "list"})},
 		{Name: "nxdomain", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "host", Args: hostArg()},
 		{Name: "dns_blackhole", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "host", Args: hostArg()},
 	}
@@ -57,26 +60,62 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 
 func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
 	host, _ := args["host"].(string)
-	var line string
+	var body string
 	switch verb {
 	case "set_dns":
-		ip, _ := args["ip"].(string)
-		line = fmt.Sprintf("address=/%s/%s\n", host, ip)
+		// The name resolves to exactly this set of addresses: one
+		// address= line per address, served as N A records.
+		addrs := addresses(args)
+		if len(addrs) == 0 {
+			return sdk.VerbResult{}, fmt.Errorf("net.set_dns: needs ip or ips; use net.nxdomain for no records")
+		}
+		var b strings.Builder
+		for _, ip := range addrs {
+			fmt.Fprintf(&b, "address=/%s/%s\n", host, ip)
+		}
+		body = b.String()
 	case "nxdomain":
 		// empty address= returns NXDOMAIN for the domain
-		line = fmt.Sprintf("address=/%s/\n", host)
+		body = fmt.Sprintf("address=/%s/\n", host)
 	case "dns_blackhole":
 		// 0.0.0.0 resolves but routes nowhere
-		line = fmt.Sprintf("address=/%s/0.0.0.0\n", host)
+		body = fmt.Sprintf("address=/%s/0.0.0.0\n", host)
 	default:
 		return sdk.VerbResult{}, fmt.Errorf("net has no verb %q", verb)
 	}
+	return p.writeConf(ctx, verb, host, body)
+}
 
+// addresses collects the set the name should resolve to, unioning the
+// scalar ip with the ips list, preserving order and de-duplicating.
+func addresses(args map[string]any) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(ip string) {
+		if ip == "" || seen[ip] {
+			return
+		}
+		seen[ip] = true
+		out = append(out, ip)
+	}
+	if list, ok := args["ips"].([]any); ok {
+		for _, v := range list {
+			add(conv.ToString(v))
+		}
+	}
+	if ip, ok := args["ip"].(string); ok {
+		add(ip)
+	}
+	return out
+}
+
+// writeConf writes the dnsmasq snippet for host and runs reloadCmd.
+func (p *Provider) writeConf(ctx context.Context, verb, host, body string) (sdk.VerbResult, error) {
 	file := filepath.Join(p.confDir, "shinari-"+sanitize(host)+".conf")
 	if err := os.MkdirAll(p.confDir, 0o755); err != nil {
 		return sdk.VerbResult{}, fmt.Errorf("net.%s: %w", verb, err)
 	}
-	if err := os.WriteFile(file, []byte(line), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
 		return sdk.VerbResult{}, fmt.Errorf("net.%s: %w", verb, err)
 	}
 	if p.reloadCmd != "" {

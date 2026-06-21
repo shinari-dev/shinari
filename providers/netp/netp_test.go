@@ -36,6 +36,59 @@ func TestSetDNSWritesConf(t *testing.T) {
 	}
 }
 
+func TestSetDNSMultipleEndpoints(t *testing.T) {
+	dir := t.TempDir()
+	p := provider(t, map[string]any{"confDir": dir})
+	res, err := p.Run(context.Background(), "set_dns", map[string]any{
+		"host": "controllers.kestra.test",
+		"ips":  []any{"10.0.0.1", "10.0.0.2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(res.Value.(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "address=/controllers.kestra.test/10.0.0.1\naddress=/controllers.kestra.test/10.0.0.2\n"
+	if string(data) != want {
+		t.Errorf("conf = %q, want %q", data, want)
+	}
+}
+
+func TestSetDNSUnionsAndDedups(t *testing.T) {
+	dir := t.TempDir()
+	p := provider(t, map[string]any{"confDir": dir})
+	// ip duplicates the first ips entry; order is ips-first, then ip if new.
+	res, err := p.Run(context.Background(), "set_dns", map[string]any{
+		"host": "ctrl.test",
+		"ip":   "10.0.0.1",
+		"ips":  []any{"10.0.0.1", "10.0.0.2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(res.Value.(string))
+	want := "address=/ctrl.test/10.0.0.1\naddress=/ctrl.test/10.0.0.2\n"
+	if string(data) != want {
+		t.Errorf("conf = %q, want %q", data, want)
+	}
+}
+
+func TestSetDNSEmptyIsError(t *testing.T) {
+	dir := t.TempDir()
+	p := provider(t, map[string]any{"confDir": dir})
+	for _, args := range []map[string]any{
+		{"host": "ctrl.test"},
+		{"host": "ctrl.test", "ips": []any{}},
+	} {
+		_, err := p.Run(context.Background(), "set_dns", args)
+		if err == nil || !strings.Contains(err.Error(), "nxdomain") {
+			t.Errorf("args %v: want error pointing at nxdomain, got %v", args, err)
+		}
+	}
+}
+
 func TestNXDomain(t *testing.T) {
 	dir := t.TempDir()
 	p := provider(t, map[string]any{"confDir": dir})

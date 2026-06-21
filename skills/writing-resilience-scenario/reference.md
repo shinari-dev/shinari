@@ -119,8 +119,12 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
 - `reset` (no args) — clears all toxics; the "clear the fault" verb.
 
 ### net — DNS faults, `config: {confDir, reloadCmd}`
-- `set_dns` (`{host, ip}`, degradation), `nxdomain` (`host`, outage),
-  `dns_blackhole` (`host`, outage).
+- `set_dns` (`{host, ip and/or ips}`, none) — declares the full record set
+  the name resolves to (`ips: [a, b]` for several A records); each call
+  replaces the set. Polymorphic: restating a smaller set is a fault, so add
+  `effect: degradation` per step; growing it back is recovery.
+- `nxdomain` (`host`, outage) — the empty set. `dns_blackhole` (`host`,
+  outage) — a one-member unroutable set (`0.0.0.0`).
 
 ### sql — `source: sql`, `config: {driver, dsn}`
 - `query` (probe, primary `sql`, `args: [..]`) -> `.value` is rows.
