@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/shinari-dev/shinari/core/discover"
+	"github.com/shinari-dev/shinari/core/interp"
 	"github.com/shinari-dev/shinari/core/model"
 	"github.com/shinari-dev/shinari/core/registry"
 	"github.com/shinari-dev/shinari/sdk"
@@ -694,7 +695,7 @@ func TestBindingsExposeMeta(t *testing.T) {
 		Capture: map[string]string{"code": "$meta.status", "raw": "$output"},
 	}
 	captured := map[string]any{}
-	value, err := applyBindings(st, result, func(n string, v any) { captured[n] = v })
+	value, err := applyBindings(st, result, interp.Scope{}, func(n string, v any) { captured[n] = v })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -706,6 +707,105 @@ func TestBindingsExposeMeta(t *testing.T) {
 	}
 	if captured["raw"] != "raw-body" {
 		t.Errorf("captured raw = %v, want raw-body", captured["raw"])
+	}
+}
+
+// TestReadInterpolatesScope pins that a read: jq expression is ${...}-
+// interpolated through the scope before jq runs. ${.vars.want} is substituted
+// as text, so the select matches; without interpolation jq treats it as a
+// literal that never matches and silently yields 0.
+func TestReadInterpolatesScope(t *testing.T) {
+	result := sdk.VerbResult{Value: []any{
+		map[string]any{"state": "SUCCESS"},
+		map[string]any{"state": "FAILED"},
+		map[string]any{"state": "SUCCESS"},
+	}}
+	scope := interp.Scope{Vars: map[string]any{"want": "SUCCESS"}}
+	st := &model.Step{Read: `[.[] | select(.state=="${.vars.want}")] | length`}
+	value, err := applyBindings(st, result, scope, func(string, any) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != 2 {
+		t.Errorf("read with ${.vars.want} = %v (%T), want 2", value, value)
+	}
+}
+
+// TestCaptureInterpolatesScope covers the capture: site and the composed-verb
+// case (${.params.X}), and proves the $meta jq variable still resolves on the
+// same step — the textual ${...} pass leaves bare $name and \(...) untouched.
+func TestCaptureInterpolatesScope(t *testing.T) {
+	result := sdk.VerbResult{
+		Value: []any{
+			map[string]any{"state": "SUCCESS"},
+			map[string]any{"state": "FAILED"},
+		},
+		Meta: map[string]any{"status": 200},
+	}
+	scope := interp.Scope{Params: map[string]any{"state": "FAILED"}}
+	st := &model.Step{Capture: map[string]string{
+		"failed": `[.[] | select(.state=="${.params.state}")] | length`,
+		"code":   "$meta.status",
+	}}
+	captured := map[string]any{}
+	if _, err := applyBindings(st, result, scope, func(n string, v any) { captured[n] = v }); err != nil {
+		t.Fatal(err)
+	}
+	if captured["failed"] != 1 {
+		t.Errorf("capture with ${.params.state} = %v, want 1", captured["failed"])
+	}
+	if captured["code"] != float64(200) {
+		t.Errorf("$meta.status must still resolve alongside ${...}: %v", captured["code"])
+	}
+}
+
+// TestWaitUntilReadInterpolatesScope pins the wait_until outer read: site:
+// its read expression is interpolated through the scope before the poll loop.
+func TestWaitUntilReadInterpolatesScope(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: gated
+vars: { want: RUNNING }
+verify:
+  - run: wait_until
+    with:
+      probe: { run: sut.status, with: j1 }
+      read: 'if . == "${.vars.want}" then "hit" else "miss" end'
+      equals: hit
+      timeout: 1
+      interval: 0.01
+`)
+	sut.script["status"] = []any{"PENDING", "RUNNING"}
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+}
+
+// TestWaitUntilProbeReadInterpolatesScope pins the nested-step read: site
+// (execStepMap): the read inside a wait_until probe is interpolated too.
+func TestWaitUntilProbeReadInterpolatesScope(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: gated
+vars: { want: RUNNING }
+verify:
+  - run: wait_until
+    with:
+      probe:
+        run: sut.status
+        with: j1
+        read: 'if . == "${.vars.want}" then "hit" else "miss" end'
+      equals: hit
+      timeout: 1
+      interval: 0.01
+`)
+	sut.script["status"] = []any{"PENDING", "RUNNING"}
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
 	}
 }
 
