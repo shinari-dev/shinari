@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 
+	_ "github.com/go-sql-driver/mysql" // registers the "mysql" driver
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver
 	_ "modernc.org/sqlite"             // registers the "sqlite" driver
 
@@ -23,6 +24,7 @@ import (
 var driverFor = map[string]string{
 	"sqlite":   "sqlite",
 	"postgres": "pgx",
+	"mysql":    "mysql",
 }
 
 type Provider struct {
@@ -42,7 +44,7 @@ func (p *Provider) Configure(cfg map[string]any) error {
 	drv, _ := cfg["driver"].(string)
 	name, ok := driverFor[drv]
 	if !ok {
-		return fmt.Errorf("sql: unknown driver %q (one of: postgres, sqlite)", drv)
+		return fmt.Errorf("sql: unknown driver %q (one of: postgres, sqlite, mysql)", drv)
 	}
 	dsn, _ := cfg["dsn"].(string)
 	if dsn == "" {

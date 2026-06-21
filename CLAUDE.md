@@ -48,7 +48,7 @@ with a strict dependency direction (every arrow points down: `cli → core → s
 - **`sdk/`** — the provider contract (`Provider`, `VerbSpec`, `VerbResult`, `Kind`) **and the
   registration seam** (`Register`/`Factory`, the database/sql-style driver table). Providers link only
   this package, never the engine.
-- **`providers/`** — the native providers (`execp`, `httpp`, `dockerp`, `toxiproxyp`, `netp`, `sqlp`, `promp`, `loadp`),
+- **`providers/`** — the native providers (`execp`, `httpp`, `tcpp`, `grpcp`, `dockerp`, `toxiproxyp`, `netp`, `sqlp`, `promp`, `loadp`),
   each linking only `sdk` (plus the dependency-free `utils/` leaves) — exactly the shape a third-party out-of-tree
   provider takes. Each **self-registers** its type from an `init()` (`sdk.Register("docker", New)`);
   `providers/all` blank-imports them so a binary loads the built-in set with one import. **Adding a
@@ -110,7 +110,7 @@ method)→3. CLI **usage** errors exit `64` (EX_USAGE) to stay distinct from ver
 
 ## Providers are composable in two ways
 
-1. **Native** Go providers implementing the `sdk.Provider` interface (the eight built-ins).
+1. **Native** Go providers implementing the `sdk.Provider` interface (the ten built-ins).
 2. **Composed** providers: `kind: Provider` YAML macros over other verbs, zero Go — see
    `examples/quickstart/providers/jobstore.yml`. A composed verb declares `params:` and a `do:`
    (sequence) or `probe:` (single observation).

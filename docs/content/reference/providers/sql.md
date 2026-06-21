@@ -12,9 +12,17 @@ providers:
   db:
     source: sql
     config:
-      driver: postgres   # or sqlite
+      driver: postgres   # postgres | sqlite | mysql
       dsn: "postgres://user:pass@localhost:5432/app?sslmode=disable"   # alias: url
 ```
+
+The `dsn` format follows the chosen driver:
+
+| driver | dsn example |
+|---|---|
+| `postgres` | `postgres://user:pass@localhost:5432/app?sslmode=disable` |
+| `sqlite` | `file:app.db` (or `:memory:`) |
+| `mysql` | `user:pass@tcp(localhost:3306)/app` |
 
 | verb | kind | args |
 |---|---|---|
