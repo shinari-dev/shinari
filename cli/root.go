@@ -25,6 +25,7 @@ func newRootCmd(stdout, stderr io.Writer, getenv func(string) string, lookupEnv 
 	}
 	root.PersistentFlags().StringVarP(&project, "project", "p", ".", "project directory (holds project.yml)")
 	root.AddCommand(
+		newNewCmd(stdout, stderr),
 		newInitCmd(&project, stdout, stderr),
 		newValidateCmd(&project, stdout, stderr),
 		newListCmd(&project, stdout, stderr),

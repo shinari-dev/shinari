@@ -1,0 +1,49 @@
+apiVersion: shinari/v1
+kind: Scenario
+name: clean-complete
+description: A job submitted and completed normally runs exactly once.
+
+setup:
+  - run: jobstore.reset
+
+steadyState:
+  - run: jobstore.healthy
+
+method:
+  - phase: "Submit the job and observe it RUNNING"
+    steps:
+      - run: jobstore.submit
+        with: "${.vars.job}"
+      - run: wait_until
+        with:
+          probe:
+            run: jobstore.status
+            with: "${.vars.job}"
+          equals: RUNNING
+          timeout: 5
+          interval: 0.1
+  - phase: "The worker completes the job"
+    steps:
+      - run: jobstore.complete
+        with: "${.vars.job}"
+
+verify:
+  - run: jobstore.status
+    with: "${.vars.job}"
+    as: state
+  - run: assert
+    with:
+      of: "${.outputs.state.value}"
+      equals: SUCCESS
+    desc: "job completed"
+  - run: jobstore.runs
+    with: "${.vars.job}"
+    as: total
+  - run: assert
+    with:
+      of: "${.outputs.total.value}"
+      equals: 1
+    desc: "exactly once"
+
+teardown:
+  - run: jobstore.reset
