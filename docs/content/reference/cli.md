@@ -20,10 +20,32 @@ shorthands like `-p`) and may appear before or after the command. Run
 
 | command | effect |
 |---|---|
+| `new <dir>` | scaffold a complete, runnable project into `<dir>` (see below) |
 | `init` | resolve every configured provider; write `shinari.lock.yml` (builtin versions, local-provider checksums) |
 | `validate` | run the [static rules](/reference/validate/); no execution. Exit 1 on errors, 0 on warnings only |
 | `list` | print discovered scenarios grouped by suite |
 | `run` | execute targeted scenarios; write reports; exit by verdict |
+
+### new
+
+```sh
+shinari new my-service
+```
+
+`new <dir>` writes a complete, runnable project into `<dir>`: a `project.yml`, a
+composed `jobstore` provider over `exec`, a shell-backed toy job store, a
+`.gitignore`, a README, and two example scenarios (a happy path and a recovery
+scenario that records a known gap as a finding). The project name is taken from
+the directory's basename. Nothing in it needs infrastructure, so the next two
+steps are green immediately:
+
+```sh
+shinari -p my-service validate
+shinari -p my-service run
+```
+
+`new` never overwrites: if `<dir>` already holds a `project.yml`, or any file it
+would write already exists, it writes nothing and exits `64`.
 
 ## Flags
 

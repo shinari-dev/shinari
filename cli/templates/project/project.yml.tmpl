@@ -1,0 +1,12 @@
+apiVersion: shinari/v1
+kind: Project
+name: {{.Name}}
+description: A toy job store driven entirely through exec — zero infrastructure.
+
+vars:
+  job: sleep-1
+
+providers:
+  exec: {}
+  jobstore:
+    use: ./providers/jobstore

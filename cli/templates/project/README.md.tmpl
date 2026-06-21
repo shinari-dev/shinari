@@ -1,0 +1,28 @@
+# {{.Name}}
+
+A Shinari resilience testing project. It ships a toy job store driven entirely
+through `exec` and a shell script, so it runs offline with zero infrastructure.
+
+## Run it
+
+```sh
+shinari validate   # static checks, no execution
+shinari list       # scenarios grouped by suite
+shinari run        # execute; exit code = verdict
+```
+
+Reports land in `shinari-out/`.
+
+## What's here
+
+- `project.yml` — the project: vars, env, and the providers it configures.
+- `providers/jobstore.yml` — a *composed* provider: a domain vocabulary
+  (`submit`, `complete`, `crash_worker`, ...) over `exec`, zero Go.
+- `scripts/jobstore.sh` — the toy job store the provider drives.
+- `scenarios/core/clean-complete.yml` — the happy path: a job runs exactly once.
+- `scenarios/recovery/worker-killed.yml` — a worker dies mid-task and a peer
+  recovers it. Recovery re-runs the whole job today, a known duplicate-work gap
+  recorded as a `finding:`. The run stays green until the gap is fixed.
+
+Edit these, or point the providers at your own system, and add your own
+scenarios under `scenarios/`.

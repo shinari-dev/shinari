@@ -1,0 +1,52 @@
+apiVersion: shinari/v1
+kind: Provider
+name: jobstore
+description: Domain vocabulary over the toy job store — a composed provider, zero Go.
+
+verbs:
+  reset:
+    do:
+      - run: exec.run
+        with: "sh scripts/jobstore.sh reset"
+  healthy:
+    probe:
+      run: exec.run
+      with: "sh scripts/jobstore.sh healthy"
+      kind: assertion
+  submit:
+    params: [job]
+    do:
+      - run: exec.run
+        with: "sh scripts/jobstore.sh submit ${.params.job}"
+  complete:
+    params: [job]
+    do:
+      - run: exec.run
+        with: "sh scripts/jobstore.sh complete ${.params.job}"
+  crash_worker:
+    params: [job]
+    do:
+      - run: exec.run
+        with: "sh scripts/jobstore.sh crash ${.params.job}"
+  recover:
+    params: [job]
+    do:
+      - run: exec.run
+        with: "sh scripts/jobstore.sh recover ${.params.job}"
+  status:
+    params: [job]
+    probe:
+      run: exec.run
+      with: "sh scripts/jobstore.sh status ${.params.job}"
+      kind: probe
+  runs:
+    params: [job]
+    probe:
+      run: exec.run
+      with: "sh scripts/jobstore.sh runs ${.params.job}"
+      kind: probe
+  list:
+    probe:
+      run: exec.run
+      with: "sh scripts/jobstore.sh list"
+      kind: probe
