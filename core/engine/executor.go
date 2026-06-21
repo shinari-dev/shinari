@@ -287,7 +287,7 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		return r.judge(st, finish, err)
 	}
 
-	if _, err = applyBindings(st, result, func(name string, v any) {
+	if _, err = applyBindings(st, result, r.scope(), func(name string, v any) {
 		r.outputs[name] = v
 		if r.writes != nil {
 			r.writes[name] = true
@@ -374,12 +374,19 @@ func (r *runner) decodeWith(st *model.Step, scope interp.Scope) (any, error) {
 // applyBindings evaluates a step's read: transform, then binds its as:/
 // capture: outputs through sink. The top-level executor and composed-macro
 // expansion share this; they differ only in where bindings land (the run
-// captures vs. a macro-local scope), which the sink abstracts.
-func applyBindings(st *model.Step, result sdk.VerbResult, sink func(name string, v any)) (any, error) {
+// captures vs. a macro-local scope), which the sink abstracts. read:/capture:
+// jq is ${...}-interpolated through scope first (like with:), so a reference
+// to .vars/.params/.env/.outputs is substituted as text before jq runs; the
+// $meta/$output jq variables and \(...) interpolation are left untouched.
+func applyBindings(st *model.Step, result sdk.VerbResult, scope interp.Scope, sink func(name string, v any)) (any, error) {
 	value := result.Value
 	vars := resultVars(result)
 	if st.Read != "" {
-		v, err := jqx.EvalWith(st.Read, value, vars)
+		expr, err := scope.String(st.Read)
+		if err != nil {
+			return nil, err
+		}
+		v, err := jqx.EvalWith(expr, value, vars)
 		if err != nil {
 			return nil, err
 		}
@@ -388,7 +395,11 @@ func applyBindings(st *model.Step, result sdk.VerbResult, sink func(name string,
 	if st.As != "" {
 		sink(st.As, envelope(result.Output, value, result.Meta))
 	}
-	for name, expr := range st.Capture {
+	for name, raw := range st.Capture {
+		expr, err := scope.String(raw)
+		if err != nil {
+			return nil, err
+		}
 		v, err := jqx.EvalWith(expr, value, vars)
 		if err != nil {
 			return nil, err
@@ -487,7 +498,7 @@ func (r *runner) execComposed(ctx context.Context, run string, res registry.Reso
 		if err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("%s → %s: %w", run, st.Run, err)
 		}
-		value, err := applyBindings(st, result, func(name string, v any) { localOutputs[name] = v })
+		value, err := applyBindings(st, result, scope, func(name string, v any) { localOutputs[name] = v })
 		if err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("%s → %s: %w", run, st.Run, err)
 		}
@@ -640,6 +651,12 @@ func (r *runner) execWaitUntil(ctx context.Context, args map[string]any, scope i
 		interval = v
 	}
 	readExpr, _ := args["read"].(string)
+	if readExpr != "" {
+		readExpr, err = scope.String(readExpr)
+		if err != nil {
+			return sdk.VerbResult{}, fmt.Errorf("wait_until: %w", err)
+		}
+	}
 
 	deadline := time.After(time.Duration(timeout * float64(time.Second)))
 	var lastObserved any
@@ -693,7 +710,11 @@ func (r *runner) execStepMap(ctx context.Context, m map[string]any, scope interp
 		return result, err
 	}
 	if readExpr, _ := m["read"].(string); readExpr != "" {
-		v, rerr := jqx.EvalWith(readExpr, result.Value, resultVars(result))
+		expr, ierr := scope.String(readExpr)
+		if ierr != nil {
+			return result, ierr
+		}
+		v, rerr := jqx.EvalWith(expr, result.Value, resultVars(result))
 		if rerr != nil {
 			return result, rerr
 		}
