@@ -29,6 +29,7 @@ func newRootCmd(stdout, stderr io.Writer, getenv func(string) string, lookupEnv 
 		newInitCmd(&project, stdout, stderr),
 		newValidateCmd(&project, stdout, stderr),
 		newListCmd(&project, stdout, stderr),
+		newExplainCmd(&project, stdout, stderr),
 		newRunCmd(&project, stdout, stderr, getenv, lookupEnv),
 	)
 	return root
