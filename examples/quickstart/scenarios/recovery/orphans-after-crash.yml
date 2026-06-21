@@ -1,0 +1,59 @@
+apiVersion: shinari/v1
+kind: Scenario
+name: orphans-after-crash
+description: >
+  Two jobs run; one completes and one is orphaned by a crash. The verify phase
+  lists every job once and uses jq transforms (the read:/capture: tier) to count
+  the orphans and name them, instead of probing each job one at a time.
+tags: [recovery]
+
+vars:
+  done_job: invoice-7
+  orphan_job: report-3
+
+setup:
+  - run: jobstore.reset
+
+steadyState:
+  - run: jobstore.healthy
+
+method:
+  - phase: "Run two jobs; complete one, crash the other"
+    steps:
+      - run: jobstore.submit
+        with: "${.vars.done_job}"
+      - run: jobstore.submit
+        with: "${.vars.orphan_job}"
+      - run: jobstore.complete
+        with: "${.vars.done_job}"
+      - run: jobstore.crash_worker
+        with: "${.vars.orphan_job}"
+
+verify:
+  # One observation of the whole store, then jq does the work: the transform
+  # tier earns its keep here — counting and filtering a structured result is
+  # what a path language cannot express.
+  - run: jobstore.list
+    as: jobs
+    capture:
+      orphans: '[.[] | select(.state == "RUNNING") | .job]'
+      orphan_count: '[.[] | select(.state == "RUNNING")] | length'
+      done_count: '[.[] | select(.state == "SUCCESS")] | length'
+  - run: assert
+    with:
+      of: "${.outputs.orphan_count}"
+      equals: 1
+    desc: "exactly one job orphaned by the crash"
+  - run: assert
+    with:
+      of: "${.outputs.done_count}"
+      equals: 1
+    desc: "exactly one job completed cleanly"
+  - run: assert
+    with:
+      of: "${.outputs.orphans}"
+      contains: "${.vars.orphan_job}"
+    desc: "the orphan is the job whose worker crashed"
+
+teardown:
+  - run: jobstore.reset
