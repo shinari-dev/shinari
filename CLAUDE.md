@@ -48,7 +48,7 @@ with a strict dependency direction (every arrow points down: `cli → core → s
 - **`sdk/`** — the provider contract (`Provider`, `VerbSpec`, `VerbResult`, `Kind`) **and the
   registration seam** (`Register`/`Factory`, the database/sql-style driver table). Providers link only
   this package, never the engine.
-- **`providers/`** — the native providers (`execp`, `httpp`, `tcpp`, `grpcp`, `dockerp`, `toxiproxyp`, `netp`, `sqlp`, `promp`, `loadp`),
+- **`providers/`** — the native providers (`execp`, `httpp`, `tcpp`, `grpcp`, `dockerp`, `toxiproxyp`, `netp`, `sqlp`, `redisp`, `promp`, `loadp`),
   each linking only `sdk` (plus the dependency-free `utils/` leaves) — exactly the shape a third-party out-of-tree
   provider takes. Each **self-registers** its type from an `init()` (`sdk.Register("docker", New)`);
   `providers/all` blank-imports them so a binary loads the built-in set with one import. **Adding a

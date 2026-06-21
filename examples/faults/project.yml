@@ -12,6 +12,10 @@ providers:
   docker:
     config:
       composeFiles: [compose.yml]
+  cache:
+    source: redis
+    config:
+      addr: localhost:6379
   netem:
     use: ./providers/netem
   resource:

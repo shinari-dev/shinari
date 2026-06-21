@@ -1,0 +1,71 @@
+# SPDX-FileCopyrightText: 2026 The Shinari Authors
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: shinari/v1
+kind: Scenario
+name: cache-survives-cold-restart
+description: >
+  The Redis cache is taken down and brought back with an empty dataset (a cold
+  restart). A read for a key that was warm before the bounce must come back as a
+  miss, not a connection error, and a cache-aside write must repopulate it.
+
+setup:
+  - run: docker.up
+    with: [cache]
+  # Wait for Redis to accept connections before the steady-state gate.
+  - run: wait_until
+    with:
+      probe: { run: cache.ping }
+      equals: true
+      timeout: 20
+      interval: 0.5
+
+steadyState:
+  - run: cache.ping
+
+method:
+  - phase: "Warm the cache"
+    steps:
+      - run: cache.set
+        with: { key: "session:42", value: "active", ex: 300 }
+      - run: cache.exists
+        with: "session:42"
+        as: warm
+      - run: assert
+        with: { of: "${.outputs.warm.value}", equals: 1 }
+        desc: "the key is present before the bounce"
+
+  - phase: "Cold-restart the cache"
+    steps:
+      - run: docker.stop
+        with: cache
+        desc: "the cache goes down (outage)"
+      - run: docker.start
+        with: cache
+      - run: wait_until
+        with:
+          probe: { run: cache.ping }
+          equals: true
+          timeout: 20
+          interval: 0.5
+        desc: "the cache is back, but its dataset is empty"
+
+  - phase: "Read through the miss and repopulate"
+    steps:
+      - run: cache.get
+        with: "session:42"
+        as: miss
+      - run: assert
+        with: { of: "${.outputs.miss.meta.hit}", equals: false }
+        desc: "a cold key reads as a miss, not a connection error"
+      - run: cache.set
+        with: { key: "session:42", value: "active", ex: 300 }
+        desc: "cache-aside repopulates on the miss"
+      - run: cache.get
+        with: "session:42"
+        as: refilled
+      - run: assert
+        with: { of: "${.outputs.refilled.value}", equals: "active" }
+        desc: "the warm read is served again"
+
+teardown:
+  - run: docker.down

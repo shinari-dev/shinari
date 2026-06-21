@@ -7,3 +7,11 @@ services:
     command: ["-text=ok"]
     ports:
       - "5678:5678"
+  cache:
+    image: redis:7-alpine
+    container_name: cache
+    # A pure in-memory cache: no RDB snapshot, no AOF. A restart therefore comes
+    # back empty, which is the cold-cache the scenario exercises.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"

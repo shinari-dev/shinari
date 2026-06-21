@@ -15,6 +15,7 @@ import (
 	_ "github.com/shinari-dev/shinari/providers/loadp"
 	_ "github.com/shinari-dev/shinari/providers/netp"
 	_ "github.com/shinari-dev/shinari/providers/promp"
+	_ "github.com/shinari-dev/shinari/providers/redisp"
 	_ "github.com/shinari-dev/shinari/providers/sqlp"
 	_ "github.com/shinari-dev/shinari/providers/tcpp"
 	_ "github.com/shinari-dev/shinari/providers/toxiproxyp"
