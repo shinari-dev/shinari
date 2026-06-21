@@ -37,6 +37,15 @@ func TestConfigureRequiresDSN(t *testing.T) {
 	}
 }
 
+// TestConfigureAcceptsMysql proves the mysql driver is registered and opens
+// lazily (sql.Open does not connect), matching the postgres path.
+func TestConfigureAcceptsMysql(t *testing.T) {
+	err := New().Configure(map[string]any{"driver": "mysql", "dsn": "user:pass@tcp(127.0.0.1:3306)/app"})
+	if err != nil {
+		t.Fatalf("mysql configure: %v", err)
+	}
+}
+
 func TestNormalizeBytesToString(t *testing.T) {
 	if normalize([]byte("hi")) != "hi" {
 		t.Fatalf("want string, got %T", normalize([]byte("hi")))
