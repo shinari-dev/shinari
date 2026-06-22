@@ -14,10 +14,11 @@ import (
 
 // fakeAdmin emulates the Toxiproxy admin API surface the client touches.
 type fakeAdmin struct {
-	mu     sync.Mutex
-	toxics []map[string]any
-	posts  []string
-	resets int
+	mu      sync.Mutex
+	toxics  []map[string]any
+	posts   []string
+	removed []string
+	resets  int
 }
 
 func (f *fakeAdmin) server(t *testing.T) *httptest.Server {
@@ -46,6 +47,17 @@ func (f *fakeAdmin) server(t *testing.T) *httptest.Server {
 		f.toxics = append(f.toxics, toxic)
 		f.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(toxic)
+	})
+	mux.HandleFunc("GET /proxies/app/toxics", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(f.toxics)
+	})
+	mux.HandleFunc("DELETE /proxies/app/toxics/{name}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.removed = append(f.removed, r.PathValue("name"))
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /reset", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -94,6 +106,40 @@ func TestBlackholeIsTimeoutZero(t *testing.T) {
 	}
 	if f.toxics[0]["type"] != "timeout" {
 		t.Fatalf("toxics = %v", f.toxics)
+	}
+}
+
+func TestTimeoutSetsConfigurableTimeout(t *testing.T) {
+	f := &fakeAdmin{}
+	p := provider(t, f.server(t).URL)
+	if _, err := p.Run(context.Background(), "timeout", map[string]any{"proxy": "app", "timeoutMs": 2000}); err != nil {
+		t.Fatal(err)
+	}
+	if f.toxics[0]["type"] != "timeout" {
+		t.Fatalf("toxics = %v", f.toxics)
+	}
+	attrs := f.toxics[0]["attributes"].(map[string]any)
+	if attrs["timeout"] != float64(2000) {
+		t.Errorf("timeout attr = %v, want a non-zero cut-then-close interval", attrs["timeout"])
+	}
+}
+
+func TestClearRemovesToxicsAndReenablesProxy(t *testing.T) {
+	f := &fakeAdmin{}
+	p := provider(t, f.server(t).URL)
+	if _, err := p.Run(context.Background(), "blackhole", map[string]any{"proxy": "app"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Run(context.Background(), "clear", map[string]any{"proxy": "app"}); err != nil {
+		t.Fatal(err)
+	}
+	// the proxy's own toxic is removed, scoped to this proxy...
+	if len(f.removed) != 1 || f.removed[0] != "blackhole_shinari" {
+		t.Fatalf("removed = %v, want only this proxy's toxic", f.removed)
+	}
+	// ...and the proxy is re-enabled (undoing a partition) via an update POST.
+	if len(f.posts) == 0 {
+		t.Fatalf("expected a re-enable update, posts = %v", f.posts)
 	}
 }
 
