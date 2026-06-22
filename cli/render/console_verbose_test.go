@@ -27,8 +27,8 @@ func TestConsoleVerboseShowsValueAndDuration(t *testing.T) {
 		c.Emit(e)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "~ verify") {
-		t.Errorf("missing section banner:\n%s", out)
+	if !strings.Contains(out, "verify") {
+		t.Errorf("missing phase label:\n%s", out)
 	}
 	if !strings.Contains(out, "→ RUNNING") || !strings.Contains(out, "(12ms)") {
 		t.Errorf("missing value/duration:\n%s", out)

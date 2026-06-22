@@ -15,7 +15,7 @@ import (
 // newRootCmd assembles the command tree. stdout/stderr/getenv/lookupEnv are
 // captured by each subcommand's RunE so the whole tree is testable through run().
 func newRootCmd(stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) *cobra.Command {
-	var project string
+	var project, color string
 	root := &cobra.Command{
 		Use:           "shinari",
 		Short:         "resilience integration testing",
@@ -24,13 +24,14 @@ func newRootCmd(stdout, stderr io.Writer, getenv func(string) string, lookupEnv 
 		SilenceUsage:  true,
 	}
 	root.PersistentFlags().StringVarP(&project, "project", "p", ".", "project directory (holds project.yml)")
+	root.PersistentFlags().StringVar(&color, "color", "auto", "colorize output: auto, always, or never")
 	root.AddCommand(
 		newNewCmd(stdout, stderr),
 		newInitCmd(&project, stdout, stderr),
-		newValidateCmd(&project, stdout, stderr),
-		newListCmd(&project, stdout, stderr),
+		newValidateCmd(&project, &color, stdout, stderr, lookupEnv),
+		newListCmd(&project, &color, stdout, stderr, lookupEnv),
 		newExplainCmd(&project, stdout, stderr),
-		newRunCmd(&project, stdout, stderr, getenv, lookupEnv),
+		newRunCmd(&project, &color, stdout, stderr, getenv, lookupEnv),
 	)
 	return root
 }
