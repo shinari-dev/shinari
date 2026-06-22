@@ -51,7 +51,9 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 		withProxy("packet_loss", sdk.EffectOutage, sdk.ArgSpec{Name: "toxicity", Type: "number"}),
 		withProxy("bandwidth", sdk.EffectDegradation, sdk.ArgSpec{Name: "rateKbps", Type: "number", Required: true}),
 		withProxy("blackhole", sdk.EffectOutage),
+		withProxy("timeout", sdk.EffectOutage, sdk.ArgSpec{Name: "timeoutMs", Type: "number", Required: true}),
 		withProxy("partition", sdk.EffectOutage),
+		withProxy("clear", sdk.EffectNone),
 		{Name: "reset", Kind: sdk.KindAction, SideEffects: true},
 	}
 }
@@ -91,8 +93,29 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		_, err = proxy.AddToxic("bandwidth_shinari", "bandwidth", "downstream", 1.0, toxiproxy.Attributes{"rate": rate})
 	case "blackhole":
 		_, err = proxy.AddToxic("blackhole_shinari", "timeout", "downstream", 1.0, toxiproxy.Attributes{"timeout": 0})
+	case "timeout":
+		ms, _ := conv.ToFloat(args["timeoutMs"])
+		// a non-zero timeout drops all data, then closes the connection after
+		// the interval — a link that wedges and is torn down after a bounded
+		// wait, distinct from blackhole (timeout 0), which never closes.
+		_, err = proxy.AddToxic("timeout_shinari", "timeout", "downstream", 1.0, toxiproxy.Attributes{"timeout": ms})
 	case "partition":
 		err = proxy.Disable()
+	case "clear":
+		// scoped restore: remove this proxy's toxics and re-enable it (undoing a
+		// partition), leaving every other proxy untouched — unlike reset, which
+		// clears toxics and re-enables proxies globally.
+		var toxics toxiproxy.Toxics
+		if toxics, err = proxy.Toxics(); err == nil {
+			for _, tx := range toxics {
+				if err = proxy.RemoveToxic(tx.Name); err != nil {
+					break
+				}
+			}
+		}
+		if err == nil {
+			err = proxy.Enable()
+		}
 	default:
 		return sdk.VerbResult{}, fmt.Errorf("toxiproxy has no verb %q", verb)
 	}
