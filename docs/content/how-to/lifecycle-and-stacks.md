@@ -51,6 +51,46 @@ so give your services `healthcheck:` blocks and `setup` stays race-free.
 `kill` versus `stop` is not cosmetic: SIGKILL tests crash recovery, SIGTERM
 tests your shutdown hooks. A system can pass one and fail the other.
 
+## Network partition
+
+`docker.disconnect` severs one container from the network while its process
+keeps running: a distinct failure mode from killing or pausing it, where peers
+see connection refusals (or hangs and timeouts) instead of a dead process, and
+anything co-located on that service stays up. `docker.connect` restores the
+link:
+
+```yaml
+- run: docker.disconnect   # cut the network path, process stays alive
+  with: app
+- run: docker.connect      # reconnect; the service-name DNS alias is restored
+  with: app
+```
+
+Both target one network, defaulting to the compose default network
+(`<project>_default`). Pass `network:` to target another, and disconnect a
+multi-network container from each network to isolate it fully:
+
+```yaml
+- run: docker.disconnect
+  with:
+    service: app
+    network: chaos-run_backend
+```
+
+## Inspect runtime state
+
+`docker.exec` is a probe that runs a command inside a running container and
+returns its stdout, so a scenario can baseline a resource count, inject churn,
+then assert it has not drifted. Keep the command read-only:
+
+```yaml
+- run: docker.exec
+  with:
+    service: app
+    command: "ls /proc/1/task | wc -l"   # thread count
+  as: threads_before
+```
+
 ## Logs as an event gate
 
 `docker.logs` is a probe; combine it with `wait_until` to gate faults on
