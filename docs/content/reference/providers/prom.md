@@ -15,13 +15,26 @@ providers:
       baseUrl: http://localhost:9090
 ```
 
-| verb | kind | args |
-|---|---|---|
-| `scrape` | probe | `metric` (primary), `path?` (default `/metrics`), `labels?` (map) |
+`baseUrl` is the host the endpoint is served from; the `/metrics` path is the
+default and a per-step `path` overrides it.
 
-Returns the matched sample's value as a number; errors if no line matches the
-metric and labels. Selection is a direct lookup by name + label subset (no
-histogram-bucket math, since the endpoint exposes the quantile):
+## Verbs
+
+### scrape (probe)
+
+Fetches the exposition text and selects one sample by metric name and a label
+subset. Selection is a direct lookup (no histogram-bucket math, since the
+endpoint exposes the quantile), and a metric with no matching line is a probe
+failure.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `metric` | string | yes | the metric name to select (primary) |
+| `path` | string | no | scrape path (default `/metrics`) |
+| `labels` | map | no | label subset the sample must match |
+
+**Returns** the matched sample's value as a number. `output` is the raw
+exposition body. `meta` is empty.
 
 ```yaml
 - run: metrics.scrape

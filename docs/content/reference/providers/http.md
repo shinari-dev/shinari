@@ -21,14 +21,59 @@ explicit `Authorization` header overrides both.
 
 ## Verbs
 
-| verb | kind | args |
-|---|---|---|
-| `get` | probe | `path` (primary), `headers?`, `basicAuth?`, `expectStatus?` |
-| `post` / `put` / `delete` | action | `path` (primary), `body?`, `raw?`, `contentType?`, `form?`, `headers?`, `basicAuth?`, `expectStatus?` |
+`path` is the primary arg on every verb, so the scalar shorthand `with: /health`
+is the path. Every verb shares the same response envelope (see
+[Response](#response)) and status rules (see [Status handling](#status-handling)).
 
-`path` is the primary arg, so the scalar shorthand `with: /health` is the path.
-`get` is a probe (it re-runs during steadyState recovery and counts as an
-observation); the writing verbs are actions (skipped on `--dry-run`).
+### get (probe)
+
+Reads a resource. A probe, so it re-runs during steadyState recovery and counts
+as an observation.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `path` | string | yes | request path, appended to `baseUrl`; an absolute URL overrides it (primary) |
+| `headers` | map | no | request headers |
+| `basicAuth` | map | no | `{ username, password }`, overriding the provider-level credentials |
+| `expectStatus` | list | no | status codes to tolerate instead of failing (see [Status handling](#status-handling)) |
+
+**Returns** the response envelope: the decoded JSON (or raw string) in `value`,
+the raw body in `output`, and `meta.status` / `meta.bytes`. See
+[Response](#response).
+
+```yaml
+- run: http.get
+  with: /health
+  as: rsp
+- run: assert
+  with: { of: "${.outputs.rsp.meta.status}", equals: 200 }
+```
+
+### post / put / delete (action)
+
+Writes a resource. Actions, so they are skipped on `--dry-run`. The request body
+comes from `body`, `raw`, or `form` (precedence `raw` → `body` → `form`); see
+[Request](#request) for the full rules.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `path` | string | yes | request path, appended to `baseUrl`; an absolute URL overrides it (primary) |
+| `body` | map | no | JSON-encoded request body |
+| `raw` | string | no | verbatim request body, no encoding |
+| `contentType` | string | no | overrides the `Content-Type` the body type implies |
+| `form` | map | no | URL-encoded form body |
+| `headers` | map | no | request headers |
+| `basicAuth` | map | no | `{ username, password }`, overriding the provider-level credentials |
+| `expectStatus` | list | no | status codes to tolerate instead of failing (see [Status handling](#status-handling)) |
+
+**Returns** the same response envelope as `get`. See [Response](#response).
+
+```yaml
+- run: http.post
+  with: /orders
+  body: { item: "sku-42", qty: 2 }
+  as: order
+```
 
 ## Request
 

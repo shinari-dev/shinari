@@ -5,7 +5,7 @@ weight: 30
 ---
 
 DNS-level faults. Writes dnsmasq conf snippets (one file per host) into
-`confDir`, then runs `reloadCmd`.
+`confDir`, then runs `reloadCmd` so the resolver picks them up.
 
 ```yaml
 providers:
@@ -15,14 +15,29 @@ providers:
       reloadCmd: "pkill -HUP dnsmasq"
 ```
 
-| verb | kind | args | wrote |
-|---|---|---|---|
-| `set_dns` | action | `host` (primary), `ip` and/or `ips` | one `address=/host/ip` line per address |
-| `nxdomain` | action | `host` | `address=/host/` (the domain vanishes) |
-| `dns_blackhole` | action | `host` | `address=/host/0.0.0.0` (resolves, routes nowhere) |
+`confDir` is where the per-host snippet files are written (relative paths
+resolve against the project root); `reloadCmd` is run after each write to
+reload dnsmasq.
 
-`set_dns` declares the full set the name resolves to. Pass a single `ip`, or `ips` for a name
-backed by several A records:
+Every verb returns the path of the snippet file it wrote as the value, with the
+reload command's output (if any) in `output` and an empty `meta`.
+
+## Verbs
+
+### set_dns (action)
+
+Declares the full set of addresses a name resolves to, writing one
+`address=/host/ip` line per address. Each call replaces the whole set, so a
+name's live endpoints change by restating it.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `host` | string | yes | the hostname to redirect (primary) |
+| `ip` | string | no | a single A record |
+| `ips` | list | no | several A records for one name |
+
+**Returns** the snippet file path. `output` is the reload command's output.
+`meta` is empty.
 
 ```yaml
 - run: net.set_dns
@@ -38,5 +53,37 @@ address=/controllers.kestra.test/10.0.0.1
 address=/controllers.kestra.test/10.0.0.2
 ```
 
-Each `set_dns` replaces the whole set, so a name's live endpoints change by restating it. `nxdomain`
-is the empty set and `dns_blackhole` is a one-member unroutable set.
+### nxdomain (action, outage)
+
+Makes the name vanish: writes `address=/host/` so resolution returns NXDOMAIN.
+The empty set, the opposite of `set_dns`.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `host` | string | yes | the hostname that should fail to resolve (primary) |
+
+**Returns** the snippet file path. `output` is the reload command's output.
+`meta` is empty.
+
+```yaml
+- run: net.nxdomain
+  with: db.internal
+```
+
+### dns_blackhole (action, outage)
+
+Resolves the name to an unroutable address: writes `address=/host/0.0.0.0`, so
+lookups succeed but connections go nowhere. A one-member unroutable set, in
+contrast to `nxdomain`'s empty set.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `host` | string | yes | the hostname to route into the void (primary) |
+
+**Returns** the snippet file path. `output` is the reload command's output.
+`meta` is empty.
+
+```yaml
+- run: net.dns_blackhole
+  with: db.internal
+```

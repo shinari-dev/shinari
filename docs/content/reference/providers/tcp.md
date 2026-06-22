@@ -21,12 +21,28 @@ providers:
       # timeout: 5             # connect deadline in seconds (default 5)
 ```
 
-| verb | kind | args | returns |
-|---|---|---|---|
-| `connect` | probe | `addr` (primary), or `host` + `port`; `timeout` | `value: true`; `meta.connectMs`, `meta.addr` |
+The configured target is the default; any step may override it. Give an `addr`
+(`host:port`), or a `host` plus `port` pair, and an optional `timeout` connect
+deadline in seconds.
 
-The configured target is the default; a step may override it. The `with:` scalar
-shorthand binds `addr`:
+## Verbs
+
+### connect (probe)
+
+Dials the address once and times the connect. A reachable port succeeds; a
+refused or timed-out connection is a probe failure, so `connect` works as a
+steadyState gate and inside `wait_until`.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `addr` | string | no | target `host:port`; defaults to the configured target (primary) |
+| `host` | string | no | target host, paired with `port` instead of `addr` |
+| `port` | number | no | target port, paired with `host` |
+| `timeout` | number | no | connect deadline in seconds (default 5) |
+
+**Returns** `true`. `meta.connectMs` (int) is the connect latency and
+`meta.addr` (string) is the target dialed. `output` is `"connected to <addr> in
+<n>ms"`.
 
 ```yaml
 steadyState:
@@ -40,7 +56,3 @@ verify:
     with: { of: "${.outputs.c.meta.connectMs}", lt: 50 }
     desc: "connects in under 50ms"
 ```
-
-A reachable port returns `value: true`; a refused or timed-out connection is a
-probe **failure** (the step fails), so `connect` works as a `steadyState` gate
-and inside `wait_until`.
