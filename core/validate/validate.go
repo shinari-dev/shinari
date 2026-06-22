@@ -108,7 +108,7 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 		collectBindings(sec.Steps, func(name, verb string) { laterBound[name] = verb })
 	}
 
-	v := &scenarioValidator{sc: sc, reg: reg, laterBound: laterBound, bgRunning: map[string]bool{}, varsSet: varsSet, envSet: envSet}
+	v := &scenarioValidator{sc: sc, reg: reg, laterBound: laterBound, bgRunning: map[string]bool{}, methodActionCaptures: map[string]bool{}, varsSet: varsSet, envSet: envSet}
 	for _, sec := range sc.Sections() {
 		for i := range sec.Steps {
 			v.checkStep(&sec.Steps[i], sec.Name, defined, nil, 0)
@@ -116,14 +116,17 @@ func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 	}
 	out = append(out, v.out...)
 
-	// rule 7 — recovery invariant present.
-	if v.methodHasOutage && v.methodCapturesID && !v.verifyHasExactlyOnce && !v.verifyHasFinding {
-		sev, msg := Warn, "recovery-shaped scenario (fault + captured work): consider an exactly-once assertion (count equals: 1) or a finding:"
-		if v.verifyAwaitsCapture {
-			sev = Error
-			msg = "recovery-shaped scenario (fault injected, work captured, verify awaits it) MUST assert exactly-once (count equals: 1) or carry a finding:"
-		}
-		out = append(out, Finding{File: sc.File, Scenario: sc.Name, Rule: 7, Msg: msg, Severity: sev})
+	// rule 7 — recovery invariant present. A scenario is recovery-shaped only
+	// when it injects an outage, admits a unit of work under it (an action
+	// capture), and then *awaits that work's completion* in verify. Such a run
+	// must state the once-only contract: an exactly-once assertion or a
+	// finding:. Capturing an action result merely to assert a value on it (a
+	// diagnostic reading) is not awaited work and does not trip the rule — that
+	// kept the old heuristic firing on graceful shutdowns and phase-isolation
+	// outages that put no in-flight work at risk.
+	if v.methodHasOutage && v.verifyAwaitsWork && !v.verifyHasExactlyOnce && !v.verifyHasFinding {
+		out = append(out, Finding{File: sc.File, Scenario: sc.Name, Rule: 7, Severity: Error,
+			Msg: "recovery-shaped scenario (fault injected, work admitted, verify awaits its completion) MUST assert exactly-once (count equals: 1) or carry a finding:"})
 	}
 
 	// rule 11 — a degradation fault that nothing observes is a smell.
@@ -174,10 +177,10 @@ type scenarioValidator struct {
 	out        []Finding
 
 	methodHasOutage      bool
-	methodCapturesID     bool
+	methodActionCaptures map[string]bool // names bound by an action under the fault (candidate work ids)
 	methodHasDegradation bool
 	observesLatency      bool
-	verifyAwaitsCapture  bool
+	verifyAwaitsWork     bool
 	verifyHasExactlyOnce bool
 	verifyHasFinding     bool
 }
@@ -300,13 +303,27 @@ func (v *scenarioValidator) checkStep(st *model.Step, section string, defined ma
 		if effect == sdk.EffectDegradation {
 			v.methodHasDegradation = true
 		}
-		if kind == sdk.KindAction && (st.As != "" || len(st.Capture) > 0) {
-			v.methodCapturesID = true
+		// A capture bound by an action under the fault is a candidate unit of
+		// work (a submitted job/execution id). Diagnostic readings come from
+		// probes and are not tracked, so awaiting one cannot trip rule 7.
+		if kind == sdk.KindAction {
+			for name := range bindings(st) {
+				v.methodActionCaptures[name] = true
+			}
 		}
 	}
 	if section == "verify" {
-		if len(refsOf(st)) > 0 {
-			v.verifyAwaitsCapture = true
+		// "Awaiting work" is a non-assertion verify step (a probe such as
+		// sut.await, or wait_until) that consumes a unit of work admitted under
+		// the fault — not an assert that merely checks a captured value.
+		if kind != sdk.KindAssertion {
+			for _, ref := range refsOf(st) {
+				for _, r := range jqx.NSRefs(ref) {
+					if r.Namespace == "outputs" && v.methodActionCaptures[r.Name] {
+						v.verifyAwaitsWork = true
+					}
+				}
+			}
 		}
 		if st.Finding != "" {
 			v.verifyHasFinding = true

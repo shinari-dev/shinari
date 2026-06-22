@@ -272,6 +272,29 @@ verify:
 	}
 }
 
+func TestRule7DiagnosticCaptureDoesNotFire(t *testing.T) {
+	// An outage plus an action result captured only to assert a *value* on it
+	// (a diagnostic reading, not awaited work) is not recovery-shaped: verify
+	// never awaits a unit of work, so rule 7 must stay silent.
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: s
+method:
+  - phase: p
+    steps:
+      - { run: sut.submit, with: reading, as: before }
+      - { run: sut.kill, with: app }
+verify:
+  - { run: assert, with: { of: "${.outputs.before}", equals: 0 } }
+`,
+	})
+	if f := findRule(Validate(set), 7); f != nil {
+		t.Fatalf("diagnostic capture asserted (not awaited) must not trip rule 7, got %v", f)
+	}
+}
+
 func TestRule7DetectsComposedFault(t *testing.T) {
 	// A composed verb with a non-builtin name inherits its leaf's outage
 	// effect, so rule 7 recognizes it as a fault with no hardcoded name list.
