@@ -19,16 +19,41 @@ providers:
       baseUrl: http://localhost:5678
 ```
 
-| verb | kind | effect | args |
-|---|---|---|---|
-| `run` | action | none | `target` (primary), `rate` (req/s, `>= 1`), `duration` (seconds), `method?` (default `GET`), `headers?` (map), `body?` |
+`baseUrl` is prepended to each step's `target`; a step may pass an absolute URL
+to override it.
 
-`load.run` blocks for `duration` seconds while issuing `rate` requests per
-second, then returns `{ n, errors, errorRate, min, max, mean, p50, p95, p99 }`
-(latencies in ms), identical in shape to `sample`. A request counts as an error
-when the transport fails or the status is `>= 400`. Its `effect` is `none`:
-load is the workload, not a fault, so it does not trip the
-degradation-observation rule.
+## Verbs
+
+### run (action)
+
+Blocks for `duration` seconds while issuing `rate` requests per second, then
+returns the window statistics. Its `effect` is `none`: load is the workload, not
+a fault, so it does not trip the degradation-observation rule. A request counts
+as an error when the transport fails or the status is `>= 400`.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `target` | string | yes | path or URL to request (primary) |
+| `rate` | number | yes | requests per second (`>= 1`) |
+| `duration` | number | yes | how long to run, in seconds |
+| `method` | string | no | HTTP method (default `GET`) |
+| `headers` | map | no | request headers |
+| `body` | any | no | request body |
+
+**Returns** the window stats as the value, `{ n, errors, errorRate, min, max,
+mean, p50, p95, p99 }` (latencies in ms), identical in shape to `sample`.
+`meta` carries `target` (string), `rate` (number), and `durationSec` (number).
+`output` is empty.
+
+```yaml
+- run: traffic.run
+  with: { target: "/", rate: 50, duration: 6 }
+  as: loaded
+- run: assert
+  with: { of: "${.outputs.loaded.value.p95}", lt: 200 }
+```
+
+## Driving load while a fault is active
 
 `load.run` owns no start/stop lifecycle. To drive load *while* a fault is
 active, run it in one branch of a `parallel` block and inject the fault in

@@ -15,25 +15,134 @@ providers:
       project: chaos-run
 ```
 
-| verb | kind | args | effect |
-|---|---|---|---|
-| `up` | action | `services` (list, primary), `wait?`, `profiles?` | `compose up -d --wait` |
-| `down` | action | — | `compose down -v --remove-orphans` |
-| `kill` | action | `service` (primary) | SIGKILL |
-| `stop` | action | `service` | SIGTERM (graceful path) |
-| `start` | action | `service` | restart a stopped service |
-| `pause` / `unpause` | action | `service` | freeze / thaw the process |
-| `logs` | probe | `service` (primary), `tail?`, `since?` | container log text; `tail`/`since` fetch an incremental slice (gate on it with `wait_until`) |
-| `ps` | probe | `service?` (primary) | container state from `compose ps --all --format json` |
+`composeFiles` lists the compose files to drive (relative paths resolve against
+the project root); `project` is the compose project name. Every verb except `ps`
+returns the command's trimmed stdout as the value, the untrimmed stdout in
+`output`, and an empty `meta`.
 
-Relative `composeFiles` paths resolve against the project root.
+## Verbs
+
+### up (action)
+
+Runs `compose up -d --wait`, blocking until every started service is healthy.
+Pass `wait: false` to drop `--wait` (see below). Select compose profiles with
+`profiles:`.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `services` | list | no | services to start; all of them when omitted (primary) |
+| `wait` | bool | no | wait for health before returning (default `true`) |
+| `profiles` | list | no | compose profiles to activate |
+
+```yaml
+- run: docker.up
+  with: { services: [api, worker] }
+```
+
+### down (action)
+
+Runs `compose down -v --remove-orphans`, tearing the whole project down
+regardless of profile. This powers the default teardown.
+
+No args.
+
+```yaml
+- run: docker.down
+```
+
+### kill / stop (action, outage)
+
+Signals a running container: `kill` sends SIGKILL (abrupt), `stop` sends SIGTERM
+(the graceful shutdown path). Both inject an outage.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `service` | string | yes | the service to signal (primary) |
+
+```yaml
+- run: docker.kill
+  with: worker
+```
+
+### start (action)
+
+Restarts a stopped service.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `service` | string | yes | the service to start (primary) |
+
+```yaml
+- run: docker.start
+  with: worker
+```
+
+### pause / unpause (action)
+
+Freezes (`pause`) or thaws (`unpause`) a container's processes with `SIGSTOP`/
+`SIGCONT`. `pause` carries `effect: outage`; `unpause` reverts it.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `service` | string | yes | the service to freeze or thaw (primary) |
+
+```yaml
+- run: docker.pause
+  with: worker
+- run: docker.unpause
+  with: worker
+```
+
+### logs (probe)
+
+Fetches a container's logs. `tail`/`since` fetch an incremental slice, so a
+`wait_until` can gate on a log line appearing.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `service` | string | yes | the service whose logs to read (primary) |
+| `tail` | string | no | only the last N lines |
+| `since` | string | no | only lines since a timestamp or relative time (e.g. `30s`) |
+
+```yaml
+- run: wait_until
+  with:
+    probe: { run: docker.logs, with: { service: worker, tail: "20" } }
+    matches: "rebalanced"
+    timeout: 30
+```
+
+### ps (probe)
+
+Returns parsed `compose ps --all --format json` (`--all` so exited and dead
+containers still report). With a `service` named that matches exactly one
+container, it binds that container's object directly, so `read:`/`capture:`
+reach `.State`, `.ExitCode`, and `.Health` without indexing a list; with no
+service it returns the full list.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `service` | string | no | one service to inspect; all containers when omitted (primary) |
+
+**Returns** the container object (single match) or the list of objects.
+`meta.count` (int) is the number of containers. `output` is the raw JSON.
+
+```yaml
+- run: docker.ps
+  with: worker
+  capture: { state: ".State", code: ".ExitCode" }
+- run: assert                              # crashed clean, did not hang
+  with: { of: "${.outputs.state}", equals: "exited" }
+- run: assert
+  with: { of: "${.outputs.code}", equals: 0 }
+```
 
 ## Starting a service that is meant to fail
 
 `up` runs `compose up -d --wait`, blocking until every started service is
 healthy. To bring up a service that is *supposed* to crash or hang (so you can
-assert it fails fast rather than blocks), pass `wait: false` — the `--wait` is
-dropped and the step returns once the container is created:
+assert it fails fast rather than blocks), pass `wait: false`: the `--wait` is
+dropped and the step returns once the container is created.
 
 ```yaml
 - run: docker.up
@@ -46,7 +155,7 @@ To run the same role in different shapes (a baseline worker, a round-robin
 worker, a partition-failover worker) keep one compose file and tag each variant
 service with a [compose profile](https://docs.docker.com/compose/profiles/), then
 select one per scenario with `profiles:`. This stays hermetic and keeps a single
-lifecycle owner — there is no per-scenario compose-file swapping or second docker
+lifecycle owner; there is no per-scenario compose-file swapping or second docker
 provider (a scenario can still override `composeFiles` in its own `providers:`
 block if it genuinely needs a different stack).
 
@@ -56,20 +165,3 @@ block if it genuinely needs a different stack).
 ```
 
 `down` tears the whole project down regardless of profile.
-
-## Inspecting exit state
-
-`ps` returns the parsed `compose ps --all --format json` output (`--all` so
-exited and dead containers still report). With a `service` named it binds that
-container's object directly, so `read:`/`capture:` reach `.State`, `.ExitCode`,
-and `.Health` without indexing a list; with no service it returns the full list.
-
-```yaml
-- run: docker.ps
-  with: worker
-  capture: { state: ".State", code: ".ExitCode" }
-- run: assert                              # crashed clean, did not hang
-  with: { of: "${.outputs.state}", equals: "exited" }
-- run: assert
-  with: { of: "${.outputs.code}", equals: 0 }
-```

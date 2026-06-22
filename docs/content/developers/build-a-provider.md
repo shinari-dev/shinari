@@ -201,6 +201,31 @@ Scenario-level tests register the provider under a fake type and run the
 engine against scripted values; see `core/engine/engine_test.go` for the
 pattern.
 
+### Document it
+
+A built-in provider ships a reference page under
+`docs/content/reference/providers/<type>.md`. The pages follow one shape so a
+reader learns every provider the same way:
+
+1. **Intro** — one paragraph: what it does, and when to reach for it.
+2. **Config block** — the `providers:` YAML, then prose describing each config
+   key and its default.
+3. **`## Verbs`** — one `### <verb> (<kind>[, <effect>])` section per verb
+   (group verbs that share an arg shape, e.g. `### post / put / delete`). Each
+   section has:
+   - a one-line description of what the verb does;
+   - an **arg table** with columns `arg | type | req | description`, marking the
+     primary arg; write `No args.` when there are none;
+   - a **`**Returns**`** line describing the `value` shape, every `meta` key the
+     verb sets, and what `output` holds;
+   - a **minimal runnable example**.
+4. **Narrative sections** (optional) — any cross-cutting behavior that does not
+   belong to one verb (status handling, lifecycle notes) as its own `##`
+   section below the verbs.
+
+The arg table mirrors your `Args` declaration and the `**Returns**` line mirrors
+what `Run` puts in the `VerbResult`; keep them in step when either changes.
+
 ## Going deeper
 
 Engine internals (the three-package architecture, the result/event
