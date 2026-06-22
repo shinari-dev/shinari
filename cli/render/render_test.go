@@ -122,12 +122,22 @@ func TestConsoleStreams(t *testing.T) {
 	var buf bytes.Buffer
 	c := &Console{W: &buf}
 	c.Emit(engine.Event{Type: engine.EvScenarioStarted, Scenario: "s"})
+	c.Emit(engine.Event{Type: engine.EvFindingRecorded, Step: "no leak",
+		Payload: map[string]any{"narrative": "connections leak after kill"}})
 	c.Emit(engine.Event{Type: engine.EvStepFailed, Step: "no leak",
 		Payload: map[string]any{"verdict": "FINDING"}})
 	c.Emit(engine.Event{Type: engine.EvStepFailed, Step: "boom",
 		Payload: map[string]any{"verdict": "FAIL", "error": "kaput"}})
+	c.Emit(engine.Event{Type: engine.EvScenarioFinished,
+		Payload: map[string]any{"verdict": "FAILED", "reason": "boom failed"}})
 	s := buf.String()
-	if !strings.Contains(s, "◆ FINDING no leak") || !strings.Contains(s, "✗ boom — kaput") {
-		t.Errorf("console: %s", s)
+	if !strings.Contains(s, "◆ no leak") || !strings.Contains(s, "FINDING: connections leak after kill") {
+		t.Errorf("finding line missing:\n%s", s)
+	}
+	if !strings.Contains(s, "✗ boom — kaput") {
+		t.Errorf("fail line missing:\n%s", s)
+	}
+	if !strings.Contains(s, "✘ FAILED") || !strings.Contains(s, "1 finding held") {
+		t.Errorf("verdict line missing:\n%s", s)
 	}
 }

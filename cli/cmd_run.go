@@ -18,14 +18,14 @@ import (
 	"github.com/shinari-dev/shinari/core/engine"
 )
 
-func newRunCmd(project *string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) *cobra.Command {
+func newRunCmd(project, color *string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) *cobra.Command {
 	var out, include, exclude string
 	var dryRun, keepUp, verbose bool
 	cmd := &cobra.Command{
 		Use:   "run [target...]",
 		Short: "execute scenarios (target = scenario name or suite)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code := cmdRun(*project, out, args, dryRun, keepUp, verbose, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
+			if code := cmdRun(*project, *color, out, args, dryRun, keepUp, verbose, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
 				return &exitError{code}
 			}
 			return nil
@@ -40,11 +40,12 @@ func newRunCmd(project *string, stdout, stderr io.Writer, getenv func(string) st
 	return cmd
 }
 
-func cmdRun(dir, out string, targets []string, dryRun, keepUp, verbose bool, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
+func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose bool, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
 	set, ok := load(dir, stderr)
 	if !ok {
 		return 2 // could not even establish the harness
 	}
+	pal := paletteFor(color, stdout, lookupEnv)
 
 	resolvedEnv, eerr := resolveEnv(set.Project.Env, lookupEnv)
 	if eerr != nil {
@@ -60,7 +61,7 @@ func cmdRun(dir, out string, targets []string, dryRun, keepUp, verbose bool, inc
 	defer unlock()
 
 	rec := &engine.Recorder{}
-	console := &render.Console{W: stdout, Verbose: verbose}
+	console := &render.Console{W: stdout, Verbose: verbose, Pal: pal}
 	opts := engine.Options{
 		KeepUp:      keepUp || getenv("KEEP_UP") == "1",
 		DryRun:      dryRun,
@@ -77,13 +78,13 @@ func cmdRun(dir, out string, targets []string, dryRun, keepUp, verbose bool, inc
 		fmt.Fprintln(stdout, "no scenarios matched")
 		return 0
 	}
-	render.Summary(stdout, res)
+	render.Summary(stdout, res, pal)
 
 	if werr := writeReports(out, res, rec.Events); werr != nil {
 		fmt.Fprintln(stderr, werr)
 		return 2
 	}
-	fmt.Fprintf(stdout, "reports: %s/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md}\n", out)
+	fmt.Fprintln(stdout, pal.Dim(fmt.Sprintf("reports → %s/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md}", out)))
 	return res.Verdict().ExitCode()
 }
 

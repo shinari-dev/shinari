@@ -58,7 +58,7 @@ func TestNewScaffoldsRunnableProject(t *testing.T) {
 	if code := run([]string{"-p", dir, "-o", outDir, "run"}, &out, &errOut, noEnv, noLookup); code != 0 {
 		t.Fatalf("run: code = %d, want 0 (PASSED): %s%s", code, out.String(), errOut.String())
 	}
-	if !strings.Contains(out.String(), "finding(s) held") {
+	if !strings.Contains(out.String(), "finding held") {
 		t.Errorf("expected the worker-killed finding to hold:\n%s", out.String())
 	}
 }

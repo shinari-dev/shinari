@@ -15,14 +15,14 @@ import (
 	"github.com/shinari-dev/shinari/core/selector"
 )
 
-func newListCmd(project *string, stdout, stderr io.Writer) *cobra.Command {
+func newListCmd(project, color *string, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) *cobra.Command {
 	var include, exclude string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "discovered scenarios, grouped by suite",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code := cmdList(*project, include, exclude, stdout, stderr); code != 0 {
+			if code := cmdList(*project, *color, include, exclude, stdout, stderr, lookupEnv); code != 0 {
 				return &exitError{code}
 			}
 			return nil
@@ -33,11 +33,12 @@ func newListCmd(project *string, stdout, stderr io.Writer) *cobra.Command {
 	return cmd
 }
 
-func cmdList(dir, include, exclude string, stdout, stderr io.Writer) int {
+func cmdList(dir, color, include, exclude string, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
 	set, ok := load(dir, stderr)
 	if !ok {
 		return 1
 	}
+	pal := paletteFor(color, stdout, lookupEnv)
 	scenarios, err := selector.Filter(set.Scenarios, include, exclude)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -57,16 +58,16 @@ func cmdList(dir, include, exclude string, stdout, stderr io.Writer) int {
 		if name == "" {
 			name = "(no suite)"
 		}
-		fmt.Fprintf(stdout, "%s\n", name)
+		fmt.Fprintf(stdout, "%s\n", pal.Bold(name))
 		scs := bySuite[suite]
 		sort.Slice(scs, func(i, j int) bool { return scs[i].Name < scs[j].Name })
 		for _, sc := range scs {
 			fmt.Fprintf(stdout, "  %s", sc.Name)
 			if sc.Description != "" {
-				fmt.Fprintf(stdout, " — %s", sc.Description)
+				fmt.Fprintf(stdout, " %s", pal.Dim("— "+sc.Description))
 			}
 			if len(sc.Tags) > 0 {
-				fmt.Fprintf(stdout, " [%s]", strings.Join(sc.Tags, ", "))
+				fmt.Fprintf(stdout, " %s", pal.Gate("["+strings.Join(sc.Tags, ", ")+"]"))
 			}
 			fmt.Fprintln(stdout)
 		}
