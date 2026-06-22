@@ -56,6 +56,7 @@ func (p *Provider) Configure(cfg map[string]any) error {
 func (p *Provider) Verbs() []sdk.VerbSpec {
 	upArgs := []sdk.ArgSpec{{Name: "services", Type: "list"}, {Name: "wait", Type: "bool"}, {Name: "profiles", Type: "list"}}
 	service := []sdk.ArgSpec{{Name: "service", Type: "string", Required: true}}
+	networkArgs := []sdk.ArgSpec{{Name: "service", Type: "string", Required: true}, {Name: "network", Type: "string"}}
 	return []sdk.VerbSpec{
 		{Name: "up", Kind: sdk.KindAction, SideEffects: true, Primary: "services", Args: upArgs},
 		{Name: "down", Kind: sdk.KindAction, SideEffects: true},
@@ -81,6 +82,14 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 			{Name: "service", Type: "string", Required: true},
 			{Name: "command", Type: "string", Required: true},
 		}},
+		// disconnect/connect partition a single container at the network layer:
+		// the process keeps running and co-located peers are untouched, so the
+		// scenario observes last-known-state behavior and reconnection on
+		// restore — a distinct failure mode from kill/stop/pause. They target
+		// one network (the compose default unless network: is given); a
+		// multi-network container is isolated by disconnecting each.
+		{Name: "disconnect", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: networkArgs},
+		{Name: "connect", Kind: sdk.KindAction, SideEffects: true, Primary: "service", Args: networkArgs},
 	}
 }
 
@@ -131,6 +140,35 @@ func (p *Provider) compose(ctx context.Context, args ...string) (string, error) 
 	return string(out), nil
 }
 
+// docker runs a raw docker command (not a compose subcommand): no `compose`
+// prefix, no -f/-p. `docker network disconnect|connect` has no compose
+// equivalent, so a partition reaches the daemon directly.
+func (p *Provider) docker(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, p.bin, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("docker %s: %v — %s",
+			strings.Join(args, " "), err, conv.Truncate(strings.TrimSpace(string(out)), 300))
+	}
+	return string(out), nil
+}
+
+// containerIDs resolves a compose service to its running container IDs, robust
+// to generated names and scaled replicas (`compose ps -q` prints one per line).
+func (p *Provider) containerIDs(ctx context.Context, service string) ([]string, error) {
+	out, err := p.compose(ctx, "ps", "-q", service)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			ids = append(ids, line)
+		}
+	}
+	return ids, nil
+}
+
 func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
 	service, _ := args["service"].(string)
 	var out string
@@ -176,6 +214,37 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		// command string so pipes/globs (e.g. `ls /proc/1/task | wc -l`) work.
 		command, _ := args["command"].(string)
 		out, err = p.compose(ctx, "exec", "-T", service, "sh", "-c", command)
+	case "disconnect", "connect":
+		network, _ := args["network"].(string)
+		if network == "" {
+			// compose names its default network <project>_default; without a
+			// known project name there is nothing to default to.
+			if p.project == "" {
+				return sdk.VerbResult{}, fmt.Errorf("docker %s: a network is required (no compose project set to derive <project>_default)", verb)
+			}
+			network = p.project + "_default"
+		}
+		ids, ierr := p.containerIDs(ctx, service)
+		if ierr != nil {
+			return sdk.VerbResult{}, ierr
+		}
+		if len(ids) == 0 {
+			return sdk.VerbResult{}, fmt.Errorf("docker %s: no running container for service %q", verb, service)
+		}
+		for _, id := range ids {
+			if verb == "disconnect" {
+				// -f forces the disconnect even if the daemon thinks the
+				// endpoint is busy, so the partition takes effect reliably.
+				out, err = p.docker(ctx, "network", "disconnect", "-f", network, id)
+			} else {
+				// --alias restores the compose service-name DNS alias, which a
+				// manual connect would otherwise drop, so peers resolve it again.
+				out, err = p.docker(ctx, "network", "connect", "--alias", service, network, id)
+			}
+			if err != nil {
+				return sdk.VerbResult{Output: out}, err
+			}
+		}
 	case "logs":
 		cmdArgs := []string{"logs", "--no-color"}
 		if t, ok := args["tail"]; ok && t != nil && fmt.Sprintf("%v", t) != "" {

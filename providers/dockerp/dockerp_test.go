@@ -188,6 +188,49 @@ func TestExecRunsCommandInContainer(t *testing.T) {
 	}
 }
 
+func TestDisconnectPartitionsContainer(t *testing.T) {
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "disconnect", map[string]any{"service": "worker"}); err != nil {
+		t.Fatal(err)
+	}
+	got := recorded(t, argsFile)
+	// resolves the container id via compose ps -q...
+	if !strings.Contains(got, "ps -q worker") {
+		t.Errorf("argv %q missing container resolve", got)
+	}
+	// ...then force-severs it from the compose default network (the stub
+	// returns "stub-ok" as the resolved container id).
+	if !strings.Contains(got, "network disconnect -f chaos-run_default stub-ok") {
+		t.Errorf("argv %q missing forced network disconnect", got)
+	}
+}
+
+func TestConnectRestoresServiceAlias(t *testing.T) {
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "connect", map[string]any{
+		"service": "worker", "network": "custom_net",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := recorded(t, argsFile)
+	// connect re-attaches and restores the service-name DNS alias.
+	if !strings.Contains(got, "network connect --alias worker custom_net stub-ok") {
+		t.Errorf("argv %q missing aliased network connect", got)
+	}
+}
+
+func TestDisconnectNeedsNetworkWithoutProject(t *testing.T) {
+	bin, _ := stubBin(t)
+	p := New().(*Provider)
+	if err := p.Configure(map[string]any{"bin": bin}); err != nil { // no project
+		t.Fatal(err)
+	}
+	_, err := p.Run(context.Background(), "disconnect", map[string]any{"service": "worker"})
+	if err == nil || !strings.Contains(err.Error(), "network is required") {
+		t.Fatalf("want a network-required error without a compose project, got %v", err)
+	}
+}
+
 func TestUpProfilesPrecedeSubcommand(t *testing.T) {
 	p, argsFile := provider(t)
 	if _, err := p.Run(context.Background(), "up", map[string]any{
