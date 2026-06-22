@@ -171,6 +171,23 @@ func TestPsNoServiceReturnsList(t *testing.T) {
 	}
 }
 
+func TestExecRunsCommandInContainer(t *testing.T) {
+	p, argsFile := provider(t)
+	res, err := p.Run(context.Background(), "exec", map[string]any{
+		"service": "worker", "command": "ls /proc/1/task | wc -l",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// -T (no TTY) and sh -c so the pipeline runs inside the container.
+	if got := recorded(t, argsFile); !strings.Contains(got, "exec -T worker sh -c ls /proc/1/task | wc -l") {
+		t.Errorf("argv = %q", got)
+	}
+	if res.Value != "stub-ok" {
+		t.Errorf("value = %v, want trimmed stdout", res.Value)
+	}
+}
+
 func TestUpProfilesPrecedeSubcommand(t *testing.T) {
 	p, argsFile := provider(t)
 	if _, err := p.Run(context.Background(), "up", map[string]any{

@@ -72,6 +72,15 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 		{Name: "ps", Kind: sdk.KindProbe, Primary: "service", Args: []sdk.ArgSpec{
 			{Name: "service", Type: "string"},
 		}},
+		// exec runs a command inside a running container and returns its stdout,
+		// so a scenario can read internal runtime state (thread/fd counts,
+		// memory, an in-container metric) and baseline-then-compare it with the
+		// standard assert operators. A probe: it observes, it does not inject a
+		// fault — keep the command read-only.
+		{Name: "exec", Kind: sdk.KindProbe, Primary: "command", Args: []sdk.ArgSpec{
+			{Name: "service", Type: "string", Required: true},
+			{Name: "command", Type: "string", Required: true},
+		}},
 	}
 }
 
@@ -162,6 +171,11 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		out, err = p.compose(ctx, "pause", service)
 	case "unpause":
 		out, err = p.compose(ctx, "unpause", service)
+	case "exec":
+		// -T disables TTY allocation (no interactive terminal); sh -c runs the
+		// command string so pipes/globs (e.g. `ls /proc/1/task | wc -l`) work.
+		command, _ := args["command"].(string)
+		out, err = p.compose(ctx, "exec", "-T", service, "sh", "-c", command)
 	case "logs":
 		cmdArgs := []string{"logs", "--no-color"}
 		if t, ok := args["tail"]; ok && t != nil && fmt.Sprintf("%v", t) != "" {
