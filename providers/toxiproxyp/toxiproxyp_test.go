@@ -96,6 +96,68 @@ func TestAddLatency(t *testing.T) {
 	if attrs["latency"] != float64(500) || attrs["jitter"] != float64(50) {
 		t.Errorf("attrs = %v", attrs)
 	}
+	// with no direction, a toxic defaults to the server→client stream,
+	// preserving the original single-direction behavior.
+	if f.toxics[0]["stream"] != "downstream" {
+		t.Errorf("default stream = %v, want downstream", f.toxics[0]["stream"])
+	}
+}
+
+func TestDirectionToServerFaultsUpstream(t *testing.T) {
+	f := &fakeAdmin{}
+	p := provider(t, f.server(t).URL)
+	// to_server is the client→service leg — the path a worker uses to send
+	// results back, which downstream-only faults cannot reach.
+	if _, err := p.Run(context.Background(), "add_latency",
+		map[string]any{"proxy": "app", "latencyMs": 100, "direction": "to_server"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.toxics) != 1 || f.toxics[0]["stream"] != "upstream" {
+		t.Fatalf("toxics = %v, want a single upstream toxic", f.toxics)
+	}
+}
+
+func TestDirectionUpstreamAlias(t *testing.T) {
+	f := &fakeAdmin{}
+	p := provider(t, f.server(t).URL)
+	// upstream/downstream are accepted as toxiproxy-native aliases.
+	if _, err := p.Run(context.Background(), "blackhole",
+		map[string]any{"proxy": "app", "direction": "upstream"}); err != nil {
+		t.Fatal(err)
+	}
+	if f.toxics[0]["stream"] != "upstream" {
+		t.Fatalf("stream = %v, want upstream", f.toxics[0]["stream"])
+	}
+}
+
+func TestDirectionBothInstallsOnEachStream(t *testing.T) {
+	f := &fakeAdmin{}
+	p := provider(t, f.server(t).URL)
+	if _, err := p.Run(context.Background(), "add_latency",
+		map[string]any{"proxy": "app", "latencyMs": 100, "direction": "both"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.toxics) != 2 {
+		t.Fatalf("want a toxic on each stream, got %d: %v", len(f.toxics), f.toxics)
+	}
+	streams := map[any]bool{f.toxics[0]["stream"]: true, f.toxics[1]["stream"]: true}
+	if !streams["upstream"] || !streams["downstream"] {
+		t.Errorf("streams = %v, want both upstream and downstream", streams)
+	}
+	// distinct names so the two toxics do not collide on the same proxy.
+	if f.toxics[0]["name"] == f.toxics[1]["name"] {
+		t.Errorf("toxic names collide: %v", f.toxics[0]["name"])
+	}
+}
+
+func TestUnknownDirectionErrors(t *testing.T) {
+	f := &fakeAdmin{}
+	p := provider(t, f.server(t).URL)
+	_, err := p.Run(context.Background(), "add_latency",
+		map[string]any{"proxy": "app", "latencyMs": 1, "direction": "sideways"})
+	if err == nil {
+		t.Fatal("want error for unknown direction")
+	}
 }
 
 func TestBlackholeIsTimeoutZero(t *testing.T) {
@@ -134,7 +196,7 @@ func TestClearRemovesToxicsAndReenablesProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	// the proxy's own toxic is removed, scoped to this proxy...
-	if len(f.removed) != 1 || f.removed[0] != "blackhole_shinari" {
+	if len(f.removed) != 1 || f.removed[0] != "blackhole_shinari_downstream" {
 		t.Fatalf("removed = %v, want only this proxy's toxic", f.removed)
 	}
 	// ...and the proxy is re-enabled (undoing a partition) via an update POST.
