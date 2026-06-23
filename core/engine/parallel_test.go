@@ -122,6 +122,38 @@ method:
 	}
 }
 
+func TestParallelBranchBackgroundIsStoppableAfterBarrier(t *testing.T) {
+	// A fault verb implemented via `background` (e.g. netem.delay) is the
+	// documented way to inject mid-load: started in one parallel branch while a
+	// sibling drives load. Its handle must survive the barrier so a later
+	// stop_background (netem.clear, in the next phase) can find and stop it.
+	const src = `
+apiVersion: shinari/v1
+kind: Scenario
+name: parallel-bg-survives
+method:
+  - phase: "inject in a branch"
+    steps:
+      - run: parallel
+        with:
+          branches:
+            - - { run: sut.submit, with: load }
+            - - run: background
+                with:
+                  name: fault
+                  step: { run: sleep, with: { seconds: 30 } }
+  - phase: "clear the fault in a later phase"
+    steps:
+      - run: stop_background
+        with: fault
+`
+	sut, sc, reg := newWorld(t, src)
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s); a branch background must be stoppable after the barrier", res.Verdict, res.Reason)
+	}
+}
+
 func TestParallelIsDeterministic(t *testing.T) {
 	const src = `
 apiVersion: shinari/v1
