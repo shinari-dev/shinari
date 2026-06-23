@@ -39,19 +39,45 @@ func proxyArg() []sdk.ArgSpec {
 	return []sdk.ArgSpec{{Name: "proxy", Type: "string", Required: true}}
 }
 
+// resolveStreams maps a direction selector onto the toxiproxy stream(s) a toxic
+// is installed on. Direction is named by role relative to the proxied service:
+// from_server (downstream, the default) faults the service→client path;
+// to_server (upstream) faults the client→service path — the leg a worker uses
+// to send results in, unreachable by downstream-only faults. "both" installs
+// the toxic on each stream. The toxiproxy-native upstream/downstream names are
+// accepted as aliases.
+func resolveStreams(arg any) ([]string, error) {
+	dir, _ := arg.(string)
+	switch dir {
+	case "", "from_server", "downstream":
+		return []string{"downstream"}, nil
+	case "to_server", "upstream":
+		return []string{"upstream"}, nil
+	case "both":
+		return []string{"upstream", "downstream"}, nil
+	default:
+		return nil, fmt.Errorf("unknown direction %q (want to_server | from_server | both)", dir)
+	}
+}
+
 func (p *Provider) Verbs() []sdk.VerbSpec {
 	withProxy := func(name string, effect sdk.Effect, extra ...sdk.ArgSpec) sdk.VerbSpec {
 		return sdk.VerbSpec{Name: name, Kind: sdk.KindAction, SideEffects: true, Effect: effect,
 			Primary: "proxy", Args: append(proxyArg(), extra...)}
 	}
+	// toxic-based faults take a direction selector; connection-level verbs
+	// (partition/clear/reset) act on both streams at once and ignore it.
+	withToxic := func(name string, effect sdk.Effect, extra ...sdk.ArgSpec) sdk.VerbSpec {
+		return withProxy(name, effect, append(extra, sdk.ArgSpec{Name: "direction", Type: "string"})...)
+	}
 	return []sdk.VerbSpec{
-		withProxy("add_latency", sdk.EffectDegradation,
+		withToxic("add_latency", sdk.EffectDegradation,
 			sdk.ArgSpec{Name: "latencyMs", Type: "number", Required: true},
 			sdk.ArgSpec{Name: "jitterMs", Type: "number"}),
-		withProxy("packet_loss", sdk.EffectOutage, sdk.ArgSpec{Name: "toxicity", Type: "number"}),
-		withProxy("bandwidth", sdk.EffectDegradation, sdk.ArgSpec{Name: "rateKbps", Type: "number", Required: true}),
-		withProxy("blackhole", sdk.EffectOutage),
-		withProxy("timeout", sdk.EffectOutage, sdk.ArgSpec{Name: "timeoutMs", Type: "number", Required: true}),
+		withToxic("packet_loss", sdk.EffectOutage, sdk.ArgSpec{Name: "toxicity", Type: "number"}),
+		withToxic("bandwidth", sdk.EffectDegradation, sdk.ArgSpec{Name: "rateKbps", Type: "number", Required: true}),
+		withToxic("blackhole", sdk.EffectOutage),
+		withToxic("timeout", sdk.EffectOutage, sdk.ArgSpec{Name: "timeoutMs", Type: "number", Required: true}),
 		withProxy("partition", sdk.EffectOutage),
 		withProxy("clear", sdk.EffectNone),
 		{Name: "reset", Kind: sdk.KindAction, SideEffects: true},
@@ -72,6 +98,21 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		return sdk.VerbResult{}, fmt.Errorf("toxiproxy.%s: proxy %q: %w", verb, name, err)
 	}
 
+	// addToxic installs one toxic on each resolved stream, suffixing its name
+	// with the stream so the two directions never collide on the same proxy.
+	streams, err := resolveStreams(args["direction"])
+	if err != nil {
+		return sdk.VerbResult{}, fmt.Errorf("toxiproxy.%s on %q: %w", verb, name, err)
+	}
+	addToxic := func(base, typ string, toxicity float32, attrs toxiproxy.Attributes) error {
+		for _, stream := range streams {
+			if _, e := proxy.AddToxic(base+"_shinari_"+stream, typ, stream, toxicity, attrs); e != nil {
+				return e
+			}
+		}
+		return nil
+	}
+
 	switch verb {
 	case "add_latency":
 		latency, _ := conv.ToFloat(args["latencyMs"])
@@ -79,7 +120,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		if j, _ := conv.ToFloat(args["jitterMs"]); j > 0 {
 			attrs["jitter"] = j
 		}
-		_, err = proxy.AddToxic("latency_shinari", "latency", "downstream", 1.0, attrs)
+		err = addToxic("latency", "latency", 1.0, attrs)
 	case "packet_loss":
 		toxicity, _ := conv.ToFloat(args["toxicity"])
 		if toxicity == 0 {
@@ -87,18 +128,18 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		}
 		// timeout-with-0 drops data without closing the connection — the
 		// Toxiproxy idiom for packet loss.
-		_, err = proxy.AddToxic("packet_loss_shinari", "timeout", "downstream", float32(toxicity), toxiproxy.Attributes{"timeout": 0})
+		err = addToxic("packet_loss", "timeout", float32(toxicity), toxiproxy.Attributes{"timeout": 0})
 	case "bandwidth":
 		rate, _ := conv.ToFloat(args["rateKbps"])
-		_, err = proxy.AddToxic("bandwidth_shinari", "bandwidth", "downstream", 1.0, toxiproxy.Attributes{"rate": rate})
+		err = addToxic("bandwidth", "bandwidth", 1.0, toxiproxy.Attributes{"rate": rate})
 	case "blackhole":
-		_, err = proxy.AddToxic("blackhole_shinari", "timeout", "downstream", 1.0, toxiproxy.Attributes{"timeout": 0})
+		err = addToxic("blackhole", "timeout", 1.0, toxiproxy.Attributes{"timeout": 0})
 	case "timeout":
 		ms, _ := conv.ToFloat(args["timeoutMs"])
 		// a non-zero timeout drops all data, then closes the connection after
 		// the interval — a link that wedges and is torn down after a bounded
 		// wait, distinct from blackhole (timeout 0), which never closes.
-		_, err = proxy.AddToxic("timeout_shinari", "timeout", "downstream", 1.0, toxiproxy.Attributes{"timeout": ms})
+		err = addToxic("timeout", "timeout", 1.0, toxiproxy.Attributes{"timeout": ms})
 	case "partition":
 		err = proxy.Disable()
 	case "clear":
