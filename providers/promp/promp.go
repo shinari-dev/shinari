@@ -94,7 +94,7 @@ func selectSample(body, metric string, want map[string]any) (float64, bool) {
 }
 
 func parseLine(line string) (name string, labels map[string]string, val float64, ok bool) {
-	rest := line
+	var rest string
 	if open := strings.IndexByte(line, '{'); open >= 0 {
 		closing := strings.IndexByte(line, '}')
 		if closing < 0 || closing < open {

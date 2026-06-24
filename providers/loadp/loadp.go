@@ -69,7 +69,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 
 	target := conv.ToString(args["target"])
 	if target == "" {
-		return sdk.VerbResult{}, fmt.Errorf("load.run needs target:")
+		return sdk.VerbResult{}, fmt.Errorf("load.run needs a target: field")
 	}
 	rate, ok := conv.ToFloat(args["rate"])
 	if !ok || rate < 1 {

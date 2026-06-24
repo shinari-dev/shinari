@@ -652,7 +652,7 @@ func (r *runner) execSample(ctx context.Context, args map[string]any, scope inte
 		duration = d
 	}
 	if count <= 0 && duration <= 0 {
-		return sdk.VerbResult{}, fmt.Errorf("sample needs count: or duration:")
+		return sdk.VerbResult{}, fmt.Errorf("sample needs a count: or duration: field")
 	}
 	interval := 0.0
 	if v, ok := conv.ToFloat(args["interval"]); ok {
@@ -754,7 +754,7 @@ func (r *runner) execWaitUntil(ctx context.Context, args map[string]any, scope i
 func (r *runner) execStepMap(ctx context.Context, m map[string]any, scope interp.Scope) (sdk.VerbResult, error) {
 	run, _ := m["run"].(string)
 	if run == "" {
-		return sdk.VerbResult{}, fmt.Errorf("nested step needs run:")
+		return sdk.VerbResult{}, fmt.Errorf("nested step needs a run: field")
 	}
 	res, err := r.reg.Resolve(run)
 	if err != nil {
