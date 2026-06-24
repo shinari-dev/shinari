@@ -45,9 +45,11 @@ with a strict dependency direction (every arrow points down: `cli → core → s
   JSON, JUnit XML, journal, findings report), and the mapping of verdict → exit code. It decides which
   providers ship in the binary by blank-importing `providers/all` (`wiring.go`); it is the only
   package that links both `core` and the concrete providers.
-- **`sdk/`** — the provider contract (`Provider`, `VerbSpec`, `VerbResult`, `Kind`) **and the
-  registration seam** (`Register`/`Factory`, the database/sql-style driver table). Providers link only
-  this package, never the engine.
+- **`sdk/`** — the provider contract (`Provider`, `VerbSpec`, `VerbResult`, `Kind`, plus the optional
+  `Closer` a connection-holding provider implements) **and the registration seam** (`Register`/`Factory`,
+  the database/sql-style driver table). Providers link only this package, never the engine. The engine
+  builds a fresh registry per scenario and `reg.Close()`s it afterward, so a provider holding a pool or
+  channel releases it each scenario.
 - **`providers/`** — the native providers (`execp`, `httpp`, `tcpp`, `grpcp`, `dockerp`, `toxiproxyp`, `netp`, `sqlp`, `redisp`, `promp`, `loadp`),
   each linking only `sdk` (plus the dependency-free `utils/` leaves) — exactly the shape a third-party out-of-tree
   provider takes. Each **self-registers** its type from an `init()` (`sdk.Register("docker", New)`);
@@ -55,7 +57,7 @@ with a strict dependency direction (every arrow points down: `cli → core → s
   provider needs no core change** — write the package, self-register, and add one line to
   `providers/all` (or have your own binary blank-import it).
 - **`utils/conv/`** — a dependency-free leaf of small value helpers (`ToFloat`, `ToString`,
-  `Truncate`, `BaseURL`, `JoinURL`) shared by core and the providers.
+  `Normalize`, `Truncate`, `BaseURL`, `JoinURL`) shared by core and the providers.
 - **`utils/stats/`** — a dependency-free leaf computing the window statistics
   (`Summarize`: n, errors, errorRate, min/max/mean, p50/p95/p99) shared by the
   `sample` builtin and the `load` provider.

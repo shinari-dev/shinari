@@ -12,10 +12,33 @@ import (
 
 	"github.com/shinari-dev/shinari/core/discover"
 	"github.com/shinari-dev/shinari/sdk"
-
-	// Blank import self-registers "http", which several fixtures configure.
-	_ "github.com/shinari-dev/shinari/providers/httpp"
 )
+
+// httpFake mirrors httpp's get/post surface (kind, side effects, arg spec) so
+// fixtures resolve "http" without core importing the real provider.
+type httpFake struct{}
+
+func (httpFake) Type() string                   { return "http" }
+func (httpFake) Configure(map[string]any) error { return nil }
+func (httpFake) Verbs() []sdk.VerbSpec {
+	args := []sdk.ArgSpec{
+		{Name: "path", Type: "string", Required: true},
+		{Name: "body", Type: "map"},
+		{Name: "raw", Type: "string"},
+		{Name: "contentType", Type: "string"},
+		{Name: "form", Type: "map"},
+		{Name: "headers", Type: "map"},
+		{Name: "basicAuth", Type: "map"},
+		{Name: "expectStatus", Type: "list"},
+	}
+	return []sdk.VerbSpec{
+		{Name: "get", Kind: sdk.KindProbe, Primary: "path", Args: args},
+		{Name: "post", Kind: sdk.KindAction, SideEffects: true, Primary: "path", Args: args},
+	}
+}
+func (httpFake) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
+	return sdk.VerbResult{Value: "ok"}, nil
+}
 
 // lifecycleFake gives tests a lifecycle provider without docker.
 type lifecycleFake struct{}
@@ -38,7 +61,10 @@ func (lifecycleFake) Run(ctx context.Context, verb string, args map[string]any) 
 	return sdk.VerbResult{Value: "ok"}, nil
 }
 
-func init() { sdk.Register("lcfake", func() sdk.Provider { return lifecycleFake{} }) }
+func init() {
+	sdk.Register("lcfake", func() sdk.Provider { return lifecycleFake{} })
+	sdk.Register("http", func() sdk.Provider { return httpFake{} })
+}
 
 func load(t *testing.T, files map[string]string) *discover.Set {
 	t.Helper()

@@ -20,6 +20,13 @@ import (
 	"github.com/shinari-dev/shinari/utils/conv"
 )
 
+// defaultTimeout applies only when a step passes no deadline; httpErrorStatus
+// is the first HTTP status treated as a failure (4xx and up).
+const (
+	defaultTimeout  = 30 * time.Second
+	httpErrorStatus = 400
+)
+
 type Provider struct {
 	baseURL        string
 	client         *http.Client
@@ -34,7 +41,7 @@ func New() sdk.Provider {
 	// No client-level timeout: the request context governs, so a per-step
 	// timeout: of any value is authoritative. Run() applies defaultTimeout
 	// only when the caller passed no deadline.
-	return &Provider{client: &http.Client{}, defaultTimeout: 30 * time.Second}
+	return &Provider{client: &http.Client{}, defaultTimeout: defaultTimeout}
 }
 
 func (p *Provider) Type() string { return "http" }
@@ -169,7 +176,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 			value = decoded
 		}
 	}
-	if accepted(args["expectStatus"], resp.StatusCode) || resp.StatusCode < 400 {
+	if accepted(args["expectStatus"], resp.StatusCode) || resp.StatusCode < httpErrorStatus {
 		return sdk.VerbResult{Value: value, Output: string(raw), Meta: meta}, nil
 	}
 	return sdk.VerbResult{Value: value, Output: string(raw), Meta: meta},

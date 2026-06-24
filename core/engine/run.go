@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/shinari-dev/shinari/core/discover"
 	"github.com/shinari-dev/shinari/core/model"
@@ -41,6 +42,10 @@ func Run(ctx context.Context, set *discover.Set, targets []string, em Emitter, o
 		}
 		result.Scenarios = append(result.Scenarios,
 			RunScenario(ctx, sc, set.Project.Vars, reg, em, opts))
+		// Release this scenario's provider instances (DB pools, gRPC channels,
+		// client sockets) before moving on, so a multi-scenario run does not
+		// leak one set of connections per scenario.
+		_ = reg.Close()
 	}
 	result.End = opts.now()
 	return result, nil
@@ -78,10 +83,11 @@ func SelectScenarios(set *discover.Set, targets []string) ([]*model.Scenario, er
 	return out, nil
 }
 
-// Reduce rebuilds the scenario skeleton (names, step verdicts, scenario
-// verdicts) from an event stream — the design constraint that Result is the
-// stream's deterministic reduction. Renderers needing only this shape can
-// work from a journal alone.
+// Reduce rebuilds each scenario result in full from an event stream — names and
+// descriptions, every step's desc/captures/skip-reason/timing, the injected
+// faults, the held assertions, the verdicts — the design constraint that a
+// ScenarioResult is the stream's deterministic reduction. Renderers can work
+// from a journal alone. (Run-level Start/End are taken as the stream's span.)
 func Reduce(events []Event) RunResult {
 	var run RunResult
 	byName := map[string]*ScenarioResult{}
@@ -89,7 +95,11 @@ func Reduce(events []Event) RunResult {
 	for _, e := range events {
 		switch e.Type {
 		case EvScenarioStarted:
-			byName[e.Scenario] = &ScenarioResult{Name: e.Scenario, Start: e.Time}
+			description, _ := e.Payload["description"].(string)
+			suite, _ := e.Payload["suite"].(string)
+			byName[e.Scenario] = &ScenarioResult{
+				Name: e.Scenario, Description: description, Suite: suite, Start: e.Time,
+			}
 			order = append(order, e.Scenario)
 		case EvStepPassed, EvStepFailed, EvStepSkipped:
 			sc := byName[e.Scenario]
@@ -99,9 +109,15 @@ func Reduce(events []Event) RunResult {
 			verdict := CheckVerdict(fmt.Sprintf("%v", e.Payload["verdict"]))
 			errMsg, _ := e.Payload["error"].(string)
 			timedOut, _ := e.Payload["timedOut"].(bool)
+			desc, _ := e.Payload["desc"].(string)
+			skipReason, _ := e.Payload["skipReason"].(string)
+			start, _ := e.Payload["start"].(time.Time)
+			captured, _ := e.Payload["captured"].(map[string]any)
 			sc.Steps = append(sc.Steps, StepResult{
-				Section: e.Section, Phase: e.Phase, Run: e.Verb,
-				Verdict: verdict, Err: errMsg, TimedOut: timedOut, End: e.Time,
+				Section: e.Section, Phase: e.Phase, Run: e.Verb, Desc: desc,
+				Verdict: verdict, Err: errMsg, TimedOut: timedOut,
+				SkipReason: skipReason, Captured: captured,
+				Start: start, End: e.Time,
 			})
 		case EvFaultInjected:
 			if sc := byName[e.Scenario]; sc != nil {
@@ -121,6 +137,7 @@ func Reduce(events []Event) RunResult {
 			if sc := byName[e.Scenario]; sc != nil {
 				sc.Verdict = ScenarioVerdict(fmt.Sprintf("%v", e.Payload["verdict"]))
 				sc.Reason, _ = e.Payload["reason"].(string)
+				sc.Held, _ = e.Payload["held"].([]string)
 				sc.End = e.Time
 			}
 		}

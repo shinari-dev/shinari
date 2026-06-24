@@ -205,10 +205,7 @@ func (v *scenarioValidator) checkStep(st *model.Step, section string, defined ma
 		}
 		return
 	}
-	kind := res.Spec.Kind
-	if st.Kind != "" {
-		kind = sdk.Kind(st.Kind)
-	}
+	kind := st.EffectiveKind(res.Spec.Kind)
 	raw := rawWith(st)
 
 	// rules 2 & 5 — with: matches the arg spec, finding: only on assertions.
@@ -293,10 +290,7 @@ func (v *scenarioValidator) checkStep(st *model.Step, section string, defined ma
 		// An outage-class fault (work can be lost) is what makes a scenario
 		// recovery-shaped — declared by the verb (or the step, for faults
 		// injected via exec.run/http.post), not matched against a name list.
-		effect := res.Spec.Effect
-		if st.Effect != "" {
-			effect = sdk.Effect(st.Effect)
-		}
+		effect := st.EffectiveEffect(res.Spec.Effect)
 		if effect == sdk.EffectOutage {
 			v.methodHasOutage = true
 		}

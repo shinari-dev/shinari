@@ -6,6 +6,7 @@
 package registry
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -136,6 +137,22 @@ func (r *Registry) Resolve(run string) (Resolution, error) {
 		return Resolution{}, fmt.Errorf("verb %q: provider %q (type %s) has no verb %q", run, parts[0], inst.Native.Type(), parts[1])
 	}
 	return Resolution{Instance: inst, Spec: spec}, nil
+}
+
+// Close releases every native instance implementing sdk.Closer. The engine
+// closes the registry after each scenario, so a multi-scenario run never leaks a
+// connection pool per scenario. Errors are aggregated; non-Closer instances are
+// skipped.
+func (r *Registry) Close() error {
+	var errs []error
+	for name, inst := range r.instances {
+		if c, ok := inst.Native.(sdk.Closer); ok {
+			if err := c.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("provider %q: close: %w", name, err))
+			}
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Instances returns configured instance names (sorted, for messages).
@@ -271,11 +288,13 @@ func (r *Registry) bodyKind(inst *Instance, verbName string, cv model.ComposedVe
 	}
 }
 
+// effectRank orders effect severity: outage outranks degradation outranks none.
+var effectRank = map[sdk.Effect]int{sdk.EffectNone: 0, sdk.EffectDegradation: 1, sdk.EffectOutage: 2}
+
 // strongerEffect returns the more severe of two effects: a macro that wraps a
-// fault inherits it (outage outranks degradation outranks none).
+// fault inherits it.
 func strongerEffect(a, b sdk.Effect) sdk.Effect {
-	rank := map[sdk.Effect]int{sdk.EffectNone: 0, sdk.EffectDegradation: 1, sdk.EffectOutage: 2}
-	if rank[b] > rank[a] {
+	if effectRank[b] > effectRank[a] {
 		return b
 	}
 	return a

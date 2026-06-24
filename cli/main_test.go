@@ -166,6 +166,41 @@ func TestRunRequiredEnvUnsetExits2(t *testing.T) {
 	}
 }
 
+// INCONCLUSIVE (a steady-state gate that never holds before method) is the one
+// verdict→exit branch the other run tests (0/1/2/64) leave unchecked.
+func TestRunInconclusiveExits3(t *testing.T) {
+	cliFail = false // count returns 1, so the gate's ==99 assert never holds
+	dir := t.TempDir()
+	files := map[string]string{
+		"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: demo\nproviders:\n  sut: { source: clifake }\n",
+		"scenarios/core/gate.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: never-healthy
+setup:
+  - { run: sut.up, with: [app] }
+steadyState:
+  - { run: sut.count, with: job, as: total }
+  - { run: assert, with: { of: "${.outputs.total.value}", equals: 99 }, desc: "never healthy" }
+method:
+  - phase: x
+    steps:
+      - { run: sut.count, with: job }
+`,
+	}
+	for rel, content := range files {
+		path := filepath.Join(dir, rel)
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out, errOut bytes.Buffer
+	code := run([]string{"--project", dir, "--out", t.TempDir(), "run"}, &out, &errOut, noEnv, noLookup)
+	if code != 3 {
+		t.Fatalf("code = %d, want 3 (INCONCLUSIVE); out=%s err=%s", code, out.String(), errOut.String())
+	}
+}
+
 func TestRunUnknownTargetIsUsageError(t *testing.T) {
 	dir := project(t, false)
 	var out, errOut bytes.Buffer

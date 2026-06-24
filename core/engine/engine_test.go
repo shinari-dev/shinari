@@ -8,9 +8,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/shinari-dev/shinari/core/discover"
 	"github.com/shinari-dev/shinari/core/interp"
@@ -22,10 +25,12 @@ import (
 // fakeSUT is a scriptable system under test: a lifecycle provider plus a
 // scriptable probe whose successive values are programmed per test.
 type fakeSUT struct {
-	mu     sync.Mutex
-	calls  []string
-	script map[string][]any // verb -> successive Values (last repeats)
-	fails  map[string]error // verb -> permanent failure
+	mu         sync.Mutex
+	calls      []string
+	script     map[string][]any // verb -> successive Values (last repeats)
+	fails      map[string]error // verb -> permanent failure
+	blockExits atomic.Int32     // bumped when a block verb returns after cancellation
+	closes     atomic.Int32     // bumped when Close is called
 }
 
 func (f *fakeSUT) Type() string                   { return "fakesut" }
@@ -40,9 +45,18 @@ func (f *fakeSUT) Verbs() []sdk.VerbSpec {
 		{Name: "count", Kind: sdk.KindProbe, Primary: "job"},
 		{Name: "echo", Kind: sdk.KindProbe, Primary: "of"},
 		{Name: "smoke", Kind: sdk.KindAssertion},
+		{Name: "block", Kind: sdk.KindProbe},
 	}
 }
 func (f *fakeSUT) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
+	// block models a long-running background task: it runs until its context is
+	// cancelled, then records that it exited. Handled before the mutex so it
+	// never holds the lock while parked.
+	if verb == "block" {
+		<-ctx.Done()
+		f.blockExits.Add(1)
+		return sdk.VerbResult{}, ctx.Err()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, verb)
@@ -61,6 +75,10 @@ func (f *fakeSUT) Run(ctx context.Context, verb string, args map[string]any) (sd
 	}
 	return sdk.VerbResult{Value: "ok"}, nil
 }
+
+// closes counts Close calls so a test can assert the engine releases providers.
+func (f *fakeSUT) Close() error { f.closes.Add(1); return nil }
+
 func (f *fakeSUT) callCount(verb string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -605,6 +623,72 @@ verify:
 	}
 }
 
+func TestTeardownDrainsUnstoppedBackground(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: bgleak
+method:
+  - phase: load
+    steps:
+      - { run: background, with: { name: load, step: { run: sut.block } } }
+verify:
+  - { run: assert, with: { of: 1, equals: 1 } }
+`)
+	res, _ := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+	if got := sut.blockExits.Load(); got != 1 {
+		t.Fatalf("unstopped background must be cancelled+awaited by run end; block exits = %d, want 1", got)
+	}
+}
+
+func TestSnapshotScopeIsolatesBackgroundFromTimelineWrites(t *testing.T) {
+	r := &runner{
+		outputs: map[string]any{"x": 1},
+		vars:    map[string]any{"v": 2},
+		env:     map[string]any{"e": 3},
+	}
+	snap := r.snapshotScope()
+	// timeline keeps mutating after the snapshot is taken
+	r.outputs["x"] = 99
+	r.outputs["y"] = "added later"
+	r.vars["v"] = 88
+	if snap.Outputs["x"] != 1 {
+		t.Errorf("snapshot saw a later write to outputs: got %v, want 1", snap.Outputs["x"])
+	}
+	if _, ok := snap.Outputs["y"]; ok {
+		t.Error("snapshot saw a key added after launch")
+	}
+	if snap.Vars["v"] != 2 {
+		t.Errorf("snapshot saw a later write to vars: got %v, want 2", snap.Vars["v"])
+	}
+}
+
+func TestWaitUntilBoundsProbeByTimeout(t *testing.T) {
+	_, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: wuto
+verify:
+  - { run: wait_until, with: { probe: { run: sut.block }, timeout: 0.2, interval: 0.05, equals: ok } }
+`)
+	done := make(chan ScenarioResult, 1)
+	go func() { done <- RunScenario(context.Background(), sc, nil, reg, &Recorder{}, Options{}) }()
+	select {
+	case res := <-done:
+		if res.Verdict != ScenarioFailed {
+			t.Fatalf("verdict = %s (%s); want FAILED on timeout", res.Verdict, res.Reason)
+		}
+		if !strings.Contains(res.Reason, "not observed within") {
+			t.Errorf("reason = %q; want a wait_until timeout", res.Reason)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("wait_until did not respect its timeout — the blocking probe was not bounded")
+	}
+}
+
 func TestDryRunSkipsActions(t *testing.T) {
 	sut, sc, reg := newWorld(t, passingScenario)
 	sut.script["count"] = []any{1}
@@ -618,6 +702,111 @@ func TestDryRunSkipsActions(t *testing.T) {
 	}
 }
 
+// Exercises execComposed: param binding, do: sequencing, macro-local capture
+// via .outputs, last-step return, and a when:-false skip.
+func TestComposedMacroExecution(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: t\n",
+		"providers/app.yml": `apiVersion: shinari/v1
+kind: Provider
+name: app
+verbs:
+  combine:
+    params: [base, "extra?"]
+    do:
+      - { run: sut.echo, with: "${.params.base}", capture: { b: "." } }
+      - { when: "${.params.extra}", run: sut.echo, with: "should-not-run" }
+      - { run: sut.echo, with: "result-${.outputs.b}" }
+`,
+	}
+	sut := &fakeSUT{script: map[string][]any{}, fails: map[string]error{}}
+	currentSUT = sut
+	for rel, content := range files {
+		path := filepath.Join(dir, rel)
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		_ = os.WriteFile(path, []byte(content), 0o644)
+	}
+	set, err := discover.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := registry.New(set, map[string]model.ProviderConfig{
+		"sut": {Source: "fakesut"},
+		"app": {Use: "./providers/app"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, err := model.ParseScenario([]byte(`
+apiVersion: shinari/v1
+kind: Scenario
+name: composed
+verify:
+  - { run: app.combine, with: hello, as: out }
+  - { run: assert, with: { of: "${.outputs.out.value}", equals: "result-hello" } }
+`), "s.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := RunScenario(context.Background(), sc, nil, reg, &Recorder{}, Options{KeepUp: true})
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+	// steps 1 and 3 only; the when:-false step 2 is skipped
+	if got := sut.callCount("echo"); got != 2 {
+		t.Fatalf("echo called %d times; want 2 (the when:-false macro step must be skipped)", got)
+	}
+}
+
+func TestPerStepEffectOverrideInjectsFault(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: effoverride
+method:
+  - phase: degrade
+    steps:
+      - { run: sut.status, with: x, effect: outage, desc: "induced outage" }
+verify:
+  - { run: assert, with: { of: 1, equals: 1 } }
+`)
+	res, rec := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+	if len(res.Injected) != 1 || res.Injected[0] != "induced outage" {
+		t.Fatalf("injected = %v; want [induced outage]", res.Injected)
+	}
+	var faults int
+	for _, e := range rec.Events {
+		if e.Type == EvFaultInjected {
+			faults++
+		}
+	}
+	if faults != 1 {
+		t.Fatalf("EvFaultInjected emitted %d times, want 1", faults)
+	}
+}
+
+func TestPerStepKindOverrideSkippedInDryRun(t *testing.T) {
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: kindoverride
+method:
+  - phase: act
+    steps:
+      - { run: sut.echo, with: x, kind: action }
+verify:
+  - { run: assert, with: { of: 1, equals: 1 } }
+`)
+	RunScenario(context.Background(), sc, nil, reg, &Recorder{}, Options{DryRun: true, KeepUp: true})
+	if got := sut.callCount("echo"); got != 0 {
+		t.Fatalf("echo called %d times; a kind:action override must be skipped under dry-run", got)
+	}
+}
+
 func TestEventStreamReducesToResult(t *testing.T) {
 	sut, sc, reg := newWorld(t, passingScenario)
 	sut.script["count"] = []any{1}
@@ -628,16 +817,35 @@ func TestEventStreamReducesToResult(t *testing.T) {
 		t.Fatalf("reduced %d scenarios", len(reduced.Scenarios))
 	}
 	got := reduced.Scenarios[0]
-	if got.Name != res.Name || got.Verdict != res.Verdict {
-		t.Errorf("reduced %s/%s, want %s/%s", got.Name, got.Verdict, res.Name, res.Verdict)
+	// the reduction must rebuild the whole result from events, not just the verdict skeleton
+	if !reflect.DeepEqual(got, res) {
+		t.Errorf("reduced result is not a faithful reduction of the event stream:\n got:  %+v\n want: %+v", got, res)
 	}
-	if len(got.Steps) != len(res.Steps) {
-		t.Errorf("reduced %d steps, want %d", len(got.Steps), len(res.Steps))
+}
+
+func TestRunClosesProvidersPerScenario(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"project.yml":       "apiVersion: shinari/v1\nkind: Project\nname: t\nproviders:\n  sut: { source: fakesut }\n",
+		"scenarios/s/a.yml": "apiVersion: shinari/v1\nkind: Scenario\nname: a\nverify:\n  - { run: assert, with: { of: 1, equals: 1 } }\n",
+		"scenarios/s/b.yml": "apiVersion: shinari/v1\nkind: Scenario\nname: b\nverify:\n  - { run: assert, with: { of: 1, equals: 1 } }\n",
 	}
-	for i := range got.Steps {
-		if got.Steps[i].Verdict != res.Steps[i].Verdict {
-			t.Errorf("step %d verdict %s != %s", i, got.Steps[i].Verdict, res.Steps[i].Verdict)
-		}
+	sut := &fakeSUT{script: map[string][]any{}, fails: map[string]error{}}
+	currentSUT = sut
+	for rel, content := range files {
+		path := filepath.Join(dir, rel)
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		_ = os.WriteFile(path, []byte(content), 0o644)
+	}
+	set, err := discover.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(context.Background(), set, nil, nil, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := sut.closes.Load(); got != 2 {
+		t.Fatalf("provider closed %d times across 2 scenarios, want 2", got)
 	}
 }
 

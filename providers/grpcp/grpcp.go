@@ -51,6 +51,14 @@ func (p *Provider) Configure(cfg map[string]any) error {
 	return nil
 }
 
+// Close releases the gRPC channel dialed in Configure.
+func (p *Provider) Close() error {
+	if p.conn == nil {
+		return nil
+	}
+	return p.conn.Close()
+}
+
 func (p *Provider) Verbs() []sdk.VerbSpec {
 	return []sdk.VerbSpec{{
 		Name: "health", Kind: sdk.KindProbe, SideEffects: false, Primary: "service",

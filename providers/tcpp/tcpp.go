@@ -19,6 +19,9 @@ import (
 	"github.com/shinari-dev/shinari/utils/conv"
 )
 
+// defaultTimeout applies only when a step passes no deadline.
+const defaultTimeout = 5 * time.Second
+
 type Provider struct {
 	addr           string        // default target, when a step passes no addr
 	defaultTimeout time.Duration // applied only when the caller passed no deadline
@@ -26,7 +29,7 @@ type Provider struct {
 
 func init() { sdk.Register("tcp", New) }
 
-func New() sdk.Provider { return &Provider{defaultTimeout: 5 * time.Second} }
+func New() sdk.Provider { return &Provider{defaultTimeout: defaultTimeout} }
 
 func (p *Provider) Type() string { return "tcp" }
 

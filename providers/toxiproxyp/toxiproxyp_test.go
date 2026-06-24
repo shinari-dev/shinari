@@ -14,11 +14,12 @@ import (
 
 // fakeAdmin emulates the Toxiproxy admin API surface the client touches.
 type fakeAdmin struct {
-	mu      sync.Mutex
-	toxics  []map[string]any
-	posts   []string
-	removed []string
-	resets  int
+	mu         sync.Mutex
+	toxics     []map[string]any
+	posts      []string
+	removed    []string
+	resets     int
+	failRemove bool // when set, DELETE toxics returns 500
 }
 
 func (f *fakeAdmin) server(t *testing.T) *httptest.Server {
@@ -55,8 +56,13 @@ func (f *fakeAdmin) server(t *testing.T) *httptest.Server {
 	})
 	mux.HandleFunc("DELETE /proxies/app/toxics/{name}", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
+		fail := f.failRemove
 		f.removed = append(f.removed, r.PathValue("name"))
 		f.mu.Unlock()
+		if fail {
+			http.Error(w, `{"error":"boom","status":500}`, http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /reset", func(w http.ResponseWriter, r *http.Request) {
@@ -202,6 +208,27 @@ func TestClearRemovesToxicsAndReenablesProxy(t *testing.T) {
 	// ...and the proxy is re-enabled (undoing a partition) via an update POST.
 	if len(f.posts) == 0 {
 		t.Fatalf("expected a re-enable update, posts = %v", f.posts)
+	}
+}
+
+func TestClearReenablesProxyEvenWhenRemoveFails(t *testing.T) {
+	f := &fakeAdmin{}
+	p := provider(t, f.server(t).URL)
+	if _, err := p.Run(context.Background(), "blackhole", map[string]any{"proxy": "app"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Run(context.Background(), "partition", map[string]any{"proxy": "app"}); err != nil {
+		t.Fatal(err)
+	}
+	posts := len(f.posts) // updates so far (the partition's disable)
+	f.failRemove = true
+	_, err := p.Run(context.Background(), "clear", map[string]any{"proxy": "app"})
+	if err == nil {
+		t.Fatal("clear must surface the toxic-removal failure, not swallow it")
+	}
+	// The proxy is re-enabled despite the removal failure: a second update POST.
+	if len(f.posts) != posts+1 {
+		t.Fatalf("clear must re-enable the proxy on partial failure; updates = %d, want %d", len(f.posts), posts+1)
 	}
 }
 

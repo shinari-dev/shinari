@@ -85,7 +85,8 @@ func RunScenario(ctx context.Context, sc *model.Scenario, projectVars map[string
 			Start: opts.now(),
 		},
 	}
-	em.Emit(Event{Type: EvScenarioStarted, Time: opts.now(), Scenario: sc.Name})
+	em.Emit(Event{Type: EvScenarioStarted, Time: r.res.Start, Scenario: sc.Name,
+		Payload: map[string]any{"description": sc.Description, "suite": sc.Suite}})
 
 	timelineCtx := ctx
 	if sc.Timeout > 0 {
@@ -99,12 +100,13 @@ func RunScenario(ctx context.Context, sc *model.Scenario, projectVars map[string
 		reason = fmt.Sprintf("scenario exceeded timeout %gs", sc.Timeout)
 	}
 
+	r.stopBackgrounds()
 	r.teardown(ctx)
 	r.res.Verdict = verdict
 	r.res.Reason = reason
 	r.res.End = opts.now()
-	em.Emit(Event{Type: EvScenarioFinished, Time: opts.now(), Scenario: sc.Name,
-		Payload: map[string]any{"verdict": string(verdict), "reason": reason}})
+	em.Emit(Event{Type: EvScenarioFinished, Time: r.res.End, Scenario: sc.Name,
+		Payload: map[string]any{"verdict": string(verdict), "reason": reason, "held": r.res.Held}})
 	return *r.res
 }
 
@@ -137,6 +139,18 @@ func (r *runner) timeline(ctx context.Context) (ScenarioVerdict, string) {
 		return ScenarioFailed, strings.Join(failures, "; ")
 	}
 	return ScenarioPassed, ""
+}
+
+// stopBackgrounds cancels and awaits every background still running at scenario
+// end. A background's context uses context.WithoutCancel, so the scenario cancel
+// never reaches it; without this its goroutine (and any exec.run child process)
+// leaks past the run. Runs before teardown so a background fault is lifted first.
+func (r *runner) stopBackgrounds() {
+	for name, h := range r.bg {
+		h.cancel()
+		<-h.done
+		delete(r.bg, name)
+	}
 }
 
 func (r *runner) teardown(ctx context.Context) {
@@ -200,17 +214,11 @@ func isAssertionLike(reg *registry.Registry, st *model.Step) bool {
 // tc, http.post to a chaos endpoint). The single source of truth for both the
 // executor and the `explain` preview.
 func EffectiveKind(spec sdk.VerbSpec, st *model.Step) sdk.Kind {
-	if st.Kind != "" {
-		return sdk.Kind(st.Kind)
-	}
-	return spec.Kind
+	return st.EffectiveKind(spec.Kind)
 }
 
 func EffectiveEffect(spec sdk.VerbSpec, st *model.Step) sdk.Effect {
-	if st.Effect != "" {
-		return sdk.Effect(st.Effect)
-	}
-	return spec.Effect
+	return st.EffectiveEffect(spec.Effect)
 }
 
 // runStep executes one step envelope: resolve → interpolate → bind →
@@ -229,7 +237,18 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		sr.Err = errMsg
 		sr.End = r.opts.now()
 		payload := map[string]any{"verdict": string(v), "error": errMsg,
-			"durationMs": sr.End.Sub(sr.Start).Milliseconds()}
+			"durationMs": sr.End.Sub(sr.Start).Milliseconds(),
+			// Reduce rebuilds StepResult from these, so the wire carries them too.
+			"start": sr.Start}
+		if sr.Desc != "" {
+			payload["desc"] = sr.Desc
+		}
+		if sr.SkipReason != "" {
+			payload["skipReason"] = sr.SkipReason
+		}
+		if sr.Captured != nil {
+			payload["captured"] = sr.Captured
+		}
 		if stepValue != nil {
 			payload["value"] = stepValue
 		}
@@ -362,6 +381,21 @@ func (r *runner) judge(st *model.Step, finish func(CheckVerdict, string) StepRes
 
 func (r *runner) scope() interp.Scope {
 	return interp.Scope{Vars: r.vars, Outputs: r.outputs, Env: r.env}
+}
+
+// snapshotScope copies the live capture/var maps so a background goroutine
+// reads a stable scope and never races the timeline's concurrent writes to
+// r.outputs. env is run-level and never written, so it is shared as-is.
+func (r *runner) snapshotScope() interp.Scope {
+	outs := make(map[string]any, len(r.outputs))
+	for k, v := range r.outputs {
+		outs[k] = v
+	}
+	vars := make(map[string]any, len(r.vars))
+	for k, v := range r.vars {
+		vars[k] = v
+	}
+	return interp.Scope{Vars: vars, Outputs: outs, Env: r.env}
 }
 
 // truthy applies jq truthiness to a when: result: only false and null are
@@ -561,9 +595,10 @@ func (r *runner) execBuiltin(ctx context.Context, name string, args map[string]a
 		bgCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		h := &bgHandle{cancel: cancel, done: make(chan struct{})}
 		r.bg[bgName] = h
+		bgScope := r.snapshotScope() // immutable; never the live maps the timeline writes
 		go func() {
 			defer close(h.done)
-			h.result, h.err = r.execStepMap(bgCtx, stepMap, scope)
+			h.result, h.err = r.execStepMap(bgCtx, stepMap, bgScope)
 		}()
 		return sdk.VerbResult{}, nil
 
@@ -676,10 +711,14 @@ func (r *runner) execWaitUntil(ctx context.Context, args map[string]any, scope i
 		}
 	}
 
-	deadline := time.After(time.Duration(timeout * float64(time.Second)))
+	// waitCtx bounds each probe call by the timeout, so a blocking probe is cut
+	// off at the deadline instead of overshooting it (or hanging). A parent
+	// cancel still propagates through it.
+	waitCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout*float64(time.Second)))
+	defer cancel()
 	var lastObserved any
 	for {
-		result, perr := r.execStepMap(ctx, probeMap, scope)
+		result, perr := r.execStepMap(waitCtx, probeMap, scope)
 		if perr == nil {
 			value := result.Value
 			if readExpr != "" {
@@ -699,9 +738,11 @@ func (r *runner) execWaitUntil(ctx context.Context, args map[string]any, scope i
 			}
 		}
 		select {
-		case <-ctx.Done():
-			return sdk.VerbResult{}, ctx.Err()
-		case <-deadline:
+		case <-waitCtx.Done():
+			// parent cancel returns its error; our timeout reports the unmet condition
+			if ctx.Err() != nil {
+				return sdk.VerbResult{}, ctx.Err()
+			}
 			return sdk.VerbResult{}, fmt.Errorf("wait_until: condition (%s %v) not observed within %gs; last observed: %v", op, operand, timeout, lastObserved)
 		case <-time.After(time.Duration(interval * float64(time.Second))):
 		}

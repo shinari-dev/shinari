@@ -58,6 +58,14 @@ func (p *Provider) Configure(cfg map[string]any) error {
 	return nil
 }
 
+// Close releases the client created in Configure.
+func (p *Provider) Close() error {
+	if p.rdb == nil {
+		return nil
+	}
+	return p.rdb.Close()
+}
+
 func (p *Provider) Verbs() []sdk.VerbSpec {
 	return []sdk.VerbSpec{
 		{Name: "ping", Kind: sdk.KindProbe, SideEffects: false},
@@ -149,7 +157,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		if err != nil && err != redis.Nil {
 			return sdk.VerbResult{}, fmt.Errorf("redis.cmd %v: %w", cmd, err)
 		}
-		v = normalize(v)
+		v = conv.Normalize(v)
 		return sdk.VerbResult{Value: v, Output: conv.ToString(v)}, nil
 
 	default:
@@ -178,15 +186,6 @@ func strKeys(args map[string]any) []string {
 		keys[i] = conv.ToString(k)
 	}
 	return keys
-}
-
-// normalize coerces client-returned values into types interpolation and assert
-// understand: bulk replies can arrive as []byte.
-func normalize(v any) any {
-	if b, ok := v.([]byte); ok {
-		return string(b)
-	}
-	return v
 }
 
 // parseInfo turns Redis INFO output (CRLF-separated field:value lines, with

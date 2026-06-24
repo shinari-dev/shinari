@@ -13,12 +13,32 @@ import (
 	"github.com/shinari-dev/shinari/core/discover"
 	"github.com/shinari-dev/shinari/core/model"
 	"github.com/shinari-dev/shinari/sdk"
-
-	// Blank import self-registers the "http" type, which the fixtures resolve.
-	_ "github.com/shinari-dev/shinari/providers/httpp"
 )
 
-func init() { sdk.Register("fakedocker", fakeLifecycle) }
+func init() {
+	sdk.Register("fakedocker", fakeLifecycle)
+	// Fixtures resolve "http" against a fake registered through the sdk seam, so
+	// core stays provider-agnostic without importing a concrete provider.
+	sdk.Register("http", func() sdk.Provider { return fakeHTTP() })
+}
+
+// fakeHTTP mirrors httpp's get/post surface (kind, side effects, arg spec).
+func fakeHTTP() sdk.Provider {
+	args := []sdk.ArgSpec{
+		{Name: "path", Type: "string", Required: true},
+		{Name: "body", Type: "map"},
+		{Name: "raw", Type: "string"},
+		{Name: "contentType", Type: "string"},
+		{Name: "form", Type: "map"},
+		{Name: "headers", Type: "map"},
+		{Name: "basicAuth", Type: "map"},
+		{Name: "expectStatus", Type: "list"},
+	}
+	return &fake{typeName: "http", verbs: []sdk.VerbSpec{
+		{Name: "get", Kind: sdk.KindProbe, Primary: "path", Args: args},
+		{Name: "post", Kind: sdk.KindAction, SideEffects: true, Primary: "path", Args: args},
+	}}
+}
 
 // fake is a scriptable native provider for tests.
 type fake struct {
@@ -32,6 +52,44 @@ func (f *fake) Configure(cfg map[string]any) error { f.cfg = cfg; return nil }
 func (f *fake) Verbs() []sdk.VerbSpec              { return f.verbs }
 func (f *fake) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
 	return sdk.VerbResult{Value: "ok"}, nil
+}
+
+// closerFake holds a resource it must release; it records its Close calls.
+type closerFake struct {
+	fake
+	closes int
+}
+
+func (c *closerFake) Close() error { c.closes++; return nil }
+
+var lastCloser *closerFake
+
+func init() {
+	sdk.Register("closerfake", func() sdk.Provider {
+		lastCloser = &closerFake{fake: fake{typeName: "closerfake"}}
+		return lastCloser
+	})
+}
+
+// Close releases every configured instance that holds a resource, and is a
+// no-op for those that do not.
+func TestRegistryCloseReleasesProviders(t *testing.T) {
+	set := loadSet(t, map[string]string{
+		"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: p\n",
+	})
+	r, err := New(set, map[string]model.ProviderConfig{
+		"c":     {Source: "closerfake"},
+		"plain": {Source: "fakedocker"}, // no Close — must not error
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if lastCloser.closes != 1 {
+		t.Fatalf("closeable provider Close called %d times, want 1", lastCloser.closes)
+	}
 }
 
 func fakeLifecycle() sdk.Provider {

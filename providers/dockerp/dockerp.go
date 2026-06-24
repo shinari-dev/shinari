@@ -169,6 +169,45 @@ func (p *Provider) containerIDs(ctx context.Context, service string) ([]string, 
 	return ids, nil
 }
 
+// networkToggle disconnects a service's containers from a docker network (the
+// partition fault) or reconnects them (its restore). With no network it
+// defaults to compose's <project>_default. It returns the last command's output
+// and stops at the first failure.
+func (p *Provider) networkToggle(ctx context.Context, verb, service string, args map[string]any) (string, error) {
+	network, _ := args["network"].(string)
+	if network == "" {
+		// compose names its default network <project>_default; without a known
+		// project name there is nothing to default to.
+		if p.project == "" {
+			return "", fmt.Errorf("docker %s: a network is required (no compose project set to derive <project>_default)", verb)
+		}
+		network = p.project + "_default"
+	}
+	ids, err := p.containerIDs(ctx, service)
+	if err != nil {
+		return "", err
+	}
+	if len(ids) == 0 {
+		return "", fmt.Errorf("docker %s: no running container for service %q", verb, service)
+	}
+	var out string
+	for _, id := range ids {
+		if verb == "disconnect" {
+			// -f forces the disconnect even if the daemon thinks the endpoint is
+			// busy, so the partition takes effect reliably.
+			out, err = p.docker(ctx, "network", "disconnect", "-f", network, id)
+		} else {
+			// --alias restores the compose service-name DNS alias, which a manual
+			// connect would otherwise drop, so peers resolve it again.
+			out, err = p.docker(ctx, "network", "connect", "--alias", service, network, id)
+		}
+		if err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
 func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
 	service, _ := args["service"].(string)
 	var out string
@@ -215,36 +254,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		command, _ := args["command"].(string)
 		out, err = p.compose(ctx, "exec", "-T", service, "sh", "-c", command)
 	case "disconnect", "connect":
-		network, _ := args["network"].(string)
-		if network == "" {
-			// compose names its default network <project>_default; without a
-			// known project name there is nothing to default to.
-			if p.project == "" {
-				return sdk.VerbResult{}, fmt.Errorf("docker %s: a network is required (no compose project set to derive <project>_default)", verb)
-			}
-			network = p.project + "_default"
-		}
-		ids, ierr := p.containerIDs(ctx, service)
-		if ierr != nil {
-			return sdk.VerbResult{}, ierr
-		}
-		if len(ids) == 0 {
-			return sdk.VerbResult{}, fmt.Errorf("docker %s: no running container for service %q", verb, service)
-		}
-		for _, id := range ids {
-			if verb == "disconnect" {
-				// -f forces the disconnect even if the daemon thinks the
-				// endpoint is busy, so the partition takes effect reliably.
-				out, err = p.docker(ctx, "network", "disconnect", "-f", network, id)
-			} else {
-				// --alias restores the compose service-name DNS alias, which a
-				// manual connect would otherwise drop, so peers resolve it again.
-				out, err = p.docker(ctx, "network", "connect", "--alias", service, network, id)
-			}
-			if err != nil {
-				return sdk.VerbResult{Output: out}, err
-			}
-		}
+		out, err = p.networkToggle(ctx, verb, service, args)
 	case "logs":
 		cmdArgs := []string{"logs", "--no-color"}
 		if t, ok := args["tail"]; ok && t != nil && fmt.Sprintf("%v", t) != "" {
