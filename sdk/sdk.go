@@ -75,3 +75,11 @@ type Provider interface {
 	Verbs() []VerbSpec
 	Run(ctx context.Context, verb string, args map[string]any) (VerbResult, error)
 }
+
+// Closer is an optional provider capability, database/sql-driver style: a
+// provider holding a resource (a DB pool, a gRPC channel, a client socket)
+// implements Close to release it. The engine closes every instance implementing
+// it once the scenario is done. A provider that holds nothing omits Close.
+type Closer interface {
+	Close() error
+}

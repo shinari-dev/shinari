@@ -18,6 +18,9 @@ import (
 	"github.com/shinari-dev/shinari/utils/conv"
 )
 
+// defaultTimeout caps every query/scrape request.
+const defaultTimeout = 30 * time.Second
+
 type Provider struct {
 	base   string
 	client *http.Client
@@ -25,7 +28,7 @@ type Provider struct {
 
 func init() { sdk.Register("prom", New) }
 
-func New() sdk.Provider { return &Provider{client: &http.Client{Timeout: 30 * time.Second}} }
+func New() sdk.Provider { return &Provider{client: &http.Client{Timeout: defaultTimeout}} }
 
 func (p *Provider) Type() string { return "prom" }
 

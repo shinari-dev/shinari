@@ -61,6 +61,14 @@ func (p *Provider) Configure(cfg map[string]any) error {
 	return nil
 }
 
+// Close releases the connection pool opened in Configure.
+func (p *Provider) Close() error {
+	if p.db == nil {
+		return nil
+	}
+	return p.db.Close()
+}
+
 func (p *Provider) Verbs() []sdk.VerbSpec {
 	rw := []sdk.ArgSpec{
 		{Name: "sql", Type: "string", Required: true},
@@ -115,15 +123,6 @@ func params(args map[string]any) []any {
 	return raw
 }
 
-// normalize coerces driver-returned values into types interpolation and
-// assert understand: text columns can arrive as []byte.
-func normalize(v any) any {
-	if b, ok := v.([]byte); ok {
-		return string(b)
-	}
-	return v
-}
-
 // scanRows reads all rows into a slice of column->value maps plus a tab table
 // for diagnostics.
 func scanRows(rows *sql.Rows) ([]map[string]any, string, error) {
@@ -146,7 +145,7 @@ func scanRows(rows *sql.Rows) ([]map[string]any, string, error) {
 		m := make(map[string]any, len(cols))
 		cells := make([]string, len(cols))
 		for i, c := range cols {
-			v := normalize(vals[i])
+			v := conv.Normalize(vals[i])
 			m[c] = v
 			cells[i] = conv.ToString(v)
 		}

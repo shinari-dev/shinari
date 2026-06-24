@@ -51,6 +51,15 @@ func ToString(v any) string {
 	}
 }
 
+// Normalize coerces a driver/client-returned value into a type interpolation
+// and assert understand: text columns and bulk replies can arrive as []byte.
+func Normalize(v any) any {
+	if b, ok := v.([]byte); ok {
+		return string(b)
+	}
+	return v
+}
+
 // Truncate caps s at n runes-worth of bytes, appending an ellipsis when it
 // had to cut — for bounded error/diagnostic output.
 func Truncate(s string, n int) string {

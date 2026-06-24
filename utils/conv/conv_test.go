@@ -94,3 +94,15 @@ func TestJoinURL(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalize(t *testing.T) {
+	if got := Normalize([]byte("hi")); got != "hi" {
+		t.Errorf("Normalize([]byte) = %#v, want string \"hi\"", got)
+	}
+	if got := Normalize(42); got != 42 {
+		t.Errorf("Normalize(42) = %#v, want 42 unchanged", got)
+	}
+	if got := Normalize(nil); got != nil {
+		t.Errorf("Normalize(nil) = %#v, want nil", got)
+	}
+}

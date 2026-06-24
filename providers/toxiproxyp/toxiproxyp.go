@@ -7,6 +7,7 @@ package toxiproxyp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -145,18 +146,23 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	case "clear":
 		// scoped restore: remove this proxy's toxics and re-enable it (undoing a
 		// partition), leaving every other proxy untouched — unlike reset, which
-		// clears toxics and re-enables proxies globally.
-		var toxics toxiproxy.Toxics
-		if toxics, err = proxy.Toxics(); err == nil {
+		// clears toxics and re-enables proxies globally. Re-enables even when a
+		// toxic removal fails (aggregating errors), so a partial failure never
+		// leaves the system partitioned.
+		var errs []error
+		if toxics, terr := proxy.Toxics(); terr == nil {
 			for _, tx := range toxics {
-				if err = proxy.RemoveToxic(tx.Name); err != nil {
-					break
+				if rerr := proxy.RemoveToxic(tx.Name); rerr != nil {
+					errs = append(errs, rerr)
 				}
 			}
+		} else {
+			errs = append(errs, terr)
 		}
-		if err == nil {
-			err = proxy.Enable()
+		if eerr := proxy.Enable(); eerr != nil {
+			errs = append(errs, eerr)
 		}
+		err = errors.Join(errs...)
 	default:
 		return sdk.VerbResult{}, fmt.Errorf("toxiproxy has no verb %q", verb)
 	}

@@ -70,9 +70,28 @@ func (s *Step) UnmarshalYAML(node *yaml.Node) error {
 	switch sdk.Effect(s.Effect) {
 	case sdk.EffectNone, sdk.EffectOutage, sdk.EffectDegradation:
 	default:
-		return fmt.Errorf("line %d: invalid effect %q (one of: outage, degradation)", node.Line, s.Effect)
+		return fmt.Errorf("line %d: invalid effect %q (one of: outage, degradation, or omit for none)", node.Line, s.Effect)
 	}
 	return nil
+}
+
+// EffectiveKind returns the step's kind: override when set, else the verb
+// spec's kind. The single precedence rule for the executor, the validator and
+// the explain preview, so a fourth caller cannot drift from it.
+func (s *Step) EffectiveKind(specKind sdk.Kind) sdk.Kind {
+	if s.Kind != "" {
+		return sdk.Kind(s.Kind)
+	}
+	return specKind
+}
+
+// EffectiveEffect returns the step's effect: override when set, else the verb
+// spec's effect — the same precedence as EffectiveKind.
+func (s *Step) EffectiveEffect(specEffect sdk.Effect) sdk.Effect {
+	if s.Effect != "" {
+		return sdk.Effect(s.Effect)
+	}
+	return specEffect
 }
 
 // DecodeWith decodes the step's with: node into a plain Go value (map,

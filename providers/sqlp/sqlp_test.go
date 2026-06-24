@@ -46,12 +46,6 @@ func TestConfigureAcceptsMysql(t *testing.T) {
 	}
 }
 
-func TestNormalizeBytesToString(t *testing.T) {
-	if normalize([]byte("hi")) != "hi" {
-		t.Fatalf("want string, got %T", normalize([]byte("hi")))
-	}
-}
-
 func TestExecThenQuery(t *testing.T) {
 	p := newTestProvider(t)
 	ctx := context.Background()
