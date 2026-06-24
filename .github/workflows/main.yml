@@ -22,23 +22,24 @@ jobs:
           go-version: '1.26.1'
           check-latest: true
 
-      - name: Verify formatting
-        run: |
-          unformatted=$(gofmt -l .)
-          if [ -n "$unformatted" ]; then
-            echo "The following files are not formatted:"
-            echo "$unformatted"
-            exit 1
-          fi
-
-      - name: Vet
-        run: go vet ./...
+      # golangci-lint runs gofmt, go vet, staticcheck, errcheck and the rest
+      # of the set configured in .golangci.yml. Findings annotate the PR diff.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.12.2
 
       - name: Build
         run: go build -o shinari ./cli
 
       - name: Test
-        run: go test ./...
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
 
   security:
     permissions:
