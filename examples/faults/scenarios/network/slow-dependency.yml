@@ -1,7 +1,7 @@
 apiVersion: shinari/v1
 kind: Scenario
 name: api-survives-slow-network
-description: The api keeps answering when its network is delayed, and recovers when cleared.
+description: The api keeps answering when its network is delayed, and recovers when cleared. Degradation is judged against a healthy baseline measured in the same run, not a hardcoded millisecond threshold.
 
 setup:
   - run: docker.up
@@ -14,6 +14,13 @@ steadyState:
 method:
   - phase: "Delay the api network"
     steps:
+      # Measure healthy latency first, before the fault. Every degradation
+      # check below compares against this baseline, so the thresholds are
+      # ratios that travel across machines and CI runners, not constants.
+      - run: sample
+        with: { probe: { run: http.get, with: "http://localhost:5678/" }, count: 10 }
+        as: baseline
+        desc: "healthy baseline latency, before the fault"
       - run: netem.delay
         with: { target: api, ms: 300 }
       - run: sleep
@@ -23,8 +30,8 @@ method:
         with: { probe: { run: http.get, with: "http://localhost:5678/" }, count: 10 }
         as: load
       - run: assert
-        with: { of: "${.outputs.load.value.p99}", gt: 250 }
-        desc: "the 300ms delay shows up in p99"
+        with: { of: "${.outputs.load.value.p99 / .outputs.baseline.value.p99}", gt: 1.5 }
+        desc: "the 300ms delay shows up: p99 at least 1.5x the healthy baseline"
   - phase: "Clear the fault and confirm recovery"
     steps:
       - run: netem.clear
@@ -33,8 +40,8 @@ method:
         with: { probe: { run: http.get, with: "http://localhost:5678/" }, count: 10 }
         as: recovered
       - run: assert
-        with: { of: "${.outputs.recovered.value.p99}", lt: 100 }
-        desc: "latency back to normal after clear"
+        with: { of: "${.outputs.recovered.value.p99 / .outputs.baseline.value.p99}", lt: 1.2 }
+        desc: "after clear, p99 back within 20% of the healthy baseline"
 
 teardown:
   - run: docker.down
