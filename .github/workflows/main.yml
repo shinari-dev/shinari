@@ -25,7 +25,7 @@ jobs:
       # golangci-lint runs gofmt, go vet, staticcheck, errcheck and the rest
       # of the set configured in .golangci.yml. Findings annotate the PR diff.
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.2
 
