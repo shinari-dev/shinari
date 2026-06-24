@@ -1,0 +1,21 @@
+#!/bin/sh
+# Shinari pre-commit hook. Install with `make hooks`.
+# Mirrors the fast CI checks so issues are caught before the push.
+# Skip on demand with: git commit --no-verify
+set -e
+
+echo "pre-commit: gofmt"
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+	echo "These files are not gofmt-clean (run 'make fmt'):" >&2
+	echo "$unformatted" >&2
+	exit 1
+fi
+
+GOBIN=$(go env GOPATH)/bin
+if [ -x "$GOBIN/golangci-lint" ]; then
+	echo "pre-commit: golangci-lint"
+	"$GOBIN/golangci-lint" run ./...
+else
+	echo "pre-commit: golangci-lint not installed, skipping (run 'make tools')" >&2
+fi

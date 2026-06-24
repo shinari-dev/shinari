@@ -1,5 +1,6 @@
 /shinari
 /shinari-out/
+/coverage.out
 /dist/
 .jobstore/
 docs/superpowers/

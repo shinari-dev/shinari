@@ -1,0 +1,56 @@
+# golangci-lint configuration (schema v2).
+# Conservative starting set: the standard analyzers plus a few high-signal,
+# low-noise additions. Ratchet up by enabling more linters here over time.
+version: "2"
+
+linters:
+  # `standard` = errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - bodyclose      # HTTP response bodies must be closed (matters for httpp/toxiproxyp)
+    - errorlint      # correct error wrapping/comparison (errors.Is/As, %w)
+    - misspell       # typos in comments and strings
+    - revive         # fast, configurable style/lint rules (golint successor)
+    - unconvert      # redundant type conversions
+    - unparam        # unused function parameters and results
+  settings:
+    revive:
+      rules:
+        # Missing doc comments on exported symbols is a documentation backlog,
+        # not a correctness issue; don't block CI on it. Re-enable to ratchet up.
+        - name: exported
+          disabled: true
+    staticcheck:
+      # QF1006 is an opt-in style quickfix (lift a break into the loop
+      # condition). The sample loop keeps count and duration as symmetric
+      # guards on purpose, so leave it off.
+      checks:
+        - all
+        - -QF1006
+    misspell:
+      # Intentional misspelling used as test data for the unknown-key error path.
+      ignore-rules:
+        - withh
+  exclusions:
+    generated: lax
+    presets:
+      # Blessed exclusions: unchecked fmt.Fprint*/os write errors and deferred
+      # Close() on files, response bodies, sql.Rows, etc.
+      - std-error-handling
+    rules:
+      # Test files: allow unchecked errors and looser rules.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - unparam
+      # `contains` keeps its (bool, error) signature to match the sibling
+      # assert operators (in, matches) that genuinely return errors.
+      - path: core/builtins/builtins\.go
+        text: "contains - result 1"
+        linters:
+          - unparam
+
+formatters:
+  # gofmt keeps the same canonical format the CI gofmt step enforced.
+  enable:
+    - gofmt
