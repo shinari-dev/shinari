@@ -134,7 +134,7 @@ func (p *Provider) compose(ctx context.Context, args ...string) (string, error) 
 	cmd := exec.CommandContext(ctx, p.bin, full...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(out), fmt.Errorf("docker compose %s: %v — %s",
+		return string(out), fmt.Errorf("docker compose %s: %w — %s",
 			strings.Join(args, " "), err, conv.Truncate(strings.TrimSpace(string(out)), 300))
 	}
 	return string(out), nil
@@ -147,7 +147,7 @@ func (p *Provider) docker(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, p.bin, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(out), fmt.Errorf("docker %s: %v — %s",
+		return string(out), fmt.Errorf("docker %s: %w — %s",
 			strings.Join(args, " "), err, conv.Truncate(strings.TrimSpace(string(out)), 300))
 	}
 	return string(out), nil

@@ -100,7 +100,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	combined := stdout.String() + stderr.String()
 	if err != nil {
 		return sdk.VerbResult{Output: combined},
-			fmt.Errorf("exec.run %q: %v — stderr: %s", cmdStr, err, strings.TrimSpace(stderr.String()))
+			fmt.Errorf("exec.run %q: %w — stderr: %s", cmdStr, err, strings.TrimSpace(stderr.String()))
 	}
 	out := strings.TrimSpace(stdout.String())
 	var value any = out

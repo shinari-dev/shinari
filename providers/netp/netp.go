@@ -122,7 +122,7 @@ func (p *Provider) writeConf(ctx context.Context, verb, host, body string) (sdk.
 		out, err := exec.CommandContext(ctx, "sh", "-c", p.reloadCmd).CombinedOutput()
 		if err != nil {
 			return sdk.VerbResult{Output: string(out)},
-				fmt.Errorf("net.%s: reload %q: %v — %s", verb, p.reloadCmd, err, strings.TrimSpace(string(out)))
+				fmt.Errorf("net.%s: reload %q: %w — %s", verb, p.reloadCmd, err, strings.TrimSpace(string(out)))
 		}
 	}
 	return sdk.VerbResult{Value: file}, nil

@@ -11,6 +11,7 @@ package redisp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -99,7 +100,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	case "get":
 		key, _ := args["key"].(string)
 		v, err := p.rdb.Get(ctx, key).Result()
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			// A cache miss is a normal observation, not a failure: scenarios
 			// assert a key is absent (e.g. gone after an outage).
 			return sdk.VerbResult{Value: nil, Output: "(nil)", Meta: map[string]any{"hit": false}}, nil
@@ -154,7 +155,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 			return sdk.VerbResult{}, fmt.Errorf("redis.cmd: args is required (e.g. [\"INCR\", \"counter\"])")
 		}
 		v, err := p.rdb.Do(ctx, cmd...).Result()
-		if err != nil && err != redis.Nil {
+		if err != nil && !errors.Is(err, redis.Nil) {
 			return sdk.VerbResult{}, fmt.Errorf("redis.cmd %v: %w", cmd, err)
 		}
 		v = conv.Normalize(v)
