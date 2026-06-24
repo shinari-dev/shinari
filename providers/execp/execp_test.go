@@ -5,6 +5,9 @@ package execp
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +30,33 @@ func TestRunKillsChildTreeOnCancel(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("exec.run did not return promptly after cancel; child process group not killed")
+	}
+}
+
+func TestRunGracefulCancelLetsChildCleanUp(t *testing.T) {
+	// A backgrounded fault tool (e.g. pumba) reverts its kernel-level rule in a
+	// SIGTERM handler. Cancel must give the process group a chance to run that
+	// handler before escalating to SIGKILL, or the fault is never cleared.
+	p := New()
+	marker := filepath.Join(t.TempDir(), "cleaned")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		_, _ = p.Run(ctx, "run", map[string]any{
+			"cmd": fmt.Sprintf(`trap 'echo done > %s; exit 0' TERM; echo ready; sleep 30`, marker),
+		})
+		close(done)
+	}()
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("exec.run did not return promptly after cancel")
+	}
+	data, err := os.ReadFile(marker)
+	if err != nil || !strings.Contains(string(data), "done") {
+		t.Fatalf("child did not run its SIGTERM cleanup before exit; marker=%q err=%v", string(data), err)
 	}
 }
 

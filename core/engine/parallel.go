@@ -78,6 +78,14 @@ func (r *runner) runParallel(ctx context.Context, section, phase string, st *mod
 		for k := range br.writes {
 			r.outputs[k] = br.outputs[k] // higher-indexed branch wins on collision
 		}
+		// Background tasks a branch started outlive the barrier (a fault verb
+		// injects via `background` in a branch; a later phase stops it). Adopt
+		// their handles into the parent so stop_background can find them, and so
+		// teardown can reach any the scenario never stopped. Higher-indexed
+		// branch wins on a name collision, matching the outputs merge.
+		for name, h := range br.bg {
+			r.bg[name] = h
+		}
 		if failures[bi] != "" {
 			reasons = append(reasons, failures[bi])
 		}

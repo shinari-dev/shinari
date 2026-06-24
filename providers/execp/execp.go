@@ -17,6 +17,11 @@ import (
 	"github.com/shinari-dev/shinari/sdk"
 )
 
+// termGrace is how long a cancelled command's process group gets to handle
+// SIGTERM (and clean up) before the group is force-killed. It is shorter than
+// cmd.WaitDelay so the graceful path completes before Go's own backstop fires.
+const termGrace = 2 * time.Second
+
 type Provider struct {
 	dir string
 }
@@ -66,10 +71,17 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		if cmd.Process == nil {
 			return nil
 		}
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		pgid := -cmd.Process.Pid
+		// Graceful first: a backgrounded fault tool (e.g. pumba) reverts its
+		// kernel-level rule in a SIGTERM handler, so a hard kill would leave the
+		// system faulted. Give the whole group that chance, then escalate to
+		// SIGKILL if it ignores the term within the grace window.
+		_ = syscall.Kill(pgid, syscall.SIGTERM)
+		time.AfterFunc(termGrace, func() { _ = syscall.Kill(pgid, syscall.SIGKILL) })
+		return nil
 	}
 	// Backstop: if a child still holds a pipe after the process exits, do not
-	// wait on it indefinitely.
+	// wait on it indefinitely. Outlasts termGrace so the graceful path wins.
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = p.dir
 	if d, ok := args["dir"].(string); ok && d != "" {
