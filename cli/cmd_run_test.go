@@ -92,3 +92,40 @@ func TestGoldenDriftWhenFindingRemoved(t *testing.T) {
 		t.Fatalf("expected drift to fail the run, got exit 0; stdout=%s", so.String())
 	}
 }
+
+func TestRunRecordAppendsHistory(t *testing.T) {
+	dir := writeFindingProject(t)
+	out := filepath.Join(t.TempDir(), "reports")
+	var so, se bytes.Buffer
+
+	for i := 0; i < 2; i++ {
+		so.Reset()
+		se.Reset()
+		if code := run([]string{"--project", dir, "--out", out, "run", "--record"}, &so, &se, noEnv, noLookup); code != 0 {
+			t.Fatalf("run --record exit=%d stderr=%s", code, se.String())
+		}
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "shinari-history.jsonl"))
+	if err != nil {
+		t.Fatalf("history not written: %v", err)
+	}
+	if n := bytes.Count(data, []byte("\n")); n != 2 {
+		t.Fatalf("expected 2 history lines, got %d:\n%s", n, data)
+	}
+	if !bytes.Contains(data, []byte("sha-")) {
+		t.Fatalf("history record should carry a finding id, got:\n%s", data)
+	}
+}
+
+func TestRunWithoutRecordWritesNoHistory(t *testing.T) {
+	dir := writeFindingProject(t)
+	out := filepath.Join(t.TempDir(), "reports")
+	var so, se bytes.Buffer
+	if code := run([]string{"--project", dir, "--out", out, "run"}, &so, &se, noEnv, noLookup); code != 0 {
+		t.Fatalf("run exit=%d", code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "shinari-history.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("history file must not exist without --record (err=%v)", err)
+	}
+}
