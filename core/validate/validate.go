@@ -197,6 +197,12 @@ func (v *scenarioValidator) add(f Finding) {
 // level): a reference to a sibling branch's capture is rule 12 rather than a
 // generic unresolved reference.
 func (v *scenarioValidator) checkStep(st *model.Step, section string, defined map[string]bool, siblings []map[string]bool, selfIdx int) {
+	// rule 15 — a finding without an explicit id: gets a derived identity that
+	// changes if the check is edited; warn so long-lived findings can be pinned.
+	if st.Finding != "" && st.ID == "" {
+		v.add(Finding{Step: st.Run, Rule: 15, Severity: Warn,
+			Msg: "finding has no explicit id: — identity is derived from the check and will change if you edit it; add id: to pin it"})
+	}
 	res, rerr := v.reg.Resolve(st.Run)
 	if rerr != nil {
 		// rule 3 — unless the step opted into tri-state SKIP.

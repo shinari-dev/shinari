@@ -125,11 +125,12 @@ func Reduce(events []Event) RunResult {
 			}
 		case EvFindingRecorded:
 			if sc := byName[e.Scenario]; sc != nil {
+				id, _ := e.Payload["id"].(string)
 				narrative, _ := e.Payload["narrative"].(string)
 				nowPasses, _ := e.Payload["nowPasses"].(bool)
 				detail, _ := e.Payload["detail"].(string)
 				sc.Findings = append(sc.Findings, FindingRecord{
-					Scenario: e.Scenario, Narrative: narrative, Check: e.Step,
+					ID: id, Scenario: e.Scenario, Narrative: narrative, Check: e.Step,
 					Detail: detail, NowPasses: nowPasses,
 				})
 			}

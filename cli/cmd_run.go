@@ -14,18 +14,19 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/shinari-dev/shinari/cli/golden"
 	"github.com/shinari-dev/shinari/cli/render"
 	"github.com/shinari-dev/shinari/core/engine"
 )
 
 func newRunCmd(project, color *string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) *cobra.Command {
 	var out, include, exclude string
-	var dryRun, keepUp, verbose bool
+	var dryRun, keepUp, verbose, update bool
 	cmd := &cobra.Command{
 		Use:   "run [target...]",
 		Short: "execute scenarios (target = scenario name or suite)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code := cmdRun(*project, *color, out, args, dryRun, keepUp, verbose, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
+			if code := cmdRun(*project, *color, out, args, dryRun, keepUp, verbose, update, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
 				return &exitError{code}
 			}
 			return nil
@@ -37,10 +38,11 @@ func newRunCmd(project, color *string, stdout, stderr io.Writer, getenv func(str
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "stream per-step values, durations, and section banners")
 	cmd.Flags().StringVar(&include, "include-tags", "", "run only scenarios matching this tag expression")
 	cmd.Flags().StringVar(&exclude, "exclude-tags", "", "exclude scenarios matching this tag expression")
+	cmd.Flags().BoolVarP(&update, "update", "u", false, "write/refresh the findings ledger (shinari.findings.yml) from this run")
 	return cmd
 }
 
-func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose bool, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
+func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, update bool, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
 	set, ok := load(dir, stderr)
 	if !ok {
 		return 2 // could not even establish the harness
@@ -85,7 +87,39 @@ func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose bo
 		return 2
 	}
 	fmt.Fprintln(stdout, pal.Dim(fmt.Sprintf("reports → %s/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md}", out)))
-	return res.Verdict().ExitCode()
+
+	exit := res.Verdict().ExitCode()
+
+	var observed []engine.FindingRecord
+	for _, sc := range res.Scenarios {
+		observed = append(observed, sc.Findings...)
+	}
+	goldenPath := filepath.Join(set.Root, "shinari.findings.yml")
+
+	if update {
+		if werr := golden.Write(goldenPath, golden.FromObserved(observed)); werr != nil {
+			fmt.Fprintln(stderr, werr)
+			return 2
+		}
+		fmt.Fprintln(stdout, pal.Dim("findings ledger updated → "+goldenPath))
+		return exit
+	}
+
+	g, exists, gerr := golden.Load(goldenPath)
+	if gerr != nil {
+		fmt.Fprintln(stderr, gerr)
+		return 2
+	}
+	if exists {
+		if drift := golden.Reconcile(g, observed); !drift.Empty() {
+			fmt.Fprintln(stdout, pal.Bold("findings ledger drift:"))
+			_ = drift.Report(stdout)
+			if exit == 0 {
+				exit = 1
+			}
+		}
+	}
+	return exit
 }
 
 func writeReports(out string, res engine.RunResult, events []engine.Event) error {

@@ -67,6 +67,7 @@ func (s StepResult) Label() string {
 
 // FindingRecord is one ledger entry: a known, expected failure.
 type FindingRecord struct {
+	ID        string `json:"id"` // stable identity: explicit id: or derived fingerprint
 	Scenario  string `json:"scenario"`
 	Narrative string `json:"narrative"` // the finding: text
 	Check     string `json:"check"`     // desc or run of the check

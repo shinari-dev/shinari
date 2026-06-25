@@ -872,3 +872,33 @@ verify:
 		t.Fatal("want rule 7 to still fire when the exactly-once assertion is when:-guarded")
 	}
 }
+
+func TestRule15FindingWithoutID(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: f
+verify:
+  - { run: assert, finding: "known gap", with: { of: 1, equals: 2 } }
+`,
+	})
+	if findRule(Validate(set), 15) == nil {
+		t.Fatal("expected rule 15 warning for a finding without id:")
+	}
+}
+
+func TestRule15SilentWithID(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: f
+verify:
+  - { run: assert, id: pinned, finding: "known gap", with: { of: 1, equals: 2 } }
+`,
+	})
+	if findRule(Validate(set), 15) != nil {
+		t.Fatal("rule 15 should not fire when id: is set")
+	}
+}

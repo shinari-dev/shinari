@@ -268,7 +268,7 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 			}
 			return finish(CheckSkip, "")
 		}
-		return r.judge(st, finish, err)
+		return r.judge(st, section, finish, err)
 	}
 
 	// when: is a value-gated guard — a jq predicate over the scope. Falsey skips
@@ -323,7 +323,7 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		if errors.Is(err, context.DeadlineExceeded) {
 			sr.TimedOut = true
 		}
-		return r.judge(st, finish, err)
+		return r.judge(st, section, finish, err)
 	}
 	stepValue = result.Value
 
@@ -337,7 +337,7 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		}
 		sr.Captured[name] = v
 	}); err != nil {
-		return r.judge(st, finish, err)
+		return r.judge(st, section, finish, err)
 	}
 
 	effect := EffectiveEffect(res.Spec, st)
@@ -347,35 +347,36 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		r.res.Injected = append(r.res.Injected, stepLabel(st))
 	}
 
-	return r.judge(st, finish, nil)
+	return r.judge(st, section, finish, nil)
 }
 
 // judge applies the findings ledger to a step outcome: a failing
 // finding: is FINDING (and keeps the scenario green); a passing finding:
 // is a FAIL that says "promote me".
-func (r *runner) judge(st *model.Step, finish func(CheckVerdict, string) StepResult, err error) StepResult {
+func (r *runner) judge(st *model.Step, section string, finish func(CheckVerdict, string) StepResult, err error) StepResult {
 	if st.Finding == "" {
 		if err != nil {
 			return finish(CheckFail, err.Error())
 		}
 		return finish(CheckPass, "")
 	}
+	id := FindingID(r.sc.Name, section, st)
 	if err != nil {
 		r.res.Findings = append(r.res.Findings, FindingRecord{
-			Scenario: r.sc.Name, Narrative: st.Finding, Check: stepLabel(st), Detail: err.Error(),
+			ID: id, Scenario: r.sc.Name, Narrative: st.Finding, Check: stepLabel(st), Detail: err.Error(),
 		})
 		r.emit.Emit(Event{Type: EvFindingRecorded, Time: r.opts.now(), Scenario: r.sc.Name,
 			Step: stepLabel(st), Verb: st.Run,
-			Payload: map[string]any{"narrative": st.Finding, "detail": err.Error()}})
+			Payload: map[string]any{"id": id, "narrative": st.Finding, "detail": err.Error()}})
 		sr := finish(CheckFinding, "")
 		return sr
 	}
 	r.res.Findings = append(r.res.Findings, FindingRecord{
-		Scenario: r.sc.Name, Narrative: st.Finding, Check: stepLabel(st), NowPasses: true,
+		ID: id, Scenario: r.sc.Name, Narrative: st.Finding, Check: stepLabel(st), NowPasses: true,
 	})
 	r.emit.Emit(Event{Type: EvFindingRecorded, Time: r.opts.now(), Scenario: r.sc.Name,
 		Step: stepLabel(st), Verb: st.Run,
-		Payload: map[string]any{"narrative": st.Finding, "nowPasses": true}})
+		Payload: map[string]any{"id": id, "narrative": st.Finding, "nowPasses": true}})
 	return finish(CheckFail, fmt.Sprintf("finding now passes — the gap %q was fixed; promote this to a hard assertion", st.Finding))
 }
 

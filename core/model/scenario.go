@@ -25,6 +25,7 @@ type Step struct {
 	OnAbsent   string            `yaml:"onAbsent"`
 	SkipReason string            `yaml:"skipReason"`
 	Finding    string            `yaml:"finding"`
+	ID         string            `yaml:"id"`      // optional stable finding identity; derived from the check if absent
 	Kind       string            `yaml:"kind"`    // override the verb's kind (the exec.run escape hatch)
 	Effect     string            `yaml:"effect"`  // declare the fault a polymorphic verb (exec.run, http.post) injects
 	Timeout    float64           `yaml:"timeout"` // optional per-step deadline in seconds
@@ -42,7 +43,7 @@ type Step struct {
 // reservedStepKeys are the only keys allowed in a step envelope.
 var reservedStepKeys = map[string]bool{
 	"run": true, "with": true, "as": true, "read": true, "capture": true,
-	"desc": true, "when": true, "onAbsent": true, "skipReason": true, "finding": true, "kind": true,
+	"desc": true, "when": true, "onAbsent": true, "skipReason": true, "finding": true, "id": true, "kind": true,
 	"effect": true, "timeout": true,
 }
 
@@ -54,7 +55,7 @@ func (s *Step) UnmarshalYAML(node *yaml.Node) error {
 	for i := 0; i < len(node.Content); i += 2 {
 		key := node.Content[i].Value
 		if !reservedStepKeys[key] {
-			return fmt.Errorf("line %d: unknown step key %q (reserved envelope keys: run, with, as, read, capture, desc, when, onAbsent, skipReason, finding, kind, effect, timeout)", node.Content[i].Line, key)
+			return fmt.Errorf("line %d: unknown step key %q (reserved envelope keys: run, with, as, read, capture, desc, when, onAbsent, skipReason, finding, id, kind, effect, timeout)", node.Content[i].Line, key)
 		}
 	}
 	type plain Step
