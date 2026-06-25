@@ -1,0 +1,447 @@
+{
+  "version": "1",
+  "meta": {
+    "name": "history",
+    "theme": "tokyo-night",
+    "savedAt": "2026-06-26T00:00:00.000Z"
+  },
+  "tree": {
+    "id": "comp-16",
+    "type": "Screen",
+    "name": "history",
+    "props": {
+      "width": 100,
+      "height": 32
+    },
+    "layout": {
+      "type": "absolute",
+      "x": 0,
+      "y": 0,
+      "padding": 0
+    },
+    "style": {
+      "backgroundColor": "#0c0e12",
+      "color": "#eceae6",
+      "border": false
+    },
+    "events": {},
+    "children": [
+      {
+        "id": "comp-9",
+        "type": "Box",
+        "name": "status bar",
+        "props": {
+          "width": 100,
+          "height": 3
+        },
+        "layout": {
+          "type": "absolute",
+          "x": 0,
+          "y": 0,
+          "padding": 1
+        },
+        "style": {
+          "border": true,
+          "borderStyle": "rounded",
+          "borderColor": "#2c2f37",
+          "backgroundColor": "#13151c",
+          "color": "#eceae6"
+        },
+        "events": {},
+        "children": [
+          {
+            "id": "comp-5",
+            "type": "Text",
+            "name": "fault dot",
+            "props": {
+              "width": 1,
+              "height": 1,
+              "content": "\u25cf",
+              "wrap": false,
+              "align": "left"
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 1,
+              "y": 0
+            },
+            "style": {
+              "color": "#ff4f2b",
+              "bold": true
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          },
+          {
+            "id": "comp-6",
+            "type": "Text",
+            "name": "wordmark",
+            "props": {
+              "width": 7,
+              "height": 1,
+              "content": "shinari",
+              "wrap": false,
+              "align": "left"
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 3,
+              "y": 0
+            },
+            "style": {
+              "color": "#eceae6",
+              "bold": true
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          },
+          {
+            "id": "comp-7",
+            "type": "Text",
+            "name": "version",
+            "props": {
+              "width": 4,
+              "height": 1,
+              "content": "v0.3",
+              "wrap": false,
+              "align": "left"
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 11,
+              "y": 0
+            },
+            "style": {
+              "color": "#82868e"
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          },
+          {
+            "id": "comp-8",
+            "type": "Text",
+            "name": "tally",
+            "props": {
+              "width": 28,
+              "height": 1,
+              "content": "\u2713 3     \u2717 1     \u25cf 1 finding",
+              "wrap": false,
+              "align": "left"
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 70,
+              "y": 0
+            },
+            "style": {
+              "color": "#b4b7bd"
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          }
+        ],
+        "locked": false,
+        "hidden": false,
+        "collapsed": false
+      },
+      {
+        "id": "comp-13",
+        "type": "Box",
+        "name": "tab strip",
+        "props": {
+          "width": 98,
+          "height": 1
+        },
+        "layout": {
+          "type": "absolute",
+          "x": 1,
+          "y": 3,
+          "padding": 0
+        },
+        "style": {
+          "border": false
+        },
+        "events": {},
+        "children": [
+          {
+            "id": "comp-10",
+            "type": "Text",
+            "name": "Scenarios",
+            "props": {
+              "width": 9,
+              "height": 1,
+              "content": "Scenarios",
+              "wrap": false,
+              "align": "left"
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 0,
+              "y": 0
+            },
+            "style": {
+              "color": "#82868e"
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          },
+          {
+            "id": "comp-11",
+            "type": "Text",
+            "name": "\u2502",
+            "props": {
+              "width": 1,
+              "height": 1,
+              "content": "\u2502",
+              "wrap": false,
+              "align": "left"
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 11,
+              "y": 0
+            },
+            "style": {
+              "color": "#2c2f37"
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          },
+          {
+            "id": "comp-12",
+            "type": "Text",
+            "name": "History",
+            "props": {
+              "width": 7,
+              "height": 1,
+              "content": "History",
+              "wrap": false,
+              "align": "left"
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 13,
+              "y": 0
+            },
+            "style": {
+              "color": "#ff4f2b",
+              "bold": true,
+              "underline": true
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          }
+        ],
+        "locked": false,
+        "hidden": false,
+        "collapsed": false
+      },
+      {
+        "id": "comp-4",
+        "type": "Box",
+        "name": "ledger panel",
+        "props": {
+          "width": 100,
+          "height": 26
+        },
+        "layout": {
+          "type": "absolute",
+          "x": 0,
+          "y": 5,
+          "padding": 1
+        },
+        "style": {
+          "border": true,
+          "borderStyle": "rounded",
+          "borderColor": "#ff4f2b",
+          "backgroundColor": "#13151c",
+          "color": "#eceae6"
+        },
+        "events": {},
+        "children": [
+          {
+            "id": "comp-1",
+            "type": "Text",
+            "name": "findings ledger",
+            "props": {
+              "width": 16,
+              "height": 1,
+              "content": "findings ledger",
+              "wrap": false,
+              "align": "left"
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 0,
+              "y": 0
+            },
+            "style": {
+              "color": "#eceae6",
+              "bold": true
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          },
+          {
+            "id": "comp-2",
+            "type": "Text",
+            "name": "12 runs recorded",
+            "props": {
+              "width": 18,
+              "height": 1,
+              "content": "12 runs recorded",
+              "wrap": false,
+              "align": "left"
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 78,
+              "y": 0
+            },
+            "style": {
+              "color": "#82868e"
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          },
+          {
+            "id": "comp-3",
+            "type": "Table",
+            "name": "ledger table",
+            "props": {
+              "width": 94,
+              "height": 8,
+              "columns": [
+                "finding",
+                "trend",
+                "runs",
+                "status",
+                "detail"
+              ],
+              "rows": [
+                [
+                  "cache.recovery.slow",
+                  "\u25cf\u25cf\u25cf\u25cb",
+                  "9",
+                  "open",
+                  "p99 6.2s > 5s"
+                ],
+                [
+                  "db.failover.dataloss",
+                  "\u25cb\u25cb\u25cf\u25cf",
+                  "4",
+                  "fixed",
+                  "rows 0 \u2192 1200"
+                ],
+                [
+                  "queue.backpressure",
+                  "\u25cf\u25cf\u25cf\u25cf",
+                  "12",
+                  "open",
+                  "lag 3.1s > 2s"
+                ]
+              ]
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 0,
+              "y": 2
+            },
+            "style": {
+              "border": false,
+              "color": "#eceae6",
+              "borderColor": "#2c2f37"
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          }
+        ],
+        "locked": false,
+        "hidden": false,
+        "collapsed": false
+      },
+      {
+        "id": "comp-15",
+        "type": "Box",
+        "name": "key bar",
+        "props": {
+          "width": 98,
+          "height": 1
+        },
+        "layout": {
+          "type": "absolute",
+          "x": 1,
+          "y": 31,
+          "padding": 0
+        },
+        "style": {
+          "border": false
+        },
+        "events": {},
+        "children": [
+          {
+            "id": "comp-14",
+            "type": "Text",
+            "name": "keys",
+            "props": {
+              "width": 22,
+              "height": 1,
+              "content": "tab   \u2191\u2193 move   q quit",
+              "wrap": false,
+              "align": "left"
+            },
+            "layout": {
+              "type": "absolute",
+              "x": 0,
+              "y": 0
+            },
+            "style": {
+              "color": "#82868e"
+            },
+            "events": {},
+            "children": [],
+            "locked": false,
+            "hidden": false,
+            "collapsed": false
+          }
+        ],
+        "locked": false,
+        "hidden": false,
+        "collapsed": false
+      }
+    ],
+    "locked": false,
+    "hidden": false,
+    "collapsed": false
+  }
+}

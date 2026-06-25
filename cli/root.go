@@ -33,6 +33,8 @@ func newRootCmd(stdout, stderr io.Writer, getenv func(string) string, lookupEnv 
 		newExplainCmd(&project, stdout, stderr),
 		newRunCmd(&project, &color, stdout, stderr, getenv, lookupEnv),
 		newLogCmd(&project, &color, stdout, stderr, lookupEnv),
+		newWatchCmd(stdout, stderr),
+		newTuiCmd(&project, stdout, stderr, getenv, lookupEnv),
 	)
 	return root
 }

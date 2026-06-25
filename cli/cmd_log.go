@@ -6,7 +6,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -35,7 +34,7 @@ func cmdLog(dir, color string, stdout, stderr io.Writer, lookupEnv func(string) 
 	}
 	pal := paletteFor(color, stdout, lookupEnv)
 
-	path := filepath.Join(set.Root, "shinari-history.jsonl")
+	path := history.Path(set.Root)
 	records, err := history.Load(path)
 	if err != nil {
 		fmt.Fprintln(stderr, err)

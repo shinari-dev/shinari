@@ -66,7 +66,6 @@ func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, u
 	defer unlock()
 
 	rec := &engine.Recorder{}
-	console := &render.Console{W: stdout, Verbose: verbose, Pal: pal}
 	opts := engine.Options{
 		KeepUp:      keepUp || getenv("KEEP_UP") == "1",
 		DryRun:      dryRun,
@@ -74,6 +73,7 @@ func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, u
 		ExcludeTags: exclude,
 		Env:         resolvedEnv,
 	}
+	console := &render.Console{W: stdout, Verbose: verbose, Pal: pal}
 	res, err := engine.Run(context.Background(), set, targets, engine.Multi(rec, console), opts)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -99,16 +99,17 @@ func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, u
 	}
 	if record {
 		hrec := history.Record{
-			RunID:   res.Start.UTC().Format(time.RFC3339Nano),
-			Time:    res.Start,
-			Verdict: string(res.Verdict()),
+			RunID:    res.Start.UTC().Format(time.RFC3339Nano),
+			Time:     res.Start,
+			Verdict:  string(res.Verdict()),
+			Duration: res.End.Sub(res.Start),
 		}
 		for _, f := range observed {
 			hrec.Findings = append(hrec.Findings, history.Finding{
 				ID: f.ID, Scenario: f.Scenario, Narrative: f.Narrative, NowPasses: f.NowPasses,
 			})
 		}
-		historyPath := filepath.Join(set.Root, "shinari-history.jsonl")
+		historyPath := history.Path(set.Root)
 		if herr := history.Append(historyPath, hrec); herr != nil {
 			fmt.Fprintln(stderr, herr)
 			return 2
@@ -149,11 +150,11 @@ func writeReports(out string, res engine.RunResult, events []engine.Event) error
 		return err
 	}
 	files := map[string]func(io.Writer) error{
-		"results.tsv":   func(w io.Writer) error { return render.TSV(w, res) },
-		"results.json":  func(w io.Writer) error { return render.ResultsJSON(w, res) },
-		"junit.xml":     func(w io.Writer) error { return render.JUnit(w, res) },
-		"journal.jsonl": func(w io.Writer) error { return render.Journal(w, events) },
-		"findings.md":   func(w io.Writer) error { return render.FindingsReport(w, res) },
+		"results.tsv":    func(w io.Writer) error { return render.TSV(w, res) },
+		"results.json":   func(w io.Writer) error { return render.ResultsJSON(w, res) },
+		"junit.xml":      func(w io.Writer) error { return render.JUnit(w, res) },
+		"journal.jsonl":  func(w io.Writer) error { return render.Journal(w, events) },
+		"findings.md":    func(w io.Writer) error { return render.FindingsReport(w, res) },
 	}
 	for name, fn := range files {
 		f, err := os.Create(filepath.Join(out, name))

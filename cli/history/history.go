@@ -11,16 +11,40 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 )
 
+// FileName is the run-record log's name, kept beside the project root.
+const FileName = "shinari-history.jsonl"
+
+// Path is the history log path for a project rooted at root.
+func Path(root string) string { return filepath.Join(root, FileName) }
+
 // Record is one run's compact, durable history entry.
 type Record struct {
-	RunID    string    `json:"runId"`
-	Time     time.Time `json:"time"`
-	Verdict  string    `json:"verdict"`
-	Findings []Finding `json:"findings,omitempty"`
+	RunID     string        `json:"runId"`
+	Time      time.Time     `json:"time"`
+	Verdict   string        `json:"verdict"`
+	Duration  time.Duration `json:"duration,omitempty"`
+	Scenarios []string      `json:"scenarios,omitempty"`
+	Findings  []Finding     `json:"findings,omitempty"`
+}
+
+// RunsFor returns, newest first, the records that ran the named scenario.
+func RunsFor(records []Record, scenario string) []Record {
+	var out []Record
+	for _, r := range records {
+		for _, s := range r.Scenarios {
+			if s == scenario {
+				out = append(out, r)
+				break
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Time.After(out[j].Time) })
+	return out
 }
 
 // Finding is one finding as captured in a run-record, keyed by its stable id.

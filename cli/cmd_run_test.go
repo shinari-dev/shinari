@@ -129,3 +129,4 @@ func TestRunWithoutRecordWritesNoHistory(t *testing.T) {
 		t.Fatalf("history file must not exist without --record (err=%v)", err)
 	}
 }
+

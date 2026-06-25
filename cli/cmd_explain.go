@@ -44,37 +44,8 @@ func cmdExplain(dir string, targets []string, stdout, stderr io.Writer) int {
 	}
 
 	for _, sc := range scenarios {
-		fmt.Fprintf(stdout, "\n=== %s\n", sc.Name)
-		if sc.Description != "" {
-			fmt.Fprintf(stdout, "%s\n", strings.TrimSpace(sc.Description))
-		}
-		meta := []string{}
-		if len(sc.Tags) > 0 {
-			meta = append(meta, "tags: "+strings.Join(sc.Tags, ", "))
-		}
-		if sc.Timeout > 0 {
-			meta = append(meta, fmt.Sprintf("timeout: %gs", sc.Timeout))
-		}
-		if len(meta) > 0 {
-			fmt.Fprintf(stdout, "%s\n", strings.Join(meta, "   "))
-		}
-
-		reg, rerr := registry.New(set, model.MergeProviders(set.Project.Providers, sc.Providers))
-		if rerr != nil {
-			fmt.Fprintf(stdout, "  provider configuration error: %v\n", rerr)
-			continue
-		}
-
-		explainSteps(stdout, reg, "setup", sc.Setup)
-		if len(sc.SteadyState) > 0 {
-			explainSteps(stdout, reg, "steadyState (gate, then recovery after method)", sc.SteadyState)
-		}
-		for _, ph := range sc.Method {
-			fmt.Fprintf(stdout, "method — %s:\n", ph.Phase)
-			explainStepLines(stdout, reg, ph.Steps)
-		}
-		explainSteps(stdout, reg, "verify", sc.Verify)
-		explainTeardown(stdout, reg, sc)
+		fmt.Fprintln(stdout)
+		explainScenario(stdout, set, sc)
 	}
 	fmt.Fprintf(stdout, "\nactions ([action]) are skipped under --dry-run; nothing here was executed.\n")
 	return 0
