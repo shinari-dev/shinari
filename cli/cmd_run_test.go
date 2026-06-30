@@ -130,3 +130,14 @@ func TestRunWithoutRecordWritesNoHistory(t *testing.T) {
 	}
 }
 
+func TestRunOTLPFlagAcceptedAndNonFatal(t *testing.T) {
+	dir := writeFindingProject(t)
+	out := filepath.Join(t.TempDir(), "reports")
+	var so, se bytes.Buffer
+	// Point at a port with no collector. Export fails fast and must NOT change
+	// the verdict's exit code (the finding keeps the run green → 0).
+	code := run([]string{"--project", dir, "--out", out, "run", "--otlp", "127.0.0.1:4999"}, &so, &se, noEnv, noLookup)
+	if code != 0 {
+		t.Fatalf("an OTLP export failure must not change the exit code; got %d stderr=%s", code, se.String())
+	}
+}

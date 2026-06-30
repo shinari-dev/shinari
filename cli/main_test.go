@@ -130,7 +130,7 @@ func TestRunPassedWritesReportsAndExits0(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d: %s%s", code, out.String(), errOut.String())
 	}
-	for _, f := range []string{"results.tsv", "results.json", "junit.xml", "journal.jsonl", "findings.md"} {
+	for _, f := range []string{"results.tsv", "results.json", "junit.xml", "journal.jsonl", "findings.md", "findings.sarif"} {
 		if _, err := os.Stat(filepath.Join(outDir, f)); err != nil {
 			t.Errorf("missing report %s", f)
 		}

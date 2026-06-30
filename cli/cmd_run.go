@@ -17,18 +17,19 @@ import (
 
 	"github.com/shinari-dev/shinari/cli/golden"
 	"github.com/shinari-dev/shinari/cli/history"
+	"github.com/shinari-dev/shinari/cli/otelx"
 	"github.com/shinari-dev/shinari/cli/render"
 	"github.com/shinari-dev/shinari/core/engine"
 )
 
 func newRunCmd(project, color *string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) *cobra.Command {
-	var out, include, exclude string
+	var out, include, exclude, otlp string
 	var dryRun, keepUp, verbose, update, record bool
 	cmd := &cobra.Command{
 		Use:   "run [target...]",
 		Short: "execute scenarios (target = scenario name or suite)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code := cmdRun(*project, *color, out, args, dryRun, keepUp, verbose, update, record, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
+			if code := cmdRun(*project, *color, out, args, dryRun, keepUp, verbose, update, record, otlp, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
 				return &exitError{code}
 			}
 			return nil
@@ -42,10 +43,11 @@ func newRunCmd(project, color *string, stdout, stderr io.Writer, getenv func(str
 	cmd.Flags().StringVar(&exclude, "exclude-tags", "", "exclude scenarios matching this tag expression")
 	cmd.Flags().BoolVarP(&update, "update", "u", false, "write/refresh the findings ledger (shinari.findings.yml) from this run")
 	cmd.Flags().BoolVar(&record, "record", false, "append a run-record to shinari-history.jsonl for `shinari log`")
+	cmd.Flags().StringVar(&otlp, "otlp", "", "export the run as OTLP traces to this gRPC endpoint (host:port)")
 	return cmd
 }
 
-func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, update, record bool, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
+func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, update, record bool, otlp, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
 	set, ok := load(dir, stderr)
 	if !ok {
 		return 2 // could not even establish the harness
@@ -89,7 +91,7 @@ func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, u
 		fmt.Fprintln(stderr, werr)
 		return 2
 	}
-	fmt.Fprintln(stdout, pal.Dim(fmt.Sprintf("reports → %s/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md}", out)))
+	fmt.Fprintln(stdout, pal.Dim(fmt.Sprintf("reports → %s/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md,findings.sarif}", out)))
 
 	exit := res.Verdict().ExitCode()
 
@@ -115,6 +117,16 @@ func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, u
 			return 2
 		}
 		fmt.Fprintln(stdout, pal.Dim("run recorded → "+historyPath))
+	}
+
+	if otlp != "" {
+		ectx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if eerr := otelx.Export(ectx, otlp, res); eerr != nil {
+			fmt.Fprintln(stderr, "otlp export failed:", eerr)
+		} else {
+			fmt.Fprintln(stdout, pal.Dim("traces exported → "+otlp))
+		}
+		cancel()
 	}
 
 	goldenPath := filepath.Join(set.Root, "shinari.findings.yml")
@@ -155,6 +167,7 @@ func writeReports(out string, res engine.RunResult, events []engine.Event) error
 		"junit.xml":      func(w io.Writer) error { return render.JUnit(w, res) },
 		"journal.jsonl":  func(w io.Writer) error { return render.Journal(w, events) },
 		"findings.md":    func(w io.Writer) error { return render.FindingsReport(w, res) },
+		"findings.sarif": func(w io.Writer) error { return render.SARIF(w, res) },
 	}
 	for name, fn := range files {
 		f, err := os.Create(filepath.Join(out, name))
