@@ -46,6 +46,33 @@ func writeFindingProject(t *testing.T) string {
 	return dir
 }
 
+func TestOutputBlockDisablesExporter(t *testing.T) {
+	cliFail = false
+	dir := t.TempDir()
+	out := filepath.Join(t.TempDir(), "reports")
+	write := func(rel, content string) {
+		path := filepath.Join(dir, rel)
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// project.yml disables the JUnit file exporter via the output: block.
+	write("project.yml", "apiVersion: shinari/v1\nkind: Project\nname: demo\nproviders:\n  sut: { source: clifake }\noutput:\n  exporters:\n    junit: { enabled: false }\n")
+	write("s.yml", cleanScenarioYML)
+
+	var so, se bytes.Buffer
+	if code := run([]string{"--project", dir, "--out", out, "run"}, &so, &se, noEnv, noLookup); code != 0 {
+		t.Fatalf("run exit=%d stderr=%s", code, se.String())
+	}
+	if _, err := os.Stat(filepath.Join(out, "junit.xml")); !os.IsNotExist(err) {
+		t.Fatalf("junit.xml should not be written when disabled (err=%v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "results.json")); err != nil {
+		t.Fatalf("results.json should still be written: %v", err)
+	}
+}
+
 func TestGoldenUpdateThenMatch(t *testing.T) {
 	dir := writeFindingProject(t)
 	out := filepath.Join(t.TempDir(), "reports")

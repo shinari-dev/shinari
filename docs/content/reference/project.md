@@ -47,6 +47,12 @@ providers:
     use: ./providers/app
     config:
       apiBase: http://localhost:8080
+
+output:                          # where reports go, which exporters run
+  exporters:
+    otlp:
+      enabled: true
+      endpoint: 127.0.0.1:4317
 ```
 
 ## The env block
@@ -95,6 +101,41 @@ Each key is an **instance name** (the verb namespace). Fields:
 
 A scenario may carry its own `providers:` block, merged over the project's,
 later wins, config maps merge shallowly.
+
+## The output block
+
+A `kind: Project` may declare an `output:` block: where reports are written and
+which exporters run.
+
+```yaml
+output:
+  dir: shinari-out                 # default; --out/-o overrides
+  exporters:
+    tsv:      { enabled: true }
+    json:     { enabled: true }
+    junit:    { enabled: true }
+    journal:  { enabled: true }
+    findings: { enabled: true }
+    sarif:    { enabled: true }
+    otlp:
+      enabled: true
+      endpoint: 127.0.0.1:4317     # literal host:port; --otlp overrides
+      protocol: grpc               # only grpc is supported today
+```
+
+When the block is absent, the six file exporters write to `shinari-out/` and
+OTLP export is off. Listing one exporter sets only that exporter, so naming
+`otlp` does not disable the others; a file exporter is turned off with
+`enabled: false`.
+
+`--out` overrides `output.dir`, and `--otlp host:port` overrides the OTLP
+endpoint and forces export on, so a CI job points traces at its own collector
+without editing the project. The endpoint is a literal address: it is not
+interpolated.
+
+`validate` reports an enabled OTLP exporter with no endpoint (rule 17), an
+unsupported protocol (rule 18), and an unknown exporter key (rule 16). The
+engine never reads this block; the CLI resolves it and drives the exporters.
 
 ## The lock file
 

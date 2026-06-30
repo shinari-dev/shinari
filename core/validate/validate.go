@@ -56,6 +56,7 @@ func Validate(set *discover.Set) []Finding {
 	for k := range set.Project.Env {
 		envSet[k] = true
 	}
+	out = append(out, validateOutput(set.Project)...)
 	for _, def := range set.Providers {
 		out = append(out, validateComposedDef(def, envSet)...)
 	}
@@ -508,6 +509,34 @@ func validateComposedDef(def *model.ProviderDef, envSet map[string]bool) []Findi
 				outputs[name] = true
 			}
 		}
+	}
+	return out
+}
+
+// validateOutput checks the project output: block — rule 16 (unknown exporter
+// key), rule 17 (otlp enabled with no endpoint), rule 18 (unsupported otlp
+// protocol). It validates the declared YAML; the --otlp flag is a CLI-runtime
+// override the static check does not see.
+func validateOutput(p *model.Project) []Finding {
+	var out []Finding
+	known := map[string]bool{
+		"tsv": true, "json": true, "junit": true,
+		"journal": true, "findings": true, "sarif": true, "otlp": true,
+	}
+	for name := range p.Output.Exporters {
+		if !known[name] {
+			out = append(out, Finding{File: p.File, Rule: 16, Severity: Warn,
+				Msg: fmt.Sprintf("unknown exporter %q in output.exporters", name)})
+		}
+	}
+	otlp := p.Output.Exporters["otlp"]
+	if otlp.Enabled != nil && *otlp.Enabled && otlp.Endpoint == "" {
+		out = append(out, Finding{File: p.File, Rule: 17, Severity: Error,
+			Msg: "output.exporters.otlp is enabled but has no endpoint"})
+	}
+	if otlp.Protocol != "" && otlp.Protocol != "grpc" {
+		out = append(out, Finding{File: p.File, Rule: 18, Severity: Error,
+			Msg: fmt.Sprintf("output.exporters.otlp protocol %q is not supported (only grpc)", otlp.Protocol)})
 	}
 	return out
 }

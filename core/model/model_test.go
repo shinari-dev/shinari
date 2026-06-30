@@ -200,6 +200,49 @@ func TestParseProjectEnv(t *testing.T) {
 	}
 }
 
+func TestParseProjectOutput(t *testing.T) {
+	data := []byte(`apiVersion: shinari/v1
+kind: Project
+name: x
+output:
+  dir: build/reports
+  exporters:
+    junit: { enabled: false }
+    otlp:
+      enabled: true
+      endpoint: 127.0.0.1:4317
+      protocol: grpc
+`)
+	p, err := ParseProject(data, "project.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Output.Dir != "build/reports" {
+		t.Fatalf("dir = %q", p.Output.Dir)
+	}
+	junit, ok := p.Output.Exporters["junit"]
+	if !ok || junit.Enabled == nil || *junit.Enabled != false {
+		t.Fatalf("junit enabled = %#v, want explicit false", junit.Enabled)
+	}
+	otlp := p.Output.Exporters["otlp"]
+	if otlp.Enabled == nil || *otlp.Enabled != true {
+		t.Fatalf("otlp enabled = %#v, want explicit true", otlp.Enabled)
+	}
+	if otlp.Endpoint != "127.0.0.1:4317" || otlp.Protocol != "grpc" {
+		t.Fatalf("otlp = %+v", otlp)
+	}
+}
+
+func TestParseProjectNoOutputIsZeroValue(t *testing.T) {
+	p, err := ParseProject([]byte("apiVersion: shinari/v1\nkind: Project\nname: x\n"), "project.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Output.Dir != "" || p.Output.Exporters != nil {
+		t.Fatalf("absent output: must be the zero value, got %+v", p.Output)
+	}
+}
+
 func TestMergeProviders(t *testing.T) {
 	base := map[string]ProviderConfig{
 		"docker": {Config: map[string]any{"project": "a", "keep": true}},

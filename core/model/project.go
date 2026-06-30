@@ -20,12 +20,29 @@ type ProviderConfig struct {
 	Config  map[string]any `yaml:"config"`
 }
 
+// ExporterConfig configures one entry of an output.exporters: block. Enabled is
+// a pointer so an omitted key falls to the exporter's built-in default while an
+// explicit enabled: false disables it. Endpoint/Protocol apply to otlp only.
+type ExporterConfig struct {
+	Enabled  *bool  `yaml:"enabled"`
+	Endpoint string `yaml:"endpoint"`
+	Protocol string `yaml:"protocol"`
+}
+
+// OutputConfig is the project's output: block — where reports go and which
+// exporters run. The CLI reads it; the engine never does.
+type OutputConfig struct {
+	Dir       string                    `yaml:"dir"`
+	Exporters map[string]ExporterConfig `yaml:"exporters"`
+}
+
 // Project is the kind: Project resource — the root config.
 type Project struct {
 	Header    `yaml:",inline"`
 	Providers map[string]ProviderConfig `yaml:"providers"`
 	Vars      map[string]any            `yaml:"vars"`
 	Env       map[string]any            `yaml:"env"`
+	Output    OutputConfig              `yaml:"output"`
 
 	File string `yaml:"-"`
 	Dir  string `yaml:"-"`

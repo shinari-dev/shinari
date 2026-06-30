@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -56,6 +55,11 @@ func cmdTui(dir string, stdout, stderr io.Writer, getenv func(string) string, lo
 		fmt.Fprintln(stderr, eerr)
 		return 2
 	}
+	plan, perr := resolveOutput(set.Project.Output, "", "")
+	if perr != nil {
+		fmt.Fprintln(stderr, perr)
+		return 2
+	}
 
 	app := tui.NewApp(set)
 	app.Editor = resolveEditor(getenv)
@@ -77,7 +81,7 @@ func cmdTui(dir string, stdout, stderr io.Writer, getenv func(string) string, lo
 		res, err := engine.Run(ctx, set, []string{sc.Name}, em,
 			engine.Options{Env: resolvedEnv, KeepUp: getenv("KEEP_UP") == "1"})
 		if err == nil {
-			_ = writeReports(filepath.Join(set.Root, "shinari-out"), res, rec.Events)
+			_, _ = writeReports(plan, res, rec.Events)
 		}
 		return res, err
 	}
@@ -89,7 +93,7 @@ func cmdTui(dir string, stdout, stderr io.Writer, getenv func(string) string, lo
 		res, err := engine.Run(ctx, set, targets, em,
 			engine.Options{Env: resolvedEnv, KeepUp: getenv("KEEP_UP") == "1"})
 		if err == nil {
-			_ = writeReports(filepath.Join(set.Root, "shinari-out"), res, rec.Events)
+			_, _ = writeReports(plan, res, rec.Events)
 		}
 		return res, err
 	}

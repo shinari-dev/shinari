@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -35,7 +36,7 @@ func newRunCmd(project, color *string, stdout, stderr io.Writer, getenv func(str
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&out, "out", "o", "shinari-out", "report output directory")
+	cmd.Flags().StringVarP(&out, "out", "o", "", "report output directory (default shinari-out)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "skip actions, run probes/assertions only")
 	cmd.Flags().BoolVar(&keepUp, "keep-up", false, "skip teardown, preserving the stack for inspection")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "stream per-step values, durations, and section banners")
@@ -58,6 +59,12 @@ func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, u
 	if eerr != nil {
 		fmt.Fprintln(stderr, eerr)
 		return 2 // ERRORED: setup precondition, not a usage error
+	}
+
+	plan, perr := resolveOutput(set.Project.Output, out, otlp)
+	if perr != nil {
+		fmt.Fprintln(stderr, perr)
+		return 2 // ERRORED: misconfiguration, not a usage error
 	}
 
 	unlock, err := lockRun(set.Root)
@@ -87,11 +94,14 @@ func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, u
 	}
 	render.Summary(stdout, res, pal)
 
-	if werr := writeReports(out, res, rec.Events); werr != nil {
+	written, werr := writeReports(plan, res, rec.Events)
+	if werr != nil {
 		fmt.Fprintln(stderr, werr)
 		return 2
 	}
-	fmt.Fprintln(stdout, pal.Dim(fmt.Sprintf("reports → %s/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md,findings.sarif}", out)))
+	if len(written) > 0 {
+		fmt.Fprintln(stdout, pal.Dim(fmt.Sprintf("reports → %s/{%s}", plan.Dir, strings.Join(written, ","))))
+	}
 
 	exit := res.Verdict().ExitCode()
 
@@ -119,12 +129,12 @@ func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, u
 		fmt.Fprintln(stdout, pal.Dim("run recorded → "+historyPath))
 	}
 
-	if otlp != "" {
+	if plan.OTLP.Enabled {
 		ectx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		if eerr := otelx.Export(ectx, otlp, res); eerr != nil {
+		if eerr := otelx.Export(ectx, plan.OTLP.Endpoint, res); eerr != nil {
 			fmt.Fprintln(stderr, "otlp export failed:", eerr)
 		} else {
-			fmt.Fprintln(stdout, pal.Dim("traces exported → "+otlp))
+			fmt.Fprintln(stdout, pal.Dim("traces exported → "+plan.OTLP.Endpoint))
 		}
 		cancel()
 	}
@@ -157,32 +167,37 @@ func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, u
 	return exit
 }
 
-func writeReports(out string, res engine.RunResult, events []engine.Event) error {
-	if err := os.MkdirAll(out, 0o755); err != nil {
-		return err
+func writeReports(plan outputPlan, res engine.RunResult, events []engine.Event) ([]string, error) {
+	if err := os.MkdirAll(plan.Dir, 0o755); err != nil {
+		return nil, err
 	}
-	files := map[string]func(io.Writer) error{
-		"results.tsv":    func(w io.Writer) error { return render.TSV(w, res) },
-		"results.json":   func(w io.Writer) error { return render.ResultsJSON(w, res) },
-		"junit.xml":      func(w io.Writer) error { return render.JUnit(w, res) },
-		"journal.jsonl":  func(w io.Writer) error { return render.Journal(w, events) },
-		"findings.md":    func(w io.Writer) error { return render.FindingsReport(w, res) },
-		"findings.sarif": func(w io.Writer) error { return render.SARIF(w, res) },
+	writers := map[string]func(io.Writer) error{
+		"tsv":      func(w io.Writer) error { return render.TSV(w, res) },
+		"json":     func(w io.Writer) error { return render.ResultsJSON(w, res) },
+		"junit":    func(w io.Writer) error { return render.JUnit(w, res) },
+		"journal":  func(w io.Writer) error { return render.Journal(w, events) },
+		"findings": func(w io.Writer) error { return render.FindingsReport(w, res) },
+		"sarif":    func(w io.Writer) error { return render.SARIF(w, res) },
 	}
-	for name, fn := range files {
-		f, err := os.Create(filepath.Join(out, name))
-		if err != nil {
-			return err
+	var written []string
+	for _, rf := range reportFiles {
+		if !plan.Files[rf.Key] {
+			continue
 		}
-		if err := fn(f); err != nil {
+		f, err := os.Create(filepath.Join(plan.Dir, rf.Name))
+		if err != nil {
+			return written, err
+		}
+		if err := writers[rf.Key](f); err != nil {
 			f.Close()
-			return err
+			return written, err
 		}
 		if err := f.Close(); err != nil {
-			return err
+			return written, err
 		}
+		written = append(written, rf.Name)
 	}
-	return nil
+	return written, nil
 }
 
 // lockRun is the flock single-run guard, keyed by project path.

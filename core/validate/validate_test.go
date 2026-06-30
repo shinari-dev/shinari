@@ -902,3 +902,33 @@ verify:
 		t.Fatal("rule 15 should not fire when id: is set")
 	}
 }
+
+func TestValidateOutputUnknownExporter(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: p\nproviders:\n  sut: { source: lcfake }\noutput:\n  exporters:\n    jnuit: { enabled: false }\n",
+	})
+	f := findRule(Validate(set), 16)
+	if f == nil || f.Severity != Warn {
+		t.Fatalf("want rule 16 warn for unknown exporter, got %v", f)
+	}
+}
+
+func TestValidateOutputOTLPNoEndpoint(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: p\nproviders:\n  sut: { source: lcfake }\noutput:\n  exporters:\n    otlp: { enabled: true }\n",
+	})
+	f := findRule(Validate(set), 17)
+	if f == nil || f.Severity != Error {
+		t.Fatalf("want rule 17 error for otlp enabled without endpoint, got %v", f)
+	}
+}
+
+func TestValidateOutputBadProtocol(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: p\nproviders:\n  sut: { source: lcfake }\noutput:\n  exporters:\n    otlp: { enabled: true, endpoint: x:1, protocol: http }\n",
+	})
+	f := findRule(Validate(set), 18)
+	if f == nil || f.Severity != Error {
+		t.Fatalf("want rule 18 error for unsupported protocol, got %v", f)
+	}
+}

@@ -1,6 +1,6 @@
 ---
 title: Validate rules
-description: The twelve static checks, what triggers each, and which are errors versus warnings.
+description: The static checks, what triggers each, and which are errors versus warnings.
 weight: 70
 ---
 
@@ -21,6 +21,12 @@ file, scenario, step, and reason.
 | 10 | **Interpolation closure**: every `${...}` is namespaced and resolves to a declared name: `${.vars.X}` to a var, `${.outputs.X}` to an *earlier* capture (in execution order), `${.env.X}` to a key in the project's `env:` allowlist, `${.params.X}` to a composed-verb param (composed-provider bodies are checked against their `params:`, their own earlier `.outputs` captures, and the project's `.env` allowlist — ambient config like tenant or credentials reaches a composed verb through `.env` without threading it through `params:`). An undeclared name, or an unnamespaced reference, is an error | error |
 | 11 | **Degradation observed**: warn when a `degradation` fault is injected in `method` but nothing observes its effect (no `sample`, no `${.outputs....meta.durationMs}` assertion) | warn |
 | 12 | **Parallel branches**: a `parallel` step has a non-empty `branches:` list with no empty branch, and no branch references a capture bound only in a *sibling* branch (concurrent branches have no ordering, so reference it after the block) | error |
+| 13 | **Repeat body**: a `repeat` step has `times >= 1` and a non-empty `do:`; no `finding:` inside the body (no aggregate semantics across iterations yet); any `background` started in the body is also stopped there | error |
+| 14 | **Tags**: every tag matches `[A-Za-z0-9_./-]` (else it is unparseable in a tag expression); a duplicate tag is a smell | error / warn |
+| 15 | **Finding identity**: a `finding:` with no explicit `id:` derives its identity from the check and will change if the check is edited; add `id:` to pin it | warn |
+| 16 | **Unknown exporter**: a key in `output.exporters` that is not one of `tsv`, `json`, `junit`, `journal`, `findings`, `sarif`, `otlp` (likely a typo) | warn |
+| 17 | **OTLP endpoint**: `output.exporters.otlp` is enabled but has no `endpoint` | error |
+| 18 | **OTLP protocol**: `output.exporters.otlp.protocol` is set to anything other than `grpc` | error |
 
 ## Branch steps
 
