@@ -57,7 +57,7 @@ verify:
       of: "${.outputs.total.value}"
       equals: 1
     desc: "no duplicate run (exactly once)"
-    finding: "recovery re-runs the whole job — duplicate work until idempotent replay ships; operators dedupe downstream today"
+    finding: "recovery re-runs the whole job: duplicate work until idempotent replay ships; operators dedupe downstream today"
 
 teardown:
   - run: jobstore.reset

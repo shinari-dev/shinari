@@ -41,7 +41,7 @@ package or calls `os.Exit`, the suite fails.
   set (execution of `wait_until`/`background` lives in the engine: they need
   the timeline).
 - `core/engine`: the executor (sections, phases, captures, teardown), the
-  event stream, verdict resolution, findings logic, run orchestration, and
+  event stream, verdict resolution, findings logic, run lifecycle, and
   the event-to-Result reducer.
 - `core/validate`: the ten static rules.
 - `providers/*`: the built-in native providers, each linking only `sdk` (plus

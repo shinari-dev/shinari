@@ -285,6 +285,38 @@ pre {
   border-left: 3px solid var(--ember);
 }
 
+.rtb { padding: 30px 0; border-bottom: 1px solid var(--line); }
+.rtb-strip {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+}
+.rtb-strip li {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-soft);
+  background: rgba(236, 234, 230, 0.03);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ember);
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+.rtb-strip-k {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ember-soft);
+  margin-bottom: 5px;
+}
+@media (max-width: 720px) {
+  .rtb-strip { grid-template-columns: 1fr; }
+}
+
 /* ---------- sections ---------- */
 
 .section-title {
@@ -337,6 +369,8 @@ pre {
   padding: 18px 20px;
   font-size: 12.5px;
   background: var(--panel);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* YAML highlighting */
@@ -383,18 +417,119 @@ pre {
   border: 0;
   border-radius: 0;
   padding: 20px 22px;
-  font-size: 13px;
+  font-size: 12.5px;
   background: var(--term-bg);
   color: var(--term-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .t-finding { color: var(--amber); font-weight: 700; }
 .t-pass { color: var(--pass); font-weight: 700; }
+.t-fault { color: var(--ember); font-weight: 700; }
 .t-dim { color: var(--text-dim); }
 
 .demo-caption { color: var(--text-dim); margin: 18px 0 0; text-align: center; }
 .demo-caption strong { color: var(--pass); }
 .demo-caption em { color: var(--text); }
+
+/* ---------- interactive TUI cast ---------- */
+
+.tui { padding: 64px 0; border-bottom: 1px solid var(--line); }
+
+.tui-cast {
+  margin: 0;
+  max-width: 960px;
+  margin-inline: auto;
+  background: var(--term-bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45), 0 0 36px rgba(255, 79, 43, 0.06);
+}
+
+.tui-cast video {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--term-bg);
+}
+
+/* ---------- why (landing) ---------- */
+
+.why { padding: 64px 0; border-bottom: 1px solid var(--line); }
+.why-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 32px; align-items: start; }
+
+.why-lead { margin: 0 0 18px; color: var(--text); }
+.why-list { margin: 0; padding: 0; list-style: none; counter-reset: why; display: grid; gap: 14px; }
+.why-list li {
+  position: relative;
+  padding-left: 40px;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+.why-list li::before {
+  counter-increment: why;
+  content: counter(why, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ember);
+  opacity: 0.65;
+}
+
+.why-answer {
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--ember);
+  border-radius: 10px;
+  padding: 24px 26px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+.why-answer-body { margin: 0 0 16px; color: var(--text); }
+.why-thesis {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--ember-soft);
+}
+.why-thesis em { color: var(--text); font-style: italic; font-weight: 400; }
+
+@media (max-width: 720px) { .why-grid { grid-template-columns: 1fr; } }
+
+/* ---------- scope (landing) ---------- */
+
+.scope { padding: 64px 0; border-bottom: 1px solid var(--line); background: var(--bg-raise); }
+.scope-cols { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+.scope-col {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 20px 22px;
+}
+.scope-yes { border-left: 3px solid var(--pass); }
+.scope-no { border-left: 3px solid var(--line-strong); }
+.scope-col h3 {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin: 0 0 12px;
+}
+.scope-yes h3 { color: var(--pass); }
+.scope-no h3 { color: var(--text-dim); }
+.scope-col ul { margin: 0; padding-left: 18px; display: grid; gap: 7px; }
+.scope-col li { color: var(--text-dim); line-height: 1.55; }
+
+@media (max-width: 720px) { .scope-cols { grid-template-columns: 1fr; } }
 
 /* ---------- verb strip (landing) ---------- */
 

@@ -18,7 +18,7 @@ func newRootCmd(stdout, stderr io.Writer, getenv func(string) string, lookupEnv 
 	var project, color string
 	root := &cobra.Command{
 		Use:           "shinari",
-		Short:         "resilience integration testing",
+		Short:         "prove your system survives failure",
 		Version:       version,
 		SilenceErrors: true,
 		SilenceUsage:  true,

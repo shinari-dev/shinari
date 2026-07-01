@@ -1,7 +1,7 @@
 ---
 aliases: [/explanation/findings-ledger/]
 title: Why a findings ledger
-description: The product is the ledger; everything else is the apparatus that makes it credible.
+description: Known gaps stay green and documented, then flip red the day they are fixed. How a Shinari suite grows with your code instead of decaying.
 weight: 10
 ---
 
@@ -61,5 +61,6 @@ because there is exactly one red, and it always means *act*.
 Run after run, the findings report accumulates the honest answer to "how
 does this system fail?", per scenario: what was **injected**, what **held**,
 what **gapped**, with the operator workaround in the narrative. It cannot go
-stale, because every line is re-proven on every run. That document is the
-product. The engine, the providers, the YAML are apparatus.
+stale, because every line is re-proven on every run. This is how a Shinari
+suite grows with your code instead of decaying: the resilience tests are the
+front door, and the ledger is what keeps them honest over time.

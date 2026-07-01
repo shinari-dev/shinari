@@ -5,21 +5,67 @@
     {{ $sprites := resources.Get "img/kaiju-sprites.png" | fingerprint }}
     <canvas id="hero-grid" aria-hidden="true" data-sprites="{{ $sprites.RelPermalink }}"></canvas>
     <div class="wrap">
-      <p class="hero-kicker">// RESILIENCE TESTING FRAMEWORK</p>
-      <h1 class="hero-title">RESILIENCE TESTING<br>FOR EVERY ENGINEER<span class="vermilion">.</span></h1>
+      <p class="hero-kicker">// DETERMINISTIC FAULT INJECTION</p>
+      <h1 class="hero-title">PROVE YOUR SYSTEM<br>SURVIVES FAILURE<span class="vermilion">.</span></h1>
       <p class="hero-sub">
-        Chaos engineering, made deterministic — no platform, no specialists. Just a
-        binary and a YAML file you run on your laptop or in CI, anytime. Shinari
-        brings up a real system, hits it with controlled faults — kill a process,
-        partition the network, poison DNS — and keeps a living ledger of
-        <em>how it fails</em>.<br>
-        <strong>Every failure documented. Every fix detected.</strong>
+        Your unit tests cover the happy path. But what happens when the database dies
+        mid-write, or a dependency times out mid-call? That's the failure everyone
+        assumes they handle and almost nobody tests, until it's an incident. Shinari
+        makes it a test: bring up your real system, inject one deterministic fault, and
+        assert how it recovers, the same way on every run. One CLI, one YAML file, in
+        the CI you already have.<br>
+        <strong>From assumption to assertion.</strong>
       </p>
       <div class="hero-actions">
         <a class="btn btn-primary" href="{{ "/tutorials/getting-started/" | relURL }}">Get started →</a>
-        <a class="btn btn-ghost" href="{{ "/concepts/findings-ledger/" | relURL }}">Why a findings ledger?</a>
+        <a class="btn btn-ghost" href="{{ "/tutorials/first-scenario/" | relURL }}">See a scenario →</a>
       </div>
       <pre class="hero-install"><code>$ go build -o shinari ./cli && shinari run</code></pre>
+    </div>
+  </section>
+
+  <section class="rtb">
+    <div class="wrap">
+      <ul class="rtb-strip">
+        <li>
+          <span class="rtb-strip-k">Deterministic</span>
+          the fault lands at the same point every run, so it gates a merge instead of flaking a pipeline.
+        </li>
+        <li>
+          <span class="rtb-strip-k">Zero platform</span>
+          one binary, in the CI you have. No cluster, no agents.
+        </li>
+        <li>
+          <span class="rtb-strip-k">Findings ledger</span>
+          record a known gap as green; the build flips red the day it regresses or someone quietly fixes it.
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="why">
+    <div class="wrap">
+      <h2 class="section-title">You're already testing this by hand</h2>
+      <p class="section-sub">If you've checked that your service survives a dead dependency, you've
+      probably done it with a <code>sleep()</code>, a hand-wired proxy, and a test that passes on your
+      laptop and flakes in CI.</p>
+      <div class="why-grid">
+        <div class="why-problem">
+          <p class="why-lead">Roll it yourself and you own all of this:</p>
+          <ul class="why-list">
+            <li>timing the fault with sleeps instead of the system's actual lifecycle,</li>
+            <li>driving the whole steady-state to fault to recovery sequence by hand,</li>
+            <li>keeping the checks honest every time the code changes.</li>
+          </ul>
+        </div>
+        <div class="why-answer">
+          <p class="why-answer-body">Shinari makes it a test. One CLI, one YAML file, your real system
+          via docker compose. The fault lands at the same point in the lifecycle every run, the whole
+          sequence runs itself, and every run ends in a verdict you can gate a merge on, instead of a
+          flaky one-off you wired together yourself.</p>
+          <p class="why-thesis">Turn <em>it should recover</em> from an assumption into an assertion.</p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -54,47 +100,65 @@
 
 <span class="y-k">verify:</span>
   - <span class="y-k">run:</span> assert
-    <span class="y-k">with:</span> { <span class="y-k">of:</span> <span class="y-s">"${rsp.total}"</span>, <span class="y-k">equals:</span> 19.90 }
+    <span class="y-k">with:</span> { <span class="y-k">of:</span> <span class="y-s">"${.outputs.rsp.value.total}"</span>, <span class="y-k">equals:</span> 19.90 }
     <span class="y-k">desc:</span> <span class="y-s">"served from Postgres, priced correctly"</span>
   - <span class="y-k">run:</span> http.get
     <span class="y-k">with:</span> /metrics
     <span class="y-k">as:</span> metrics
   - <span class="y-k">run:</span> assert
-    <span class="y-k">with:</span> { <span class="y-k">of:</span> <span class="y-s">"${metrics.p99_ms}"</span>, <span class="y-k">lt:</span> 200 }
+    <span class="y-k">with:</span> { <span class="y-k">of:</span> <span class="y-s">"${.outputs.metrics.value.p99_ms}"</span>, <span class="y-k">lt:</span> 200 }
     <span class="y-k">desc:</span> <span class="y-s">"p99 back under 200ms"</span>
-    <span class="y-f">finding:</span> <span class="y-s">"cold cache — p99 spikes for ~30s after restart"</span></code></pre>
+    <span class="y-f">finding:</span> <span class="y-s">"cold cache spikes ~30s"</span></code></pre>
         </div>
         <div class="terminal">
           <div class="terminal-bar"><span></span><span></span><span></span><em>shinari run</em></div>
 <pre><code><span class="t-dim">$</span> shinari run
 
-=== checkout-survives-cache-outage
-  ✓ steady state: http.get /health
-  -- Kill the cache out from under the API
-  ⚡ fault injected: docker.kill redis
-  ✓ http.get /checkout/42
-  -- Bring the cache back
-  ✓ docker.start redis
-  ✓ steady state recovered: http.get /health
-  ✓ served from Postgres, priced correctly
-  <span class="t-finding">◆ FINDING p99 back under 200ms</span>
-  => <span class="t-pass">PASSED</span>
+<span class="t-fault">━━</span> checkout-survives-cache-outage <span class="t-dim">──────────────────────────</span>
+  <span class="t-dim">steady</span>    <span class="t-pass">✓</span> http.get
+  <span class="t-dim">method</span>    <span class="t-fault">⚡</span> docker.kill <span class="t-fault">(fault injected)</span>
+            <span class="t-pass">✓</span> docker.kill
+            <span class="t-pass">✓</span> http.get
+            <span class="t-pass">✓</span> docker.start
+  <span class="t-dim">recovery</span>  <span class="t-pass">✓</span> http.get
+  <span class="t-dim">verify</span>    <span class="t-pass">✓</span> served from Postgres, priced correctly
+            <span class="t-pass">✓</span> http.get
+            <span class="t-finding">◆</span> p99 back under 200ms <span class="t-dim">·</span> <span class="t-finding">FINDING: cold cache spikes ~30s</span>
 
-1 scenario(s): 1 passed — <span class="t-finding">1 finding(s) held</span>
-<span class="t-dim">reports: shinari-out/ — results.json · junit.xml</span>
-<span class="t-dim">exit 0 · CI stays green</span></code></pre>
+  <span class="t-pass">✔ PASSED</span> <span class="t-dim">·</span> <span class="t-finding">1 finding held</span> <span class="t-dim">· 1.8s</span>
+
+1 scenario: 1 passed <span class="t-dim">—</span> <span class="t-finding">1 finding held</span> <span class="t-dim">(2s)</span>
+<span class="t-dim">reports → shinari-out/{results.json,junit.xml,findings.sarif,…}</span></code></pre>
         </div>
       </div>
-      <p class="demo-caption">That <code>finding:</code> is the differentiator: a <em>known</em> gap stays
-      documented, asserted, and <strong>green</strong> — the day someone fixes it, the run flips red and says
-      <em>promote this to a hard assertion</em>.</p>
+      <p class="demo-caption">See that <code>finding:</code>? A <em>known</em> gap stays documented, asserted,
+      and <strong>green</strong>. The day someone fixes it, the run flips red and says <em>promote this to a
+      hard assertion</em>. Your suite grows with your code.</p>
+    </div>
+  </section>
+
+  <section class="tui">
+    <div class="wrap">
+      <h2 class="section-title">Or drive it interactively</h2>
+      <p class="section-sub">The same engine behind a terminal control center. Browse and search
+      scenarios, read the run plan, and run one while the steady state, injected fault, recovery
+      and verdict stream in live. One keystroke to <code>shinari tui</code>.</p>
+      {{ with resources.Get "media/tui.mp4" | fingerprint }}
+      <figure class="tui-cast">
+        <div class="terminal-bar"><span></span><span></span><span></span><em>shinari tui</em></div>
+        <video src="{{ .RelPermalink }}" autoplay loop muted playsinline
+               {{ with resources.Get "media/tui-poster.png" }}poster="{{ (. | fingerprint).RelPermalink }}"{{ end }}></video>
+      </figure>
+      {{ else }}
+      {{ warnf "homepage: docs/assets/media/tui.mp4 missing — run `make demo` to render the TUI cast" }}
+      {{ end }}
     </div>
   </section>
 
   <section class="verbs">
     <div class="wrap">
       <h2 class="section-title">What you can break</h2>
-      <p class="section-sub">Every capability is a namespaced verb. Five native providers ship in the binary —
+      <p class="section-sub">Every capability is a namespaced verb. Eleven native providers ship in the binary —
       and you compose your own vocabulary in YAML, zero Go.</p>
       <div class="verb-grid">
         <div class="verb"><code>docker.kill</code><p>drop a container mid-flight</p></div>
@@ -105,6 +169,33 @@
         <div class="verb"><code>queue.poison_message</code><p>your domain verbs, composed in YAML</p></div>
       </div>
       <p class="verbs-more"><a href="{{ "/reference/providers/" | relURL }}">Browse all providers →</a></p>
+    </div>
+  </section>
+
+  <section class="scope">
+    <div class="wrap">
+      <h2 class="section-title">Where Shinari fits</h2>
+      <p class="section-sub">Shinari proves resilience before you ship, not by experimenting on live
+      production. That boundary keeps it one deterministic binary you can gate a merge with.</p>
+      <div class="scope-cols">
+        <div class="scope-col scope-yes">
+          <h3>Reach for it when</h3>
+          <ul>
+            <li>you want to prove a service survives a dependency failure before it merges, not after it pages someone,</li>
+            <li>you want it in CI on every change, with the fault landing at the same point every time,</li>
+            <li>you want to reproduce a specific outage from nothing, no cluster or platform to stand up,</li>
+            <li>you'd otherwise script the fault by hand and want it reproducible and maintained, not a flaky one-off.</li>
+          </ul>
+        </div>
+        <div class="scope-col scope-no">
+          <h3>Reach for something else when</h3>
+          <ul>
+            <li>you are running experiments against live production traffic,</li>
+            <li>you need continuous fault injection across a fleet, with blast-radius controls and scheduling,</li>
+            <li>the faults you care about only exist in production infrastructure you cannot bring up locally.</li>
+          </ul>
+        </div>
+      </div>
     </div>
   </section>
 

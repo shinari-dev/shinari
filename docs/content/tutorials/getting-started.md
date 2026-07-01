@@ -4,8 +4,10 @@ description: Build the binary, run the quickstart project, and read your first f
 weight: 10
 ---
 
-By the end of this tutorial you will have built Shinari, executed a resilience
-suite against a toy system, and seen the harness hold a **finding** green.
+You assume your system recovers when a worker dies mid-task. In five minutes,
+Shinari will make you prove it. By the end of this tutorial you will have built
+the CLI, broken a running system on purpose, and turned "it should recover" into
+a test with a verdict.
 
 ## 1. Build the binary
 
@@ -73,21 +75,37 @@ Scenarios group into **suites** by directory convention (`scenarios/<suite>/`).
 ./shinari -p examples/quickstart run
 ```
 
-Watch the stream. Three glyphs matter:
+Each scenario prints its lifecycle phase by phase, then a verdict. Here is the
+one that carries a finding:
 
 ```text
-  ⚡ fault injected: jobstore.crash_worker
-  ▷ gate observed: RUNNING
-  ◆ FINDING no duplicate run (exactly once)
-  => PASSED
+━━ worker-killed-mid-task ──────────────────────────────────
+  setup     ✓ jobstore.reset
+  steady    ✓ jobstore.healthy
+  method    ✓ jobstore.submit
+            ✓ wait_until
+            ✓ jobstore.crash_worker
+            ✓ jobstore.recover
+  recovery  ✓ jobstore.healthy
+  verify    ✓ wait_until
+            ✓ jobstore.status
+            ✓ job completed after the crash
+            ✓ jobstore.runs
+            ◆ no duplicate run (exactly once) · FINDING: recovery re-runs the whole job: duplicate work until idempotent replay ships; operators dedupe downstream today
+  teardown  ✓ jobstore.reset
 
-2 scenario(s): 2 passed, 0 failed, 0 errored, 0 inconclusive — 1 finding(s) held
+  ✔ PASSED · 1 finding held · 21ms
+
+5 scenarios: 5 passed — 1 finding held (0s)
+reports → shinari-out/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md,findings.sarif}
 ```
 
-The exactly-once assertion **failed**, and the run is **green** (exit `0`).
-That is the point: the failure is a *known, documented gap*, declared with
-`finding:` in the scenario, so the suite stays a signal instead of a wall of
-ignored red.
+The ◆ line is the point: the exactly-once assertion **failed**, and the run is
+still **green** (exit `0`). That failure is a *known, documented gap*, declared
+with `finding:` in the scenario, so the suite stays a signal instead of a wall
+of ignored red. A step that injects a fault in `method` is flagged with a `⚡
+(fault injected)` line; here the crash verb declares no effect, so it renders as
+a plain step.
 
 ## 6. Read the reports
 
@@ -99,8 +117,8 @@ cat shinari-out/findings.md
 
 Per scenario you get **Injected** (which faults ran), **Held** (which
 assertions passed), and **Gapped** (the findings, with the observed failure).
-There is also `results.json`, `junit.xml`, `results.tsv`, and
-`journal.jsonl`: the full event stream.
+There is also `results.json`, `junit.xml`, `results.tsv`, `journal.jsonl` (the
+full event stream), and `findings.sarif` for code-scanning tools.
 
 ## Where you are
 
