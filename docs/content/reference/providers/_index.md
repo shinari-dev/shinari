@@ -1,17 +1,18 @@
 ---
 title: Built-in providers
-description: Config and verb tables for docker, toxiproxy, net, http, tcp, grpc, sql, prom, load, and exec.
+description: Config and verb tables for docker, toxiproxy, net, http, tcp, grpc, sql, redis, prom, load, and exec.
 weight: 50
 params:
   code: SECTOR 03
   headline: Built-in providers
 ---
 
-Ten providers compile into the binary (zero install). They split by
+Eleven providers compile into the binary (zero install). They split by
 **injection mechanism**: process control (`docker`), a proxy in the request
-path (`toxiproxy`), the DNS resolver (`net`), plus seven primitives (`http`,
-`tcp`, `grpc`, `sql`, `prom`, `load`, `exec`). Two more composed providers ship
-as examples on top of [Pumba](https://github.com/alexei-led/pumba).
+path (`toxiproxy`), the DNS resolver (`net`), plus eight primitives (`http`,
+`tcp`, `grpc`, `sql`, `redis`, `prom`, `load`, `exec`). Two more composed
+providers ship as examples on top of
+[Pumba](https://github.com/alexei-led/pumba).
 
 ## Named instances
 

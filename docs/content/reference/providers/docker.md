@@ -1,6 +1,6 @@
 ---
 title: docker
-description: "Lifecycle (up/down) plus process and resource faults (kill, stop, pause, restart, throttle) over the docker compose CLI."
+description: "Lifecycle (up/down) plus process, network, and resource faults (kill, pause, restart, disconnect, throttle) over the docker compose CLI."
 weight: 10
 ---
 
@@ -80,9 +80,9 @@ Restarts a stopped service.
 ### restart (action, outage)
 
 Bounces a service (stop + start) in one step: the graceful rolling-restart
-fault. An outage — work in flight when the SIGTERM lands is dropped — but one
-that heals itself, so the interesting assertions are about what peers observed
-during the bounce (retries, failover, no lost writes).
+fault. An outage, since work in flight when the SIGTERM lands is dropped, but
+one that heals itself, so the interesting assertions are about what peers
+observed during the bounce (retries, failover, no lost writes).
 
 | arg | type | req | description |
 |---|---|---|---|
@@ -109,11 +109,34 @@ Freezes (`pause`) or thaws (`unpause`) a container's processes with `SIGSTOP`/
   with: worker
 ```
 
+### disconnect / connect (action)
+
+Partitions a single container at the network layer (`disconnect`, an outage)
+and reconnects it (`connect`). The process keeps running and co-located peers
+are untouched, so the scenario observes last-known-state behavior and
+reconnection on restore: a distinct failure mode from `kill`/`stop`/`pause`.
+They target one docker network, defaulting to compose's `<project>_default`
+(so `network` is required when no `project` is configured); a multi-network
+container is isolated by disconnecting each. `connect` restores the compose
+service-name DNS alias, so peers resolve the container again.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `service` | string | yes | the service to partition or reconnect (primary) |
+| `network` | string | no | the docker network (default `<project>_default`) |
+
+```yaml
+- run: docker.disconnect
+  with: worker
+- run: docker.connect
+  with: worker
+```
+
 ### throttle / unthrottle (action)
 
 Caps (`throttle`) or restores (`unthrottle`) a container's CPU via
 `docker update --cpus`: resource starvation as a degradation. The process keeps
-running and keeps its connections, it just gets slow — a distinct failure mode
+running and keeps its connections, it just gets slow: a distinct failure mode
 from `pause` (frozen) and `kill` (gone). `throttle` carries
 `effect: degradation`; `unthrottle` reverts it (`--cpus 0` means "no limit").
 
@@ -175,6 +198,28 @@ service it returns the full list.
   with: { of: "${.outputs.state}", equals: "exited" }
 - run: assert
   with: { of: "${.outputs.code}", equals: 0 }
+```
+
+### exec (probe)
+
+Runs a command inside a running container (`compose exec -T <service> sh -c`)
+and returns its stdout, so a scenario can read internal runtime state (thread
+or fd counts, memory, an in-container metric) and baseline-then-compare it with
+the standard assert operators. A probe: it observes, it does not inject a
+fault. Keep the command read-only; a fault injected through `exec` belongs on
+an action step with an explicit `effect:` override.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `service` | string | yes | the service to run the command in |
+| `command` | string | yes | shell command line; pipes and globs work (primary) |
+
+**Returns** the trimmed stdout as the value.
+
+```yaml
+- run: docker.exec
+  with: { service: worker, command: "ls /proc/1/task | wc -l" }
+  as: threads_before
 ```
 
 ## Starting a service that is meant to fail

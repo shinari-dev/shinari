@@ -131,17 +131,19 @@ CLI usage errors exit 64 to stay distinct from verdicts.
 ## What you can break
 
 Every capability is a namespaced verb (`docker.kill`, `toxiproxy.partition`,
-`net.dns_fail`). These providers ship in the binary:
+`net.nxdomain`). These providers ship in the binary:
 
 | provider | what it gives you |
 |---|---|
-| `docker` | compose lifecycle and process faults: kill, stop, pause a container mid-flight |
+| `docker` | compose lifecycle, process and resource faults: kill, stop, pause, restart, CPU-throttle a container mid-flight |
 | `toxiproxy` | network faults: latency, blackhole, partition, bandwidth limits |
-| `net` | DNS faults: poison or fail resolution for one hostname (dnsmasq) |
+| `net` | DNS faults: poison, fail, or restore resolution for one hostname (dnsmasq) |
 | `http` | probe real APIs, capture status, latency, and the response body |
+| `tcp` | L4 reachability and connect-latency probe |
+| `grpc` | gRPC health-check probe |
 | `sql` | query a database to assert state (exactly-once, no data loss) |
 | `redis` | drive and probe a cache: set, get, miss-survival after an outage |
-| `prom` | scrape a metrics endpoint and assert on a sample |
+| `prom` | scrape a metrics endpoint or run a PromQL query and assert on the result |
 | `load` | generate HTTP workload and assert on its degradation percentiles |
 | `exec` | run any script, the escape hatch |
 

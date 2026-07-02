@@ -87,15 +87,18 @@ Resolves to `0.0.0.0`: lookups succeed, connections go nowhere, and clients hit
 connect timeouts instead of resolution errors. Different failure, different
 code path in your retry logic. Test both.
 
-## Restore in teardown
+## Restore
 
-Snippets are files; remove them and reload:
+`net.clear` lifts one host's override mid-scenario (the recovery step of a
+fault-then-recover exercise); `net.reset` removes every snippet the provider
+wrote and reloads once. Both are idempotent, so a teardown that runs after an
+early failure is a no-op:
 
 ```yaml
+- run: net.clear
+  with: api.partner.com
+
 teardown:
-  - run: exec.run
-    with: "rm -f assets/dnsmasq.d/shinari-*.conf"
-  - run: exec.run
-    with: "docker compose -p chaos kill -s SIGHUP dnsmasq"
+  - run: net.reset
   - run: docker.down
 ```

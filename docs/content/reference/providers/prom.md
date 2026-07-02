@@ -55,7 +55,7 @@ directly as a number (the shape an aggregated expression produces, and what
 `assert` wants); a **multi-sample vector** binds a list of
 `{ labels, value }` maps so `read:`/`capture:` can select. An empty result is
 a probe failure, like a scrape miss, and so is a `matrix` (a range selector
-without an aggregation) — use an expression that returns an instant vector or
+without an aggregation): use an expression that returns an instant vector or
 scalar.
 
 | arg | type | req | description |

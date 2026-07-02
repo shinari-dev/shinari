@@ -30,7 +30,7 @@ Blocks for `duration` seconds while issuing `rate` requests per second, then
 returns the window statistics. Its `effect` is `none`: load is the workload, not
 a fault, so it does not trip the degradation-observation rule. A request counts
 as an error when the transport fails or the status is `>= 400` and not listed
-in `expectStatus` — list the codes the system is *supposed* to shed under
+in `expectStatus`: list the codes the system is *supposed* to shed under
 fault (a 503 from a load-shedder is graceful degradation, not an error).
 
 | arg | type | req | description |
@@ -58,8 +58,8 @@ mean, p50, p95, p99 }` (latencies in ms), identical in shape to `sample`.
 
 ## Driving load while a fault is active
 
-`load.run` owns no start/stop lifecycle — the language already has one. Start
-it under `background`, inject and observe the fault on the timeline, then
+`load.run` owns no start/stop lifecycle, because the language already has one.
+Start it under `background`, inject and observe the fault on the timeline, then
 `stop_background` cancels the attack and returns the stats collected so far.
 `duration` becomes the backstop: the window a forgotten stop cannot outlive.
 

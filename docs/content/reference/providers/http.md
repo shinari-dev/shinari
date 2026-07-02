@@ -52,8 +52,8 @@ the raw body in `output`, and `meta.status` / `meta.bytes`. See
 ### head (probe)
 
 `get`'s cheap sibling: status and headers, no body. The reachability probe for
-a large resource — the report never drags the payload along, `meta.status` is
-all it keeps.
+a large resource, where the report should never drag the payload along;
+`meta.status` is all it keeps.
 
 Same args as `get`. **Returns** the response envelope with an empty `value`
 and `output`; `meta.status` carries the signal.
@@ -68,7 +68,7 @@ and `output`; `meta.status` carries the signal.
 
 ### post / put / patch / delete (action)
 
-Writes a resource — `patch` for a partial update, the others full-resource.
+Writes a resource: `patch` for a partial update, the others full-resource.
 Actions, so they are skipped on `--dry-run`. The request body comes from
 `body`, `raw`, or `form` (precedence `raw` → `body` → `form`); see
 [Request](#request) for the full rules.
@@ -96,7 +96,7 @@ Actions, so they are skipped on `--dry-run`. The request body comes from
 ## Request
 
 - **`body`** (map) is JSON-encoded and sent with `Content-Type: application/json`.
-- **`raw`** (string) is sent verbatim, with no JSON encoding — for a YAML
+- **`raw`** (string) is sent verbatim, with no JSON encoding: for a YAML
   document, NDJSON, or any text payload. Pair it with `contentType:` to label it.
   `raw` takes precedence over `body` and `form`.
 - **`contentType`** (string) overrides the `Content-Type` the body type implies.

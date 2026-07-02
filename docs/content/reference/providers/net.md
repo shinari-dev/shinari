@@ -94,7 +94,7 @@ contrast to `nxdomain`'s empty set.
 
 Lifts one host's override: removes that host's snippet file and reloads, so the
 name resolves normally again. The restore side of all three fault verbs.
-Idempotent — clearing a host that was never faulted (a teardown after an early
+Idempotent: clearing a host that was never faulted (a teardown after an early
 failure) removes nothing and still reloads.
 
 | arg | type | req | description |
@@ -114,7 +114,7 @@ count.
 
 Lifts every override this provider wrote: removes all `shinari-*.conf` snippets
 in `confDir` and reloads once. Conf files it does not own are untouched. The
-teardown-grade restore — one step returns DNS to its pre-scenario state no
+teardown-grade restore: one step returns DNS to its pre-scenario state no
 matter which faults ran.
 
 No args.
