@@ -1,6 +1,6 @@
 ---
 title: net
-description: "DNS-level faults via dnsmasq: redirect, NXDOMAIN, or blackhole a hostname."
+description: "DNS-level faults via dnsmasq: redirect, NXDOMAIN, or blackhole a hostname, and restore it after."
 weight: 30
 ---
 
@@ -19,8 +19,10 @@ providers:
 resolve against the project root); `reloadCmd` is run after each write to
 reload dnsmasq.
 
-Every verb returns the path of the snippet file it wrote as the value, with the
-reload command's output (if any) in `output` and an empty `meta`.
+Every fault verb returns the path of the snippet file it wrote as the value,
+with the reload command's output (if any) in `output` and an empty `meta`. The
+restore verbs (`clear`, `reset`) return the list of snippet paths they removed,
+with `meta.removed` (int) as the count.
 
 ## Verbs
 
@@ -86,4 +88,41 @@ contrast to `nxdomain`'s empty set.
 ```yaml
 - run: net.dns_blackhole
   with: db.internal
+```
+
+### clear (action)
+
+Lifts one host's override: removes that host's snippet file and reloads, so the
+name resolves normally again. The restore side of all three fault verbs.
+Idempotent — clearing a host that was never faulted (a teardown after an early
+failure) removes nothing and still reloads.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `host` | string | yes | the hostname to restore (primary) |
+
+**Returns** the list of removed snippet paths (empty when there was nothing to
+remove). `output` is the reload command's output. `meta.removed` (int) is the
+count.
+
+```yaml
+- run: net.clear
+  with: db.internal
+```
+
+### reset (action)
+
+Lifts every override this provider wrote: removes all `shinari-*.conf` snippets
+in `confDir` and reloads once. Conf files it does not own are untouched. The
+teardown-grade restore — one step returns DNS to its pre-scenario state no
+matter which faults ran.
+
+No args.
+
+**Returns** the list of removed snippet paths. `output` is the reload command's
+output. `meta.removed` (int) is the count.
+
+```yaml
+teardown:
+  - run: net.reset
 ```

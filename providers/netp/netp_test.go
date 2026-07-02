@@ -117,6 +117,79 @@ func TestReloadCmdRunsAndFailureSurfaces(t *testing.T) {
 	}
 }
 
+func TestClearLiftsOneHost(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "reloaded")
+	p := provider(t, map[string]any{"confDir": dir, "reloadCmd": "touch " + marker})
+	res, err := p.Run(context.Background(), "nxdomain", map[string]any{"host": "db.internal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := res.Value.(string)
+	_ = os.Remove(marker)
+
+	res, err = p.Run(context.Background(), "clear", map[string]any{"host": "db.internal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Errorf("snippet %s still exists after clear", file)
+	}
+	if got := res.Value.([]any); len(got) != 1 || got[0] != file {
+		t.Errorf("value = %v, want [%s]", got, file)
+	}
+	if res.Meta["removed"] != 1 {
+		t.Errorf("meta.removed = %v, want 1", res.Meta["removed"])
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Error("clear did not reload")
+	}
+}
+
+func TestClearIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	p := provider(t, map[string]any{"confDir": dir})
+	// Restoring a fault that was never injected (teardown after an early
+	// failure) must be a no-op, not an error.
+	res, err := p.Run(context.Background(), "clear", map[string]any{"host": "never.faulted"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Meta["removed"] != 0 {
+		t.Errorf("meta.removed = %v, want 0", res.Meta["removed"])
+	}
+}
+
+func TestResetLiftsAllShinariSnippets(t *testing.T) {
+	dir := t.TempDir()
+	p := provider(t, map[string]any{"confDir": dir})
+	for _, host := range []string{"a.test", "b.test"} {
+		if _, err := p.Run(context.Background(), "dns_blackhole", map[string]any{"host": host}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A foreign conf file in the same dir is not shinari's to remove.
+	foreign := filepath.Join(dir, "upstream.conf")
+	if err := os.WriteFile(foreign, []byte("server=1.1.1.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := p.Run(context.Background(), "reset", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Meta["removed"] != 2 {
+		t.Errorf("meta.removed = %v, want 2", res.Meta["removed"])
+	}
+	if _, err := os.Stat(foreign); err != nil {
+		t.Error("reset removed a conf file it does not own")
+	}
+	left, _ := filepath.Glob(filepath.Join(dir, "shinari-*.conf"))
+	if len(left) != 0 {
+		t.Errorf("shinari snippets left after reset: %v", left)
+	}
+}
+
 func TestMissingConfDirIsConfigureError(t *testing.T) {
 	p := New().(*Provider)
 	if err := p.Configure(map[string]any{}); err == nil {
