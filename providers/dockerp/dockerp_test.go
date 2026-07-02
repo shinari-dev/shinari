@@ -231,6 +231,58 @@ func TestDisconnectNeedsNetworkWithoutProject(t *testing.T) {
 	}
 }
 
+func TestRestartBouncesService(t *testing.T) {
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "restart", map[string]any{"service": "api"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorded(t, argsFile); !strings.Contains(got, "restart api") {
+		t.Errorf("argv = %q", got)
+	}
+}
+
+func TestThrottleCapsCPU(t *testing.T) {
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "throttle", map[string]any{
+		"service": "worker", "cpus": 0.2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := recorded(t, argsFile)
+	// resolves the container id via compose ps -q...
+	if !strings.Contains(got, "ps -q worker") {
+		t.Errorf("argv %q missing container resolve", got)
+	}
+	// ...then caps it (the stub returns "stub-ok" as the resolved id).
+	if !strings.Contains(got, "update --cpus 0.2 stub-ok") {
+		t.Errorf("argv %q missing cpu cap", got)
+	}
+}
+
+func TestUnthrottleRemovesCap(t *testing.T) {
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "unthrottle", map[string]any{"service": "worker"}); err != nil {
+		t.Fatal(err)
+	}
+	// --cpus 0 means "no limit": the fixed restore.
+	if got := recorded(t, argsFile); !strings.Contains(got, "update --cpus 0 stub-ok") {
+		t.Errorf("argv = %q", got)
+	}
+}
+
+func TestThrottleNeedsPositiveCPUs(t *testing.T) {
+	p, _ := provider(t)
+	for _, args := range []map[string]any{
+		{"service": "worker"},
+		{"service": "worker", "cpus": 0},
+		{"service": "worker", "cpus": -1},
+	} {
+		if _, err := p.Run(context.Background(), "throttle", args); err == nil {
+			t.Errorf("args %v: want error for missing/non-positive cpus", args)
+		}
+	}
+}
+
 func TestUpProfilesPrecedeSubcommand(t *testing.T) {
 	p, argsFile := provider(t)
 	if _, err := p.Run(context.Background(), "up", map[string]any{

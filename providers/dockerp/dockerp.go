@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/shinari-dev/shinari/sdk"
@@ -63,6 +64,11 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 		{Name: "kill", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
 		{Name: "stop", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
 		{Name: "start", Kind: sdk.KindAction, SideEffects: true, Primary: "service", Args: service},
+		// restart bounces a service (stop + start) in one step: the graceful
+		// rolling-restart fault. An outage — work in flight when the SIGTERM
+		// lands is dropped — but one that heals itself, so the interesting
+		// assertions are about what peers observed during the bounce.
+		{Name: "restart", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
 		{Name: "pause", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
 		{Name: "unpause", Kind: sdk.KindAction, SideEffects: true, Primary: "service", Args: service},
 		{Name: "logs", Kind: sdk.KindProbe, Primary: "service", Args: []sdk.ArgSpec{
@@ -90,6 +96,18 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 		// multi-network container is isolated by disconnecting each.
 		{Name: "disconnect", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: networkArgs},
 		{Name: "connect", Kind: sdk.KindAction, SideEffects: true, Primary: "service", Args: networkArgs},
+		// throttle/unthrottle cap and restore a container's CPU via
+		// `docker update --cpus`: resource starvation as a degradation — the
+		// process keeps running and keeps its connections, it just gets slow.
+		// CPU only: a memory ceiling cannot be reset to unlimited through
+		// `docker update`, so it would be a fault with no restore; inject
+		// memory pressure by restarting the service with compose-level limits.
+		{Name: "throttle", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectDegradation, Primary: "service",
+			Args: []sdk.ArgSpec{
+				{Name: "service", Type: "string", Required: true},
+				{Name: "cpus", Type: "number", Required: true},
+			}},
+		{Name: "unthrottle", Kind: sdk.KindAction, SideEffects: true, Primary: "service", Args: service},
 	}
 }
 
@@ -208,6 +226,28 @@ func (p *Provider) networkToggle(ctx context.Context, verb, service string, args
 	return out, nil
 }
 
+// updateCPUs applies (throttle) or removes (unthrottle) a CPU ceiling on a
+// service's running containers. `docker update --cpus 0` means "no limit", so
+// unthrottle is throttle's fixed restore.
+func (p *Provider) updateCPUs(ctx context.Context, verb, service string, args map[string]any) (string, error) {
+	cpus := "0"
+	if verb == "throttle" {
+		f, ok := conv.ToFloat(args["cpus"])
+		if !ok || f <= 0 {
+			return "", fmt.Errorf("docker throttle: needs cpus: (a positive CPU ceiling, e.g. 0.2)")
+		}
+		cpus = strconv.FormatFloat(f, 'f', -1, 64)
+	}
+	ids, err := p.containerIDs(ctx, service)
+	if err != nil {
+		return "", err
+	}
+	if len(ids) == 0 {
+		return "", fmt.Errorf("docker %s: no running container for service %q", verb, service)
+	}
+	return p.docker(ctx, append([]string{"update", "--cpus", cpus}, ids...)...)
+}
+
 func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
 	service, _ := args["service"].(string)
 	var out string
@@ -244,6 +284,10 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		out, err = p.compose(ctx, "stop", service)
 	case "start":
 		out, err = p.compose(ctx, "start", service)
+	case "restart":
+		out, err = p.compose(ctx, "restart", service)
+	case "throttle", "unthrottle":
+		out, err = p.updateCPUs(ctx, verb, service, args)
 	case "pause":
 		out, err = p.compose(ctx, "pause", service)
 	case "unpause":

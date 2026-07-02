@@ -1,6 +1,6 @@
 ---
 title: docker
-description: "Lifecycle (up/down) plus process faults (kill, stop, pause, logs) over the docker compose CLI."
+description: "Lifecycle (up/down) plus process and resource faults (kill, stop, pause, restart, throttle) over the docker compose CLI."
 weight: 10
 ---
 
@@ -77,6 +77,22 @@ Restarts a stopped service.
   with: worker
 ```
 
+### restart (action, outage)
+
+Bounces a service (stop + start) in one step: the graceful rolling-restart
+fault. An outage — work in flight when the SIGTERM lands is dropped — but one
+that heals itself, so the interesting assertions are about what peers observed
+during the bounce (retries, failover, no lost writes).
+
+| arg | type | req | description |
+|---|---|---|---|
+| `service` | string | yes | the service to bounce (primary) |
+
+```yaml
+- run: docker.restart
+  with: api
+```
+
 ### pause / unpause (action)
 
 Freezes (`pause`) or thaws (`unpause`) a container's processes with `SIGSTOP`/
@@ -90,6 +106,30 @@ Freezes (`pause`) or thaws (`unpause`) a container's processes with `SIGSTOP`/
 - run: docker.pause
   with: worker
 - run: docker.unpause
+  with: worker
+```
+
+### throttle / unthrottle (action)
+
+Caps (`throttle`) or restores (`unthrottle`) a container's CPU via
+`docker update --cpus`: resource starvation as a degradation. The process keeps
+running and keeps its connections, it just gets slow — a distinct failure mode
+from `pause` (frozen) and `kill` (gone). `throttle` carries
+`effect: degradation`; `unthrottle` reverts it (`--cpus 0` means "no limit").
+
+CPU only, deliberately: a memory ceiling cannot be reset to unlimited through
+`docker update`, so it would be a fault with no restore. Inject memory pressure
+by restarting the service with compose-level limits instead.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `service` | string | yes | the service to cap or restore (primary) |
+| `cpus` | number | throttle only | the CPU ceiling (e.g. `0.2` = a fifth of one core) |
+
+```yaml
+- run: docker.throttle
+  with: { service: worker, cpus: 0.2 }
+- run: docker.unthrottle
   with: worker
 ```
 
