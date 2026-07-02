@@ -70,6 +70,53 @@ func TestGet(t *testing.T) {
 	}
 }
 
+func TestPatchSendsJSONBody(t *testing.T) {
+	var gotMethod, gotCT, gotBody string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotCT = r.Header.Get("Content-Type")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(s.Close)
+	p := provider(t, s.URL)
+	if _, err := p.Run(context.Background(), "patch", map[string]any{
+		"path": "/jobs/j-1", "body": map[string]any{"state": "paused"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodPatch {
+		t.Errorf("method = %q, want PATCH", gotMethod)
+	}
+	if gotCT != "application/json" || gotBody != `{"state":"paused"}` {
+		t.Errorf("content-type = %q body = %q", gotCT, gotBody)
+	}
+}
+
+func TestHeadReturnsStatusWithoutBody(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodHead {
+			t.Errorf("method = %q, want HEAD", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(s.Close)
+	p := provider(t, s.URL)
+	res, err := p.Run(context.Background(), "head", map[string]any{"path": "/jobs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Meta["status"].(int) != 200 {
+		t.Errorf("meta.status = %v", res.Meta["status"])
+	}
+	// HEAD carries no body: the raw string stays empty, nothing to decode.
+	if res.Value != "" || res.Meta["bytes"].(int) != 0 {
+		t.Errorf("value = %#v bytes = %v, want empty", res.Value, res.Meta["bytes"])
+	}
+}
+
 func TestStatus400IsFailure(t *testing.T) {
 	s := server(t)
 	p := provider(t, s.URL)

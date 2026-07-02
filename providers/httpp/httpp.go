@@ -94,8 +94,12 @@ func accepted(spec any, status int) bool {
 func (p *Provider) Verbs() []sdk.VerbSpec {
 	verbs := []sdk.VerbSpec{
 		{Name: "get", Kind: sdk.KindProbe, SideEffects: false},
+		// head is get's cheap sibling: status and headers, no body — a
+		// reachability probe that never drags a payload into the report.
+		{Name: "head", Kind: sdk.KindProbe, SideEffects: false},
 		{Name: "post", Kind: sdk.KindAction, SideEffects: true},
 		{Name: "put", Kind: sdk.KindAction, SideEffects: true},
+		{Name: "patch", Kind: sdk.KindAction, SideEffects: true},
 		{Name: "delete", Kind: sdk.KindAction, SideEffects: true},
 	}
 	for i := range verbs {

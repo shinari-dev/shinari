@@ -49,10 +49,28 @@ the raw body in `output`, and `meta.status` / `meta.bytes`. See
   with: { of: "${.outputs.rsp.meta.status}", equals: 200 }
 ```
 
-### post / put / delete (action)
+### head (probe)
 
-Writes a resource. Actions, so they are skipped on `--dry-run`. The request body
-comes from `body`, `raw`, or `form` (precedence `raw` → `body` → `form`); see
+`get`'s cheap sibling: status and headers, no body. The reachability probe for
+a large resource — the report never drags the payload along, `meta.status` is
+all it keeps.
+
+Same args as `get`. **Returns** the response envelope with an empty `value`
+and `output`; `meta.status` carries the signal.
+
+```yaml
+- run: http.head
+  with: /exports/latest.csv
+  as: rsp
+- run: assert
+  with: { of: "${.outputs.rsp.meta.status}", equals: 200 }
+```
+
+### post / put / patch / delete (action)
+
+Writes a resource — `patch` for a partial update, the others full-resource.
+Actions, so they are skipped on `--dry-run`. The request body comes from
+`body`, `raw`, or `form` (precedence `raw` → `body` → `form`); see
 [Request](#request) for the full rules.
 
 | arg | type | req | description |
