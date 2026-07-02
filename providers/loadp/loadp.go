@@ -58,8 +58,25 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 			{Name: "method", Type: "string"},
 			{Name: "headers", Type: "map"},
 			{Name: "body", Type: "any"},
+			{Name: "expectStatus", Type: "list"},
 		},
 	}}
+}
+
+// accepted reports whether status is in the expectStatus list, if any — the
+// same tolerance http verbs offer, so a 503 shed under fault can count as
+// graceful degradation instead of an error.
+func accepted(spec any, status int) bool {
+	list, ok := spec.([]any)
+	if !ok {
+		return false
+	}
+	for _, s := range list {
+		if n, ok := conv.ToFloat(s); ok && int(n) == status {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
@@ -132,7 +149,15 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	errs := 0
 	for res := range attacker.Attack(targeter, pacer, duration, "shinari-load") {
 		lats = append(lats, float64(res.Latency)/float64(time.Millisecond))
-		if res.Error != "" || res.Code >= 400 {
+		// vegeta stamps res.Error with the status text for a >= 400 response
+		// too, so judge the status first: a listed code is tolerated, and
+		// res.Error is left to catch transport failures (code 0).
+		switch {
+		case res.Code >= 400:
+			if !accepted(args["expectStatus"], int(res.Code)) {
+				errs++
+			}
+		case res.Error != "":
 			errs++
 		}
 	}

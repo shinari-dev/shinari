@@ -99,6 +99,46 @@ func TestRunCountsErrors(t *testing.T) {
 	}
 }
 
+func TestRunExpectStatusToleratesListedCode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(503)
+	}))
+	defer srv.Close()
+	p := provider(t, srv.URL)
+
+	// 503 is the declared degraded response: shed load counts as graceful
+	// degradation, not as an error.
+	res, err := p.Run(context.Background(), "run", map[string]any{
+		"target": "/x", "rate": 50, "duration": 0.2, "expectStatus": []any{200, 503},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := res.Value.(map[string]any)
+	if m["errorRate"].(float64) != 0 {
+		t.Fatalf("errorRate = %v, want 0 (503 tolerated via expectStatus)", m["errorRate"])
+	}
+}
+
+func TestRunExpectStatusStillCountsUnlistedCodes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+	p := provider(t, srv.URL)
+
+	res, err := p.Run(context.Background(), "run", map[string]any{
+		"target": "/x", "rate": 50, "duration": 0.2, "expectStatus": []any{503},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := res.Value.(map[string]any)
+	if m["errorRate"].(float64) != 1 {
+		t.Fatalf("errorRate = %v, want 1 (500 is not in expectStatus)", m["errorRate"])
+	}
+}
+
 func TestRunValidatesArgs(t *testing.T) {
 	p := New().(*Provider)
 	cases := []map[string]any{
