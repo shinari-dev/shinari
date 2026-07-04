@@ -11,7 +11,9 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/itchyny/gojq v0.12.19
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-isatty v0.0.20
+	github.com/muesli/termenv v0.16.0
 	github.com/redis/go-redis/v9 v9.20.1
 	github.com/spf13/cobra v1.10.2
 	github.com/tsenart/vegeta/v12 v12.13.0
@@ -56,7 +58,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
-	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

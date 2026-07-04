@@ -166,6 +166,32 @@ func TestRunRequiredEnvUnsetExits2(t *testing.T) {
 	}
 }
 
+// A project's .env file satisfies a declared required var, so the run gets past
+// env resolution (exit 0) where TestRunRequiredEnvUnsetExits2 would ERROR.
+func TestRunDotenvSatisfiesRequiredEnv(t *testing.T) {
+	dir := project(t, false)
+	_ = os.WriteFile(filepath.Join(dir, "project.yml"),
+		[]byte("apiVersion: shinari/v1\nkind: Project\nname: demo\nproviders:\n  sut: { source: clifake }\nenv:\n  DATABASE_URL:\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, ".env"), []byte("DATABASE_URL=postgres://from-dotenv\n"), 0o644)
+	var out, errOut bytes.Buffer
+	// noLookup: nothing in the process env, so the .env is the only source.
+	code := run([]string{"--project", dir, "--out", t.TempDir(), "run"}, &out, &errOut, noEnv, noLookup)
+	if code != 0 {
+		t.Fatalf("code = %d, want 0 (.env should satisfy DATABASE_URL); err: %s", code, errOut.String())
+	}
+}
+
+// An explicit --env-file that does not exist is a setup error (exit 2), unlike
+// an absent default .env which is a silent no-op.
+func TestRunMissingEnvFileExits2(t *testing.T) {
+	dir := project(t, false)
+	var out, errOut bytes.Buffer
+	code := run([]string{"--project", dir, "--out", t.TempDir(), "run", "--env-file", filepath.Join(dir, "nope.env")}, &out, &errOut, noEnv, noLookup)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2 (missing --env-file); err: %s", code, errOut.String())
+	}
+}
+
 // INCONCLUSIVE (a steady-state gate that never holds before method) is the one
 // verdict→exit branch the other run tests (0/1/2/64) leave unchecked.
 func TestRunInconclusiveExits3(t *testing.T) {

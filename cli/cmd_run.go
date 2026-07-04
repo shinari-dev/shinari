@@ -24,13 +24,13 @@ import (
 )
 
 func newRunCmd(project, color *string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) *cobra.Command {
-	var out, include, exclude, otlp string
+	var out, include, exclude, otlp, envFile string
 	var dryRun, keepUp, verbose, update, record bool
 	cmd := &cobra.Command{
 		Use:   "run [target...]",
 		Short: "execute scenarios (target = scenario name or suite)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if code := cmdRun(*project, *color, out, args, dryRun, keepUp, verbose, update, record, otlp, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
+			if code := cmdRun(*project, *color, out, envFile, args, dryRun, keepUp, verbose, update, record, otlp, include, exclude, stdout, stderr, getenv, lookupEnv); code != 0 {
 				return &exitError{code}
 			}
 			return nil
@@ -45,17 +45,23 @@ func newRunCmd(project, color *string, stdout, stderr io.Writer, getenv func(str
 	cmd.Flags().BoolVarP(&update, "update", "u", false, "write/refresh the findings ledger (shinari.findings.yml) from this run")
 	cmd.Flags().BoolVar(&record, "record", false, "append a run-record to shinari-history.jsonl for `shinari log`")
 	cmd.Flags().StringVar(&otlp, "otlp", "", "export the run as OTLP traces to this gRPC endpoint (host:port)")
+	cmd.Flags().StringVar(&envFile, "env-file", "", "read env values from this file instead of the project's .env")
 	return cmd
 }
 
-func cmdRun(dir, color, out string, targets []string, dryRun, keepUp, verbose, update, record bool, otlp, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
+func cmdRun(dir, color, out, envFile string, targets []string, dryRun, keepUp, verbose, update, record bool, otlp, include, exclude string, stdout, stderr io.Writer, getenv func(string) string, lookupEnv func(string) (string, bool)) int {
 	set, ok := load(dir, stderr)
 	if !ok {
 		return 2 // could not even establish the harness
 	}
 	pal := paletteFor(color, stdout, lookupEnv)
 
-	resolvedEnv, eerr := resolveEnv(set.Project.Env, lookupEnv)
+	dotenv, derr := dotenvOverlay(set.Root, envFile)
+	if derr != nil {
+		fmt.Fprintln(stderr, derr)
+		return 2 // ERRORED: setup precondition, not a usage error
+	}
+	resolvedEnv, eerr := resolveEnv(set.Project.Env, layeredLookup(lookupEnv, dotenv))
 	if eerr != nil {
 		fmt.Fprintln(stderr, eerr)
 		return 2 // ERRORED: setup precondition, not a usage error

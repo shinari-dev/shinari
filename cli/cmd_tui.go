@@ -50,7 +50,12 @@ func cmdTui(dir string, stdout, stderr io.Writer, getenv func(string) string, lo
 	if !ok {
 		return 2
 	}
-	resolvedEnv, eerr := resolveEnv(set.Project.Env, lookupEnv)
+	dotenv, derr := dotenvOverlay(set.Root, "")
+	if derr != nil {
+		fmt.Fprintln(stderr, derr)
+		return 2
+	}
+	resolvedEnv, eerr := resolveEnv(set.Project.Env, layeredLookup(lookupEnv, dotenv))
 	if eerr != nil {
 		fmt.Fprintln(stderr, eerr)
 		return 2

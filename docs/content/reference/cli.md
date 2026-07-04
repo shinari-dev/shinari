@@ -81,6 +81,7 @@ Global (any command, any position):
 | `--verbose`, `-v` | off | stream per-step values and durations, with section banners |
 | `--include-tags <expr>` | | run only scenarios matching the tag expression |
 | `--exclude-tags <expr>` | | drop scenarios matching the tag expression |
+| `--env-file <path>` | project `.env` | read `env:` values from this file (missing named file is an error) |
 
 `list`:
 

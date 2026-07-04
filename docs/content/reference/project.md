@@ -80,6 +80,42 @@ env:
   passes the resolved values to the engine, which exposes them under the `.env`
   namespace.
 
+### The .env file
+
+Like docker compose, Shinari reads a `.env` file next to the project when one is
+present. It is a source of **values**, not a second allowlist: a `.env` file
+supplies values for variables the `env:` block already declares, and keys the
+block does not declare are ignored, never injected. So `${.env.NAME}` still
+resolves against the declared allowlist and still fails `validate` for an
+undeclared name.
+
+Values resolve with a fixed precedence:
+
+```text
+process environment  >  .env file  >  env: default   (required if none provide a value)
+```
+
+A `.env` file is one `KEY=value` per line, parsed with the standard
+[`godotenv`](https://github.com/joho/godotenv) library so the format matches
+docker compose. Blank lines and `#` comments (whole-line or trailing) are
+skipped, an optional `export ` prefix is stripped, single-quoted values are
+literal, and double-quoted values honor `\n`-style escapes. A `${VAR}` or `$VAR`
+reference expands to an **earlier key defined in the same file** (it does not
+read the process environment):
+
+```sh
+DATABASE_URL=postgres://localhost/app
+PORT=8080
+HEALTH_URL=http://localhost:${PORT}/health  # expands to the PORT above
+TOKEN="ab\ncd"     # double quotes honor escapes
+LITERAL='raw $val' # single quotes are literal, no expansion
+```
+
+An absent default `.env` is a silent no-op. `run --env-file <path>` reads that
+file instead of the project's `.env`; naming a file that does not exist is a
+setup error (exit 2). Because a `.env` typically holds secrets, keep it out of
+version control (add it to `.gitignore`).
+
 Reference a declared variable from any `${...}`:
 
 ```yaml
