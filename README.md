@@ -92,7 +92,7 @@ $ shinari run
   ✔ PASSED · 1 finding held · 1.8s
 
 1 scenario: 1 passed — 1 finding held (2s)
-reports → shinari-out/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md,findings.sarif}
+reports → shinari-out/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md,findings.sarif,report.html}
 ```
 
 The exit code is the verdict (`0` here), so CI stays green while the finding is

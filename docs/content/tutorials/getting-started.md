@@ -97,7 +97,7 @@ one that carries a finding:
   ✔ PASSED · 1 finding held · 21ms
 
 5 scenarios: 5 passed — 1 finding held (0s)
-reports → shinari-out/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md,findings.sarif}
+reports → shinari-out/{results.tsv,results.json,junit.xml,journal.jsonl,findings.md,findings.sarif,report.html}
 ```
 
 The ◆ line is the point: the exactly-once assertion **failed**, and the run is
@@ -118,7 +118,9 @@ cat shinari-out/findings.md
 Per scenario you get **Injected** (which faults ran), **Held** (which
 assertions passed), and **Gapped** (the findings, with the observed failure).
 There is also `results.json`, `junit.xml`, `results.tsv`, `journal.jsonl` (the
-full event stream), and `findings.sarif` for code-scanning tools.
+full event stream), `findings.sarif` for code-scanning tools, and `report.html`,
+a self-contained page you can open in a browser or drop into a chat thread to
+share the run.
 
 ## Where you are
 

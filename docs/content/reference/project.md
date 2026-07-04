@@ -153,13 +153,14 @@ output:
     journal:  { enabled: true }
     findings: { enabled: true }
     sarif:    { enabled: true }
+    html:     { enabled: true }
     otlp:
       enabled: true
       endpoint: 127.0.0.1:4317     # literal host:port; --otlp overrides
       protocol: grpc               # only grpc is supported today
 ```
 
-When the block is absent, the six file exporters write to `shinari-out/` and
+When the block is absent, the seven file exporters write to `shinari-out/` and
 OTLP export is off. Listing one exporter sets only that exporter, so naming
 `otlp` does not disable the others; a file exporter is turned off with
 `enabled: false`.

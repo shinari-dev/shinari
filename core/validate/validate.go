@@ -521,7 +521,7 @@ func validateOutput(p *model.Project) []Finding {
 	var out []Finding
 	known := map[string]bool{
 		"tsv": true, "json": true, "junit": true,
-		"journal": true, "findings": true, "sarif": true, "otlp": true,
+		"journal": true, "findings": true, "sarif": true, "html": true, "otlp": true,
 	}
 	for name := range p.Output.Exporters {
 		if !known[name] {

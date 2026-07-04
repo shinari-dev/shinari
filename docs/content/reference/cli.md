@@ -136,7 +136,7 @@ project exits 2 immediately.
 
 ## Report files
 
-`run` writes five renderings of the same result into `--out`:
+`run` writes seven renderings of the same result into `--out`:
 
 | file | content |
 |---|---|
@@ -145,3 +145,5 @@ project exits 2 immediately.
 | `results.tsv` | one row per check: scenario, section, check, verdict, duration, error |
 | `journal.jsonl` | the serialized event stream, one event per line |
 | `findings.md` | the human ledger: injected / held / gapped per scenario |
+| `findings.sarif` | the ledger in SARIF, for code-scanning integrations |
+| `report.html` | a self-contained page (inline CSS, no scripts, no external assets): verdict roll-up, per-scenario injected / held / gapped, expandable step tables. Attach it to a chat thread or CI artifact and it opens offline |

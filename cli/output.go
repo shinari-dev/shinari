@@ -23,6 +23,7 @@ var reportFiles = []reportFile{
 	{"journal", "journal.jsonl"},
 	{"findings", "findings.md"},
 	{"sarif", "findings.sarif"},
+	{"html", "report.html"},
 }
 
 type otlpPlan struct {
