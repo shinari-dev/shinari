@@ -73,6 +73,13 @@ func (s *Step) UnmarshalYAML(node *yaml.Node) error {
 	default:
 		return fmt.Errorf("line %d: invalid effect %q (one of: outage, degradation, or omit for none)", node.Line, s.Effect)
 	}
+	// kind: gets the same strictness as effect: — an unknown kind would
+	// silently opt the step out of dry-run skipping and the verdict split.
+	switch sdk.Kind(s.Kind) {
+	case "", sdk.KindAction, sdk.KindProbe, sdk.KindAssertion:
+	default:
+		return fmt.Errorf("line %d: invalid kind %q (one of: action, probe, assertion, or omit)", node.Line, s.Kind)
+	}
 	return nil
 }
 

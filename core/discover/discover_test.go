@@ -155,3 +155,19 @@ func TestFindLocalProvider(t *testing.T) {
 		t.Fatal("want error for unknown local provider")
 	}
 }
+
+func TestFindLocalProviderAmbiguousDirIsError(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "project.yml", minimalProject)
+	write(t, dir, "providers/a.yml",
+		"apiVersion: shinari/v1\nkind: Provider\nname: a\nverbs:\n  p: { probe: { run: http.get, with: { path: / } } }\n")
+	write(t, dir, "providers/b.yml",
+		"apiVersion: shinari/v1\nkind: Provider\nname: b\nverbs:\n  p: { probe: { run: http.get, with: { path: / } } }\n")
+	set, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := set.FindLocalProvider("./providers"); err == nil || !strings.Contains(err.Error(), "matches 2") {
+		t.Fatalf("a directory holding several defs must be ambiguous, got %v", err)
+	}
+}

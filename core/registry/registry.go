@@ -344,25 +344,29 @@ func BindArgs(spec sdk.VerbSpec, with any) (map[string]any, error) {
 		}
 		args[spec.Primary] = v
 	}
-	if len(spec.Args) > 0 {
-		declared := map[string]bool{}
-		for _, a := range spec.Args {
-			declared[a.Name] = true
-		}
-		for k := range args {
-			if !declared[k] {
-				names := make([]string, 0, len(spec.Args))
-				for _, a := range spec.Args {
-					names = append(names, a.Name)
-				}
-				return nil, fmt.Errorf("verb %s: unknown arg %q (args: %s)", spec.Name, k, strings.Join(names, ", "))
+	// Unknown args are always errors — a verb declaring no args accepts no
+	// args, rather than silently ignoring whatever a step passes. Primary
+	// counts as declared for specs that only name it.
+	declared := map[string]bool{}
+	for _, a := range spec.Args {
+		declared[a.Name] = true
+	}
+	if spec.Primary != "" {
+		declared[spec.Primary] = true
+	}
+	for k := range args {
+		if !declared[k] {
+			names := make([]string, 0, len(spec.Args))
+			for _, a := range spec.Args {
+				names = append(names, a.Name)
 			}
+			return nil, fmt.Errorf("verb %s: unknown arg %q (args: %s)", spec.Name, k, strings.Join(names, ", "))
 		}
-		for _, a := range spec.Args {
-			if a.Required {
-				if _, ok := args[a.Name]; !ok {
-					return nil, fmt.Errorf("verb %s: missing required arg %q", spec.Name, a.Name)
-				}
+	}
+	for _, a := range spec.Args {
+		if a.Required {
+			if _, ok := args[a.Name]; !ok {
+				return nil, fmt.Errorf("verb %s: missing required arg %q", spec.Name, a.Name)
 			}
 		}
 	}

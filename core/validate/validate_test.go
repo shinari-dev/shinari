@@ -963,3 +963,132 @@ func TestValidateOutputBadProtocol(t *testing.T) {
 		t.Fatalf("want rule 18 error for unsupported protocol, got %v", f)
 	}
 }
+
+func TestNestedProbeGhostVerbIsRule3(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: nested
+verify:
+  - { run: wait_until, with: { probe: { run: ghost.poke }, equals: 1, timeout: 5 } }
+`,
+	})
+	found := false
+	for _, f := range Validate(set) {
+		if f.Rule == 3 && f.Severity == Error && strings.Contains(f.Msg, "ghost") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a ghost verb inside a wait_until probe must be a rule-3 error")
+	}
+}
+
+func TestBackgroundNestedStepBadArgIsRule2(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: nested2
+verify:
+  - { run: background, with: { name: w, step: { run: sut.await, with: { bogus: 1 } } } }
+  - { run: stop_background, with: w }
+`,
+	})
+	found := false
+	for _, f := range Validate(set) {
+		if f.Rule == 2 && strings.Contains(f.Msg, "bogus") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a bad arg inside a background step must be a rule-2 error")
+	}
+}
+
+func TestBareWhenGuardIsWarned(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: guard
+vars: { n: 1 }
+verify:
+  - { run: sut.count, with: job, when: ".vars.n > 0" }
+`,
+	})
+	found := false
+	for _, f := range Validate(set) {
+		if f.Severity == Warn && strings.Contains(f.Msg, "always truthy") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a when: guard without ${...} must be warned about")
+	}
+}
+
+func TestBackgroundNameReuseAcrossPhasesIsError(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: bgreuse
+method:
+  - phase: a
+    steps:
+      - { run: background, with: { name: gen, step: { run: sut.count, with: x } } }
+      - { run: background, with: { name: gen, step: { run: sut.count, with: x } } }
+`,
+	})
+	found := false
+	for _, f := range Validate(set) {
+		if f.Rule == 6 && f.Severity == Error && strings.Contains(f.Msg, "already running") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("reusing a live background name must be a rule-6 error")
+	}
+}
+
+func TestComposedBodyTypoedBuiltinIsRule3(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"providers/x.yml": `apiVersion: shinari/v1
+kind: Provider
+name: x
+verbs:
+  poke:
+    do: [ { run: sleeep, with: 1 } ]
+`,
+	})
+	found := false
+	for _, f := range Validate(set) {
+		if f.Rule == 3 && strings.Contains(f.Msg, "sleeep") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a typo'd builtin inside a composed body must be a rule-3 error")
+	}
+}
+
+func TestComposedBodyMayReadVars(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"providers/x.yml": `apiVersion: shinari/v1
+kind: Provider
+name: x
+verbs:
+  poke:
+    probe: { run: sleep, with: "${.vars.delay}" }
+`,
+	})
+	for _, f := range Validate(set) {
+		if f.Rule == 10 && strings.Contains(f.Msg, ".vars") {
+			t.Fatalf("the engine injects vars into macro scope; validate must not reject it: %v", f)
+		}
+	}
+}

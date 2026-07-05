@@ -245,6 +245,24 @@ func (v *scenarioValidator) checkStep(st *model.Step, section string, defined ma
 			Msg: "steadyState re-runs after method — a one-shot mutating verb here is not idempotent", Severity: Warn})
 	}
 
+	// rules 2 & 3 for nested steps: wait_until/sample carry a probe:,
+	// background carries a step: — a ghost verb there must not surface only
+	// at runtime.
+	if key, ok := map[string]string{"wait_until": "probe", "sample": "probe", "background": "step"}[st.Run]; ok {
+		if m, isMap := raw.(map[string]any); isMap {
+			if nested, isMap := m[key].(map[string]any); isMap {
+				v.checkNestedStep(st, nested)
+			}
+		}
+	}
+
+	// A when: guard without ${...} is a constant: the engine evaluates the
+	// raw string, and any non-empty string is truthy, so the guard never skips.
+	if st.When != "" && !strings.Contains(st.When, "${") {
+		v.add(Finding{Step: st.Run, Rule: 10, Severity: Warn,
+			Msg: fmt.Sprintf("when: %q has no ${...} — a bare string is always truthy, so this guard never skips; write when: \"${%s}\"", st.When, st.When)})
+	}
+
 	// rules 6, 10 & 12 — references resolve, by namespace, in execution order.
 	for _, ref := range refsOf(st) {
 		for _, r := range jqx.NSRefs(ref) {
@@ -293,8 +311,17 @@ func (v *scenarioValidator) checkStep(st *model.Step, section string, defined ma
 	if st.Run == "background" {
 		if m, ok := raw.(map[string]any); ok {
 			if n, _ := m["name"].(string); n != "" {
+				if v.bgRunning[n] {
+					v.add(Finding{Step: st.Run, Rule: 6, Severity: Error,
+						Msg: fmt.Sprintf("background %q is already running — stop_background it before reusing the name", n)})
+				}
 				v.bgRunning[n] = true
 			}
+		}
+	}
+	if st.Run == "stop_background" {
+		if n := stopName(st); n != "" {
+			delete(v.bgRunning, n)
 		}
 	}
 	if st.Run == "sample" {
@@ -354,6 +381,28 @@ func (v *scenarioValidator) checkStep(st *model.Step, section string, defined ma
 
 	for name := range bindings(st) {
 		defined[name] = true
+	}
+}
+
+// checkNestedStep validates the nested step map of wait_until/sample/
+// background: its run: resolves (rule 3) and its with: binds (rule 2). The
+// ${...} references inside it are already covered by refsOf on the parent.
+func (v *scenarioValidator) checkNestedStep(parent *model.Step, nested map[string]any) {
+	run, _ := nested["run"].(string)
+	if run == "" {
+		v.add(Finding{Step: parent.Run, Rule: 2, Severity: Error,
+			Msg: fmt.Sprintf("%s: nested step needs a run: field", parent.Run)})
+		return
+	}
+	res, err := v.reg.Resolve(run)
+	if err != nil {
+		v.add(Finding{Step: parent.Run, Rule: 3, Severity: Error,
+			Msg: fmt.Sprintf("%s: %s", parent.Run, err.Error())})
+		return
+	}
+	if _, err := registry.BindArgs(res.Spec, nested["with"]); err != nil {
+		v.add(Finding{Step: parent.Run, Rule: 2, Severity: Error,
+			Msg: fmt.Sprintf("%s: %s", parent.Run, err.Error())})
 	}
 }
 
@@ -493,6 +542,22 @@ func validateComposedDef(def *model.ProviderDef, envSet map[string]bool) []Findi
 		}
 		for i := range steps {
 			st := &steps[i]
+			// An unprefixed leaf must be a language builtin with well-shaped
+			// args; a typo'd `sleeep` must not surface only at expansion time.
+			// (Dotted leaves resolve against the run's instances, which the
+			// per-scenario registry build already checks.)
+			if !strings.Contains(st.Run, ".") {
+				spec, known := builtins.Specs()[st.Run]
+				if !known {
+					out = append(out, Finding{File: def.File, Step: st.Run, Rule: 3, Severity: Error,
+						Msg: fmt.Sprintf("provider %s verb %s: %q is not a language builtin", def.Name, verb, st.Run)})
+				} else if raw := rawWith(st); raw != nil {
+					if _, err := registry.BindArgs(spec, raw); err != nil {
+						out = append(out, Finding{File: def.File, Step: st.Run, Rule: 2, Severity: Error,
+							Msg: fmt.Sprintf("provider %s verb %s: %s", def.Name, verb, err.Error())})
+					}
+				}
+			}
 			for _, ref := range refsOf(st) {
 				for _, r := range jqx.NSRefs(ref) {
 					switch r.Namespace {
@@ -511,9 +576,13 @@ func validateComposedDef(def *model.ProviderDef, envSet map[string]bool) []Findi
 							out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
 								Msg: fmt.Sprintf("provider %s verb %s: ${.env.%s} is not declared in the project env: block", def.Name, verb, r.Name)})
 						}
+					case "vars":
+						// the engine injects caller vars into the macro scope
+						// (execComposed); names are scenario-scoped, so they
+						// cannot be checked here
 					default:
 						out = append(out, Finding{File: def.File, Step: st.Run, Rule: 10, Severity: Error,
-							Msg: fmt.Sprintf("provider %s verb %s: ${.%s...} — composed verbs reference .params, .env, or an earlier .outputs capture", def.Name, verb, r.Namespace)})
+							Msg: fmt.Sprintf("provider %s verb %s: ${.%s...} — composed verbs reference .params, .vars, .env, or an earlier .outputs capture", def.Name, verb, r.Namespace)})
 					}
 				}
 			}

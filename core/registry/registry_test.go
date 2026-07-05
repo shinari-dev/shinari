@@ -373,3 +373,16 @@ func TestBindArgs(t *testing.T) {
 		t.Errorf("list shorthand: %v %v", args, err)
 	}
 }
+
+func TestBindArgsRejectsUnknownArgOnZeroArgVerb(t *testing.T) {
+	spec := sdk.VerbSpec{Name: "down"} // declares no args
+	if _, err := BindArgs(spec, map[string]any{"anything": 1}); err == nil {
+		t.Fatal("a verb declaring no args must reject any named arg")
+	}
+	// scalar shorthand still binds a Primary-only spec
+	primaryOnly := sdk.VerbSpec{Name: "status", Primary: "of"}
+	args, err := BindArgs(primaryOnly, "x")
+	if err != nil || args["of"] != "x" {
+		t.Fatalf("primary-only spec must keep binding its shorthand: %v %v", args, err)
+	}
+}

@@ -155,19 +155,32 @@ func suiteOf(root, path string) string {
 }
 
 // FindLocalProvider resolves a `use: ./providers/foo` reference against the
-// loaded set: a path to a file or directory containing one ProviderDef.
+// loaded set: a path to a file or directory containing one ProviderDef. A
+// directory holding several defs is ambiguous, not first-in-walk-order.
 func (s *Set) FindLocalProvider(use string) (*model.ProviderDef, error) {
 	abs := use
 	if !filepath.IsAbs(use) && s.Project != nil {
 		abs = filepath.Join(s.Project.Dir, use)
 	}
+	var matches []*model.ProviderDef
 	for _, pd := range s.Providers {
 		f := filepath.Clean(pd.File)
 		if f == filepath.Clean(abs) ||
 			strings.HasPrefix(f, filepath.Clean(abs)+string(filepath.Separator)) ||
 			strings.TrimSuffix(f, filepath.Ext(f)) == filepath.Clean(abs) {
-			return pd, nil
+			matches = append(matches, pd)
 		}
 	}
-	return nil, fmt.Errorf("no kind: Provider resource found at %s", use)
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("no kind: Provider resource found at %s", use)
+	case 1:
+		return matches[0], nil
+	default:
+		var files []string
+		for _, pd := range matches {
+			files = append(files, pd.File)
+		}
+		return nil, fmt.Errorf("use: %s matches %d Provider resources (%s) — point at one file", use, len(matches), strings.Join(files, ", "))
+	}
 }

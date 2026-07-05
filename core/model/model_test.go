@@ -275,3 +275,15 @@ func TestMergeProviders(t *testing.T) {
 		t.Errorf("added instance missing: %v", m)
 	}
 }
+
+func TestStepInvalidKindIsError(t *testing.T) {
+	_, err := ParseScenario([]byte(`apiVersion: shinari/v1
+kind: Scenario
+name: k
+verify:
+  - { run: assert, with: { of: 1, equals: 1 }, kind: bananas }
+`), "s.yml")
+	if err == nil || !strings.Contains(err.Error(), "bananas") {
+		t.Fatalf("an unknown kind: override must be a parse error, got %v", err)
+	}
+}
