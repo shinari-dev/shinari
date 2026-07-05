@@ -283,6 +283,71 @@ func TestThrottleNeedsPositiveCPUs(t *testing.T) {
 	}
 }
 
+// envStubProvider returns a docker provider whose stub prints the value of one
+// environment variable, so a test can observe what env the subprocess inherited.
+func envStubProvider(t *testing.T, cfg map[string]any, varName string) *Provider {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "env-docker")
+	script := "#!/bin/sh\nprintf '%s' \"$" + varName + "\"\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	full := map[string]any{"bin": bin}
+	for k, v := range cfg {
+		full[k] = v
+	}
+	p := New().(*Provider)
+	if err := p.Configure(full); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// The resolved project env reaches the compose subprocess so ${VAR}
+// interpolation in a compose file is sourced from the declared env: block.
+func TestProjectEnvForwardedToCompose(t *testing.T) {
+	p := envStubProvider(t, map[string]any{
+		"projectEnv": map[string]any{"APP_IMAGE": "my-registry/app:tag"},
+	}, "APP_IMAGE")
+	res, err := p.Run(context.Background(), "up", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Value != "my-registry/app:tag" {
+		t.Errorf("compose saw APP_IMAGE=%q, want the project env value", res.Value)
+	}
+}
+
+// A project env value overrides an ambient OS var of the same name — declaring
+// it in env: is the stated intent, so it wins.
+func TestProjectEnvOverridesAmbient(t *testing.T) {
+	t.Setenv("APP_IMAGE", "ambient:should-lose")
+	p := envStubProvider(t, map[string]any{
+		"projectEnv": map[string]any{"APP_IMAGE": "declared:wins"},
+	}, "APP_IMAGE")
+	res, err := p.Run(context.Background(), "up", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Value != "declared:wins" {
+		t.Errorf("compose saw APP_IMAGE=%q, want the declared value to win", res.Value)
+	}
+}
+
+// With no project env, the subprocess still inherits the ambient process env.
+func TestNoProjectEnvInheritsAmbient(t *testing.T) {
+	t.Setenv("APP_IMAGE", "ambient:inherited")
+	p := envStubProvider(t, nil, "APP_IMAGE")
+	res, err := p.Run(context.Background(), "up", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Value != "ambient:inherited" {
+		t.Errorf("compose saw APP_IMAGE=%q, want the inherited ambient value", res.Value)
+	}
+}
+
 func TestUpProfilesPrecedeSubcommand(t *testing.T) {
 	p, argsFile := provider(t)
 	if _, err := p.Run(context.Background(), "up", map[string]any{

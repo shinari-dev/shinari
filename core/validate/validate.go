@@ -69,7 +69,7 @@ func Validate(set *discover.Set) []Finding {
 func validateScenario(set *discover.Set, sc *model.Scenario) []Finding {
 	var out []Finding
 	merged := model.MergeProviders(set.Project.Providers, sc.Providers)
-	reg, err := registry.New(set, merged)
+	reg, err := registry.New(set, merged, nil)
 	if err != nil {
 		rule := 3
 		if strings.Contains(err.Error(), "one level") {

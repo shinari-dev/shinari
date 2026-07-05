@@ -72,6 +72,10 @@ env:
 
 - A key with a value provides a default. The matching process variable, when
   set, overrides it.
+- Quote a default that must keep its exact text. An unquoted scalar is parsed as
+  YAML, so `0.20` becomes the number `0.2` and reaches templates and subprocess
+  environments as `0.2`; write `"0.20"` to preserve it. Values sourced from the
+  process environment or a `.env` file are always strings and unaffected.
 - A key with a **null** value (no default) is **required**. If the variable is
   unset at run time the run is `ERRORED` (exit code 2), the same class as a
   failed setup: the run never happened.
@@ -79,6 +83,14 @@ env:
   `env:` block (applying defaults and overrides, enforcing required keys) and
   passes the resolved values to the engine, which exposes them under the `.env`
   namespace.
+- The resolved values also reach providers that shell out: the `docker` provider
+  forwards them to `docker compose`, so a compose file's `${VAR}` interpolation
+  is sourced from the `env:` block, and the `exec` provider layers them onto
+  every command's environment. A project-declared value overrides an ambient
+  process variable of the same name (declaring it is the stated intent); a
+  step-level `env:` on `exec.run` overrides both. So declaring a variable in
+  `env:` is enough to feed compose interpolation — no need to `source` a `.env`
+  into the shell before `shinari run`.
 
 ### The .env file
 

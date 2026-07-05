@@ -38,7 +38,7 @@ func cmdInit(dir string, stdout, stderr io.Writer) int {
 	if !ok {
 		return 1
 	}
-	if _, err := registry.New(set, set.Project.Providers); err != nil {
+	if _, err := registry.New(set, set.Project.Providers, nil); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}

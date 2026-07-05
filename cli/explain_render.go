@@ -31,7 +31,7 @@ func explainScenario(w io.Writer, set *discover.Set, sc *model.Scenario) {
 		fmt.Fprintf(w, "%s\n", strings.Join(meta, "   "))
 	}
 
-	reg, rerr := registry.New(set, model.MergeProviders(set.Project.Providers, sc.Providers))
+	reg, rerr := registry.New(set, model.MergeProviders(set.Project.Providers, sc.Providers), nil)
 	if rerr != nil {
 		fmt.Fprintf(w, "  provider configuration error: %v\n", rerr)
 		return

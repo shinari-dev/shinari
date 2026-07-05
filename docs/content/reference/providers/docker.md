@@ -20,6 +20,12 @@ the project root); `project` is the compose project name. Every verb except `ps`
 returns the command's trimmed stdout as the value, the untrimmed stdout in
 `output`, and an empty `meta`.
 
+The project's resolved [`env:` block](../project/#the-env-block) is forwarded to
+every `docker compose` invocation, so a compose file's `${VAR}` interpolation is
+sourced from `env:` (and its `.env`/`--env-file` values) without exporting
+anything into the shell first. Declare the variable in `env:`; a declared value
+overrides an ambient process variable of the same name.
+
 ## Verbs
 
 ### up (action)

@@ -114,7 +114,7 @@ func newWorld(t *testing.T, scenarioYAML string) (*fakeSUT, *model.Scenario, *re
 	}
 	reg, err := registry.New(set, map[string]model.ProviderConfig{
 		"sut": {Source: "fakesut"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +392,7 @@ func TestFailedOnSteadyStateRecovery(t *testing.T) {
 	dir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(dir, "project.yml"), []byte("apiVersion: shinari/v1\nkind: Project\nname: t\n"), 0o644)
 	set, _ := discover.Load(dir)
-	reg2, err := registry.New(set, map[string]model.ProviderConfig{"sut": {Source: "fakesut"}})
+	reg2, err := registry.New(set, map[string]model.ProviderConfig{"sut": {Source: "fakesut"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,7 +734,7 @@ verbs:
 	reg, err := registry.New(set, map[string]model.ProviderConfig{
 		"sut": {Source: "fakesut"},
 		"app": {Use: "./providers/app"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

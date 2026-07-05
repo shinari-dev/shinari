@@ -80,7 +80,7 @@ func TestRegistryCloseReleasesProviders(t *testing.T) {
 	r, err := New(set, map[string]model.ProviderConfig{
 		"c":     {Source: "closerfake"},
 		"plain": {Source: "fakedocker"}, // no Close — must not error
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestResolveNativeComposedAndBuiltin(t *testing.T) {
 	r, err := New(set, map[string]model.ProviderConfig{
 		"http": {Config: map[string]any{"baseUrl": "http://localhost:1"}},
 		"app":  {Use: "./providers/app"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestComposedKindInference(t *testing.T) {
 	r, err := New(set, map[string]model.ProviderConfig{
 		"http": {},
 		"app":  {Use: "./providers/app"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ verbs:
 		"a":    {Use: "./providers/a"},
 		"b":    {Use: "./providers/b"},
 		"c":    {Use: "./providers/c"},
-	})
+	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "one level") {
 		t.Fatalf("want nesting-depth error, got %v", err)
 	}
@@ -236,7 +236,7 @@ func TestNamedInstances(t *testing.T) {
 	r, err := New(set, map[string]model.ProviderConfig{
 		"dockA": {Source: "fakedocker"},
 		"dockB": {Source: "fakedocker"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,9 +253,43 @@ func TestNamedInstances(t *testing.T) {
 
 func TestUnknownTypeError(t *testing.T) {
 	set := loadSet(t, map[string]string{"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: p\n"})
-	_, err := New(set, map[string]model.ProviderConfig{"warp": {}})
+	_, err := New(set, map[string]model.ProviderConfig{"warp": {}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "warp") {
 		t.Fatalf("want unknown-type error, got %v", err)
+	}
+}
+
+// The resolved project env is injected into each native instance's config
+// under the reserved projectEnv key, so providers that shell out forward it to
+// their subprocesses.
+func TestProjectEnvInjectedIntoConfig(t *testing.T) {
+	set := loadSet(t, map[string]string{"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: p\n"})
+	env := map[string]any{"REGION": "us-east-1"}
+	r, err := New(set, map[string]model.ProviderConfig{"web": {Source: "http"}}, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, ok := r.instances["web"].Native.(*fake)
+	if !ok {
+		t.Fatalf("instance is %T, want *fake", r.instances["web"].Native)
+	}
+	got, ok := f.cfg["projectEnv"].(map[string]any)
+	if !ok || got["REGION"] != "us-east-1" {
+		t.Fatalf("projectEnv not injected into provider config: %#v", f.cfg)
+	}
+}
+
+// With no resolved env the reserved key is absent — a provider need not special-
+// case an empty map.
+func TestNoProjectEnvKeyWhenEmpty(t *testing.T) {
+	set := loadSet(t, map[string]string{"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: p\n"})
+	r, err := New(set, map[string]model.ProviderConfig{"web": {Source: "http"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := r.instances["web"].Native.(*fake)
+	if _, present := f.cfg["projectEnv"]; present {
+		t.Fatalf("projectEnv should be absent for empty env, got %#v", f.cfg["projectEnv"])
 	}
 }
 

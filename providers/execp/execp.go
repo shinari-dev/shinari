@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -24,6 +25,7 @@ const termGrace = 2 * time.Second
 
 type Provider struct {
 	dir string
+	env []string // resolved project env as KEY=VALUE, layered under the step-level env:
 }
 
 func init() { sdk.Register("exec", New) }
@@ -38,6 +40,17 @@ func (p *Provider) Configure(cfg map[string]any) error {
 	}
 	if d, ok := cfg["dir"].(string); ok {
 		p.dir = d
+	}
+	// The resolved project env is layered onto every command so a shelled-out
+	// tool sees the declared env: block (sourced from .env/--env-file/OS), the
+	// same values the docker provider forwards to compose. Sorted for a
+	// deterministic environment; env keys are unique so order is immaterial.
+	if m, ok := cfg["projectEnv"].(map[string]any); ok && len(m) > 0 {
+		p.env = make([]string, 0, len(m))
+		for k, v := range m {
+			p.env = append(p.env, fmt.Sprintf("%s=%v", k, v))
+		}
+		sort.Strings(p.env)
 	}
 	return nil
 }
@@ -87,7 +100,11 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	if d, ok := args["dir"].(string); ok && d != "" {
 		cmd.Dir = d
 	}
+	// Precedence (os/exec keeps the last value for a duplicate key): ambient
+	// process env, then the project env: block, then the step-level env: arg —
+	// most specific wins.
 	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, p.env...)
 	if env, ok := args["env"].(map[string]any); ok {
 		for k, v := range env {
 			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%v", k, v))

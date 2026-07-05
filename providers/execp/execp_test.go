@@ -96,3 +96,42 @@ func TestRunEnv(t *testing.T) {
 		t.Fatalf("res=%v err=%v", res, err)
 	}
 }
+
+// The resolved project env: block reaches a shelled-out command, the same
+// values the docker provider forwards to compose.
+func TestRunProjectEnv(t *testing.T) {
+	p := New()
+	if err := p.Configure(map[string]any{
+		"projectEnv": map[string]any{"REGION": "us-east-1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := p.Run(context.Background(), "run", map[string]any{"cmd": "echo $REGION"})
+	if err != nil || res.Value != "us-east-1" {
+		t.Fatalf("res=%v err=%v", res, err)
+	}
+}
+
+// Precedence: a step-level env: arg overrides the project env: block, which in
+// turn overrides an ambient OS var — most specific wins.
+func TestRunEnvPrecedence(t *testing.T) {
+	t.Setenv("REGION", "ambient")
+	p := New()
+	if err := p.Configure(map[string]any{
+		"projectEnv": map[string]any{"REGION": "project"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Project env beats the ambient value...
+	res, err := p.Run(context.Background(), "run", map[string]any{"cmd": "echo $REGION"})
+	if err != nil || res.Value != "project" {
+		t.Fatalf("project env should beat ambient: res=%v err=%v", res, err)
+	}
+	// ...and a step-level env: arg beats the project env.
+	res, err = p.Run(context.Background(), "run", map[string]any{
+		"cmd": "echo $REGION", "env": map[string]any{"REGION": "step"},
+	})
+	if err != nil || res.Value != "step" {
+		t.Fatalf("step env should beat project env: res=%v err=%v", res, err)
+	}
+}

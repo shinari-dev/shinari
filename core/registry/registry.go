@@ -49,14 +49,18 @@ type Registry struct {
 }
 
 // New configures every instance of a merged providers: block. Composed
-// providers are looked up in the discovery set via use:.
-func New(set *discover.Set, providers map[string]model.ProviderConfig) (*Registry, error) {
+// providers are looked up in the discovery set via use:. env is the run's
+// resolved project environment (the declared env: block, resolved by the CLI);
+// it is injected into each native instance's config so providers that shell out
+// forward it to their subprocesses. Static callers (validate, explain, init)
+// pass nil — they never execute a verb.
+func New(set *discover.Set, providers map[string]model.ProviderConfig, env map[string]any) (*Registry, error) {
 	r := &Registry{
 		instances: map[string]*Instance{},
 		builtins:  builtins.Specs(),
 	}
 	for name, cfg := range providers {
-		inst, err := r.configure(set, name, cfg)
+		inst, err := r.configure(set, name, cfg, env)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +77,7 @@ func New(set *discover.Set, providers map[string]model.ProviderConfig) (*Registr
 	return r, nil
 }
 
-func (r *Registry) configure(set *discover.Set, name string, cfg model.ProviderConfig) (*Instance, error) {
+func (r *Registry) configure(set *discover.Set, name string, cfg model.ProviderConfig, env map[string]any) (*Instance, error) {
 	if cfg.Use != "" {
 		def, err := set.FindLocalProvider(cfg.Use)
 		if err != nil {
@@ -100,6 +104,13 @@ func (r *Registry) configure(set *discover.Set, name string, cfg model.ProviderC
 	// anchor on the project root, not the process cwd.
 	if _, has := cfgMap["projectDir"]; !has && set.Project != nil {
 		cfgMap["projectDir"] = set.Project.Dir
+	}
+	// The resolved project env reaches providers that shell out (docker, exec)
+	// so ${VAR} interpolation in compose files and subprocess environments is
+	// sourced from the declared env: block, not just the ambient process env.
+	// projectEnv is a Shinari-owned reserved key, like projectDir.
+	if len(env) > 0 {
+		cfgMap["projectEnv"] = env
 	}
 	if err := p.Configure(cfgMap); err != nil {
 		return nil, fmt.Errorf("provider %q: configure: %w", name, err)

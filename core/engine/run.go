@@ -31,7 +31,7 @@ func Run(ctx context.Context, set *discover.Set, targets []string, em Emitter, o
 	result := RunResult{Start: opts.now()}
 	for _, sc := range scenarios {
 		merged := model.MergeProviders(set.Project.Providers, sc.Providers)
-		reg, rerr := registry.New(set, merged)
+		reg, rerr := registry.New(set, merged, opts.Env)
 		if rerr != nil {
 			result.Scenarios = append(result.Scenarios, ScenarioResult{
 				Name: sc.Name, Suite: sc.Suite, Verdict: ScenarioErrored,

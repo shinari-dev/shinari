@@ -10,8 +10,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -24,6 +26,7 @@ type Provider struct {
 	project      string
 	bin          string // overridable for tests
 	binArgs      []string
+	env          []string // resolved project env as KEY=VALUE, forwarded to compose/docker subprocesses
 }
 
 func init() { sdk.Register("docker", New) }
@@ -51,7 +54,38 @@ func (p *Provider) Configure(cfg map[string]any) error {
 		p.bin = bin
 		p.binArgs = nil
 	}
+	// The resolved project env feeds compose's own ${VAR} interpolation: a
+	// compose file that references ${APP_IMAGE} sees the value declared in
+	// env: (sourced from .env/--env-file/OS) without the caller sourcing it into
+	// the shell first. Sorted so the assembled environment is deterministic.
+	p.env = envKV(cfg["projectEnv"])
 	return nil
+}
+
+// envKV renders a projectEnv map into sorted KEY=VALUE strings. Sorting is only
+// for determinism; env keys are unique, so order never changes the result.
+func envKV(v any) []string {
+	m, ok := v.(map[string]any)
+	if !ok || len(m) == 0 {
+		return nil
+	}
+	kv := make([]string, 0, len(m))
+	for k, val := range m {
+		kv = append(kv, fmt.Sprintf("%s=%v", k, val))
+	}
+	sort.Strings(kv)
+	return kv
+}
+
+// processEnv is the environment for a shelled-out command: the inherited process
+// env with the resolved project env appended, so project-declared values win
+// over ambient ones (os/exec uses the last value for a duplicate key). Returns
+// nil when there is no project env, leaving the child to inherit os.Environ().
+func (p *Provider) processEnv() []string {
+	if len(p.env) == 0 {
+		return nil
+	}
+	return append(os.Environ(), p.env...)
 }
 
 func (p *Provider) Verbs() []sdk.VerbSpec {
@@ -150,6 +184,7 @@ func (p *Provider) compose(ctx context.Context, args ...string) (string, error) 
 	}
 	full = append(full, args...)
 	cmd := exec.CommandContext(ctx, p.bin, full...)
+	cmd.Env = p.processEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("docker compose %s: %w — %s",
@@ -163,6 +198,7 @@ func (p *Provider) compose(ctx context.Context, args ...string) (string, error) 
 // equivalent, so a partition reaches the daemon directly.
 func (p *Provider) docker(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, p.bin, args...)
+	cmd.Env = p.processEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("docker %s: %w — %s",
