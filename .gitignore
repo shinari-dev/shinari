@@ -6,4 +6,5 @@
 docs/superpowers/
 docs/public/
 docs/resources/
+docs/static/install.sh
 .hugo_build.lock

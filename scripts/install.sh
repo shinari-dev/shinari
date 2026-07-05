@@ -4,7 +4,7 @@
 #
 # Install script for shinari.
 #
-#   curl -sSL https://raw.githubusercontent.com/shinari-dev/shinari/main/scripts/install.sh | sh
+#   curl -sSL https://shinari.dev/install.sh | sh
 #
 # Environment overrides:
 #   SHINARI_VERSION  install a specific release tag (e.g. v0.2.0); default: latest

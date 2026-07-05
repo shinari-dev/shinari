@@ -1,24 +1,43 @@
 ---
 title: Getting started
-description: Build the binary, run the quickstart project, and read your first findings report, in five minutes.
+description: Install the binary, run the quickstart project, and read your first findings report, in five minutes.
 weight: 10
 ---
 
 You assume your system recovers when a worker dies mid-task. In five minutes,
-Shinari will make you prove it. By the end of this tutorial you will have built
-the CLI, broken a running system on purpose, and turned "it should recover" into
-a test with a verdict.
+Shinari will make you prove it. By the end of this tutorial you will have
+installed the CLI, broken a running system on purpose, and turned "it should
+recover" into a test with a verdict.
 
-## 1. Build the binary
+## 1. Install the binary
 
-Shinari is a single static Go binary. From the repository root:
+Shinari is one static binary with no runtime or dependencies. Install the latest
+release (Linux and macOS, amd64/arm64) with the install script:
+
+```sh
+curl -sSL https://shinari.dev/install.sh | sh
+```
+
+The script detects your OS and architecture, downloads the matching release
+archive, verifies it against `checksums.txt`, and installs `shinari` to
+`/usr/local/bin`. Pin a version or change the install directory:
+
+```sh
+SHINARI_VERSION=v0.2.0 BINDIR="$HOME/.local/bin" \
+  sh -c "$(curl -sSL https://shinari.dev/install.sh)"
+```
+
+Prefer to build from source? With Go 1.26+, from the repository root:
 
 ```sh
 go build -o shinari ./cli
-./shinari
 ```
 
-You should see the command list: `init`, `validate`, `list`, `run`.
+Either way, run `shinari` with no arguments and you should see the command list:
+`init`, `validate`, `list`, `run`.
+
+The remaining steps assume `shinari` is on your `PATH`. If you built from source
+and did not install it, call the local binary as `./shinari` instead.
 
 ## 2. Meet the quickstart project
 
@@ -42,7 +61,7 @@ their `apiVersion`/`kind` header, not by name or location.
 ## 3. Validate before running
 
 ```sh
-./shinari -p examples/quickstart validate
+shinari -p examples/quickstart validate
 ```
 
 ```text
@@ -57,7 +76,7 @@ this project uses no docker stack.
 ## 4. List what was discovered
 
 ```sh
-./shinari -p examples/quickstart list
+shinari -p examples/quickstart list
 ```
 
 ```text
@@ -72,7 +91,7 @@ Scenarios group into **suites** by directory convention (`scenarios/<suite>/`).
 ## 5. Run the suite
 
 ```sh
-./shinari -p examples/quickstart run
+shinari -p examples/quickstart run
 ```
 
 Each scenario prints its lifecycle phase by phase, then a verdict. Here is the

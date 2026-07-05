@@ -159,14 +159,14 @@ Shinari is one static binary with no runtime or dependencies. Install the latest
 release (Linux and macOS, amd64/arm64):
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/shinari-dev/shinari/main/scripts/install.sh | sh
+curl -sSL https://shinari.dev/install.sh | sh
 ```
 
 Pin a version or change the install directory:
 
 ```sh
 SHINARI_VERSION=v0.2.0 BINDIR="$HOME/.local/bin" \
-  sh -c "$(curl -sSL https://raw.githubusercontent.com/shinari-dev/shinari/main/scripts/install.sh)"
+  sh -c "$(curl -sSL https://shinari.dev/install.sh)"
 ```
 
 Or download a prebuilt archive for your platform from the

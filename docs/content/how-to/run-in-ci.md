@@ -11,14 +11,14 @@ finding that started passing.
 
 ```yaml
 # .github/workflows/resilience.yml (excerpt)
-- name: Build shinari
-  run: go build -o shinari ./cli
+- name: Install shinari
+  run: curl -sSL https://shinari.dev/install.sh | sh
 
 - name: Validate (fail fast, no run)
-  run: ./shinari -p tests/resilience validate
+  run: shinari -p tests/resilience validate
 
 - name: Run the suite
-  run: ./shinari -p tests/resilience --out reports run
+  run: shinari -p tests/resilience --out reports run
 
 - name: Publish JUnit results
   if: always()
