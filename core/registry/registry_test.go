@@ -92,6 +92,32 @@ func TestRegistryCloseReleasesProviders(t *testing.T) {
 	}
 }
 
+func TestNewClosesPartiallyConfiguredRegistryOnFailure(t *testing.T) {
+	// composed-kind inference fails after every native instance configured:
+	// the never-returned registry must release what it already holds
+	set := loadSet(t, map[string]string{
+		"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: p\n",
+		"providers/broken.yml": `apiVersion: shinari/v1
+kind: Provider
+name: broken
+verbs:
+  poke:
+    do: [ { run: ghost.get, with: { path: / } } ]
+`,
+	})
+	lastCloser = nil
+	_, err := New(set, map[string]model.ProviderConfig{
+		"c":      {Source: "closerfake"},
+		"broken": {Use: "./providers/broken"},
+	}, nil)
+	if err == nil {
+		t.Fatal("want inference error for a body calling an unconfigured instance")
+	}
+	if lastCloser == nil || lastCloser.closes != 1 {
+		t.Fatalf("configured closer must be released when New fails; closer=%+v", lastCloser)
+	}
+}
+
 func fakeLifecycle() sdk.Provider {
 	return &fake{typeName: "fakedocker", verbs: []sdk.VerbSpec{
 		{Name: "up", Kind: sdk.KindAction, SideEffects: true, Primary: "services"},
@@ -167,6 +193,8 @@ func TestResolveNativeComposedAndBuiltin(t *testing.T) {
 	}
 	if _, err := r.Resolve("unprefixed"); err == nil {
 		t.Error("unknown builtin must error")
+	} else if !strings.Contains(err.Error(), "sample") || !strings.Contains(err.Error(), "repeat") {
+		t.Errorf("unknown-builtin error must list every registered builtin, got: %v", err)
 	}
 }
 

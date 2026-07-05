@@ -62,6 +62,10 @@ func New(set *discover.Set, providers map[string]model.ProviderConfig, env map[s
 	for name, cfg := range providers {
 		inst, err := r.configure(set, name, cfg, env)
 		if err != nil {
+			// Instances configured before the failure may hold resources
+			// (pools, sockets); the caller never sees the registry, so
+			// release them here.
+			_ = r.Close()
 			return nil, err
 		}
 		r.instances[name] = inst
@@ -70,6 +74,7 @@ func New(set *discover.Set, providers map[string]model.ProviderConfig, env map[s
 	for _, inst := range r.instances {
 		if inst.Def != nil {
 			if err := r.inferComposedKinds(inst); err != nil {
+				_ = r.Close()
 				return nil, err
 			}
 		}
@@ -129,7 +134,12 @@ func (r *Registry) Resolve(run string) (Resolution, error) {
 		if spec, ok := r.builtins[run]; ok {
 			return Resolution{Builtin: run, Spec: spec}, nil
 		}
-		return Resolution{}, fmt.Errorf("%q is not a language builtin (assert, sleep, wait_until, background, stop_background) — provider verbs are namespaced <provider>.<verb>", run)
+		names := make([]string, 0, len(r.builtins))
+		for n := range r.builtins {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		return Resolution{}, fmt.Errorf("%q is not a language builtin (%s) — provider verbs are namespaced <provider>.<verb>", run, strings.Join(names, ", "))
 	}
 	parts := strings.SplitN(run, ".", 2)
 	inst, ok := r.instances[parts[0]]

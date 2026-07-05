@@ -710,6 +710,37 @@ verify:
 	}
 }
 
+func TestEnvelopeKeysOnBlockStepsAreRejected(t *testing.T) {
+	set := load(t, map[string]string{
+		"project.yml": projectWithSut,
+		"s.yml": `apiVersion: shinari/v1
+kind: Scenario
+name: rt
+verify:
+  - { run: repeat, timeout: 30, with: { times: 2, do: [ { run: sut.count, with: a } ] } }
+  - run: parallel
+    as: both
+    with:
+      branches:
+        - [ { run: sut.count, with: a } ]
+        - [ { run: sut.count, with: b } ]
+`,
+	})
+	fs := Validate(set)
+	if !hasRepeatError(fs, "not supported on a repeat block") {
+		t.Error("expected rule-13 error for timeout: on a repeat block")
+	}
+	found := false
+	for _, f := range fs {
+		if f.Rule == 12 && f.Severity == Error && strings.Contains(f.Msg, "not supported on a parallel block") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected rule-12 error for as: on a parallel block, got %v", fs)
+	}
+}
+
 func TestRepeatFindingInsideIsRejected(t *testing.T) {
 	set := load(t, map[string]string{
 		"project.yml": projectWithSut,

@@ -51,6 +51,11 @@ func (r *runner) runParallel(ctx context.Context, section, phase string, st *mod
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
+			defer func() {
+				if p := recover(); p != nil {
+					failures[i] = fmt.Sprintf("panic: %v", p)
+				}
+			}()
 			if n := r.limiter.Add(1); int(n) > maxLiveBranches {
 				r.limiter.Add(-1)
 				failures[i] = fmt.Sprintf("parallel: live-branch cap %d exceeded", maxLiveBranches)

@@ -28,16 +28,32 @@ func Run(ctx context.Context, set *discover.Set, targets []string, em Emitter, o
 	if err != nil {
 		return RunResult{}, err
 	}
+	if em == nil {
+		em = EmitterFunc(func(Event) {})
+	}
 	result := RunResult{Start: opts.now()}
 	for _, sc := range scenarios {
+		// An interrupted run stops here: no point stepping every remaining
+		// scenario through ERRORED steps plus a full teardown attempt.
+		if ctx.Err() != nil {
+			break
+		}
 		merged := model.MergeProviders(set.Project.Providers, sc.Providers)
 		reg, rerr := registry.New(set, merged, opts.Env)
 		if rerr != nil {
-			result.Scenarios = append(result.Scenarios, ScenarioResult{
-				Name: sc.Name, Suite: sc.Suite, Verdict: ScenarioErrored,
-				Reason: "provider configuration: " + rerr.Error(),
-				Start:  opts.now(), End: opts.now(),
-			})
+			// The errored scenario appears on the stream too: Result stays the
+			// stream's reduction even when configuration fails before any step.
+			sr := ScenarioResult{
+				Name: sc.Name, Description: sc.Description, Suite: sc.Suite,
+				Verdict: ScenarioErrored,
+				Reason:  "provider configuration: " + rerr.Error(),
+				Start:   opts.now(), End: opts.now(),
+			}
+			em.Emit(Event{Type: EvScenarioStarted, Time: sr.Start, Scenario: sc.Name,
+				Payload: map[string]any{"description": sc.Description, "suite": sc.Suite}})
+			em.Emit(Event{Type: EvScenarioFinished, Time: sr.End, Scenario: sc.Name,
+				Payload: map[string]any{"verdict": string(sr.Verdict), "reason": sr.Reason}})
+			result.Scenarios = append(result.Scenarios, sr)
 			continue
 		}
 		result.Scenarios = append(result.Scenarios,
@@ -111,12 +127,13 @@ func Reduce(events []Event) RunResult {
 			timedOut, _ := e.Payload["timedOut"].(bool)
 			desc, _ := e.Payload["desc"].(string)
 			skipReason, _ := e.Payload["skipReason"].(string)
-			start, _ := e.Payload["start"].(time.Time)
+			finding, _ := e.Payload["finding"].(string)
+			start := payloadTime(e.Payload["start"])
 			captured, _ := e.Payload["captured"].(map[string]any)
 			sc.Steps = append(sc.Steps, StepResult{
 				Section: e.Section, Phase: e.Phase, Run: e.Verb, Desc: desc,
 				Verdict: verdict, Err: errMsg, TimedOut: timedOut,
-				SkipReason: skipReason, Captured: captured,
+				SkipReason: skipReason, Finding: finding, Captured: captured,
 				Start: start, End: e.Time,
 			})
 		case EvFaultInjected:
@@ -138,7 +155,7 @@ func Reduce(events []Event) RunResult {
 			if sc := byName[e.Scenario]; sc != nil {
 				sc.Verdict = ScenarioVerdict(fmt.Sprintf("%v", e.Payload["verdict"]))
 				sc.Reason, _ = e.Payload["reason"].(string)
-				sc.Held, _ = e.Payload["held"].([]string)
+				sc.Held = payloadStrings(e.Payload["held"])
 				sc.End = e.Time
 			}
 		}
@@ -151,4 +168,35 @@ func Reduce(events []Event) RunResult {
 		run.End = events[n-1].Time
 	}
 	return run
+}
+
+// payloadTime reads a time payload that may be a live time.Time (in-memory
+// stream) or an RFC3339 string (a journal read back through JSON). Reduce must
+// work from a persisted journal, not just the process's own events.
+func payloadTime(v any) time.Time {
+	switch t := v.(type) {
+	case time.Time:
+		return t
+	case string:
+		ts, _ := time.Parse(time.RFC3339Nano, t)
+		return ts
+	}
+	return time.Time{}
+}
+
+// payloadStrings reads a []string payload that JSON decoding turns into []any.
+func payloadStrings(v any) []string {
+	switch t := v.(type) {
+	case []string:
+		return t
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, e := range t {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }

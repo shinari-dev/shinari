@@ -218,6 +218,18 @@ func (v *scenarioValidator) checkStep(st *model.Step, section string, defined ma
 	// rules 2 & 5 — with: matches the arg spec, finding: only on assertions.
 	v.out = append(v.out, perStepArgAndFinding(v.sc, res.Spec, st, kind, raw)...)
 
+	if st.Run == "parallel" || st.Run == "repeat" {
+		// The engine dispatches blocks before the step-envelope machinery:
+		// these keys silently do nothing there, which is worse than an error.
+		if st.Timeout > 0 || st.As != "" || len(st.Capture) > 0 || st.Read != "" {
+			rule := 12
+			if st.Run == "repeat" {
+				rule = 13
+			}
+			v.add(Finding{Step: st.Run, Rule: rule, Severity: Error,
+				Msg: fmt.Sprintf("timeout:/as:/capture:/read: are not supported on a %s block — put them on the steps inside it", st.Run)})
+		}
+	}
 	if st.Run == "parallel" {
 		v.checkParallel(st, section, defined)
 		return

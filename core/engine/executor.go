@@ -95,7 +95,17 @@ func RunScenario(ctx context.Context, sc *model.Scenario, projectVars map[string
 		timelineCtx, cancel = context.WithTimeout(ctx, time.Duration(sc.Timeout*float64(time.Second)))
 		defer cancel()
 	}
-	verdict, reason := r.timeline(timelineCtx)
+	// A panicking provider verb must not unwind past the scenario: backgrounds
+	// are still stopped, teardown still runs, the finished event still emits.
+	verdict, reason := func() (v ScenarioVerdict, reason string) {
+		defer func() {
+			if p := recover(); p != nil {
+				v = ScenarioErrored
+				reason = fmt.Sprintf("panic: %v", p)
+			}
+		}()
+		return r.timeline(timelineCtx)
+	}()
 	if sc.Timeout > 0 && errors.Is(timelineCtx.Err(), context.DeadlineExceeded) {
 		verdict = ScenarioFailed
 		reason = fmt.Sprintf("scenario exceeded timeout %gs", sc.Timeout)
@@ -215,9 +225,11 @@ func (r *runner) runSection(ctx context.Context, section, phase string, steps []
 			}
 		case CheckPass:
 			if isAssertionLike(r.reg, st) && section != "teardown" {
-				label := stepLabel(st)
-				if section == "verify" || strings.HasPrefix(section, "steadyState") {
-					r.res.Held = append(r.res.Held, label)
+				// The steadyState gate is a precondition, not a resilience
+				// claim; only the recovery pass records the assertion as held,
+				// so a steadyState check appears in Held once, not twice.
+				if section == "verify" || section == "steadyState:recovery" {
+					r.res.Held = append(r.res.Held, stepLabel(st))
 				}
 			}
 		}
@@ -249,7 +261,8 @@ func EffectiveEffect(spec sdk.VerbSpec, st *model.Step) sdk.Effect {
 // runStep executes one step envelope: resolve → interpolate → bind →
 // dispatch → read/as/capture → verdict (incl. finding logic).
 func (r *runner) runStep(ctx context.Context, section, phase string, st *model.Step) StepResult {
-	sr := StepResult{Section: section, Phase: phase, Run: st.Run, Desc: st.Desc, Start: r.opts.now()}
+	sr := StepResult{Section: section, Phase: phase, Run: st.Run, Desc: st.Desc,
+		Finding: st.Finding, Start: r.opts.now()}
 	r.emit.Emit(Event{Type: EvStepStarted, Time: sr.Start, Scenario: r.sc.Name,
 		Section: section, Phase: phase, Step: stepLabel(st), Verb: st.Run})
 
@@ -270,6 +283,9 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 		}
 		if sr.SkipReason != "" {
 			payload["skipReason"] = sr.SkipReason
+		}
+		if sr.Finding != "" {
+			payload["finding"] = sr.Finding
 		}
 		if sr.Captured != nil {
 			payload["captured"] = sr.Captured
@@ -293,7 +309,11 @@ func (r *runner) runStep(ctx context.Context, section, phase string, st *model.S
 			}
 			return finish(CheckSkip, "")
 		}
-		return r.judge(st, section, finish, err)
+		// A step that could not even be evaluated (unresolvable verb, bad
+		// when:/with: interpolation) is an authoring error, never a finding:
+		// a broken check is indistinguishable from "gap still exists", so it
+		// must not keep the scenario green.
+		return finish(CheckFail, err.Error())
 	}
 
 	// when: is a value-gated guard — a jq predicate over the scope. Falsey skips
@@ -621,6 +641,11 @@ func (r *runner) execBuiltin(ctx context.Context, name string, args map[string]a
 		if r.bg == nil {
 			return sdk.VerbResult{}, fmt.Errorf("background cannot start inside a background step")
 		}
+		if _, exists := r.bg[bgName]; exists {
+			// Overwriting the handle would orphan the first goroutine forever:
+			// its cancel func is lost and its context is WithoutCancel-rooted.
+			return sdk.VerbResult{}, fmt.Errorf("background %q is already running — stop_background it before reusing the name", bgName)
+		}
 		bgCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		h := &bgHandle{cancel: cancel, done: make(chan struct{}), events: &Recorder{}}
 		r.bg[bgName] = h
@@ -628,6 +653,11 @@ func (r *runner) execBuiltin(ctx context.Context, name string, args map[string]a
 		br := r.backgroundRunner(h.events)
 		go func() {
 			defer close(h.done)
+			defer func() {
+				if p := recover(); p != nil {
+					h.err = fmt.Errorf("panic: %v", p)
+				}
+			}()
 			h.result, h.err = br.execStepMap(bgCtx, stepMap, bgScope)
 		}()
 		return sdk.VerbResult{}, nil
@@ -643,6 +673,11 @@ func (r *runner) execBuiltin(ctx context.Context, name string, args map[string]a
 		delete(r.bg, bgName)
 		r.flushBackground(h)
 		if h.err != nil {
+			if !errors.Is(h.err, context.Canceled) {
+				// The background died on its own (bad binary, connection
+				// refused): the load the scenario relies on never ran.
+				return sdk.VerbResult{}, fmt.Errorf("background %q failed: %w", bgName, h.err)
+			}
 			// A canceled load generator is the expected shape; surface its
 			// output, not a failure.
 			return sdk.VerbResult{Value: h.result.Output, Output: h.result.Output}, nil
@@ -654,6 +689,11 @@ func (r *runner) execBuiltin(ctx context.Context, name string, args map[string]a
 	}
 	return sdk.VerbResult{}, fmt.Errorf("unknown builtin %q", name)
 }
+
+// minPollInterval floors sample/wait_until pacing: an interval of 0 (sample's
+// duration-mode default) means the tightest supported polling, never a hot
+// spin hammering the probe with zero delay.
+const minPollInterval = 0.01
 
 // sleepCtx waits for seconds, or returns ctx.Err() if the context is cancelled
 // first. Shared by sleep and sample's inter-sample interval.
@@ -689,6 +729,9 @@ func (r *runner) execSample(ctx context.Context, args map[string]any, scope inte
 	if v, ok := conv.ToFloat(args["interval"]); ok {
 		interval = v
 	}
+	if interval < minPollInterval {
+		interval = minPollInterval
+	}
 	deadline := r.opts.now().Add(time.Duration(duration * float64(time.Second)))
 
 	var lats []float64
@@ -700,15 +743,22 @@ func (r *runner) execSample(ctx context.Context, args map[string]any, scope inte
 		if duration > 0 && !r.opts.now().Before(deadline) {
 			break
 		}
+		// The interval separates samples; it never trails the final one, and
+		// a sleep that crosses the deadline does not buy one more sample.
+		if n > 0 {
+			if err := sleepCtx(ctx, interval); err != nil {
+				return sdk.VerbResult{}, err
+			}
+			if duration > 0 && !r.opts.now().Before(deadline) {
+				break
+			}
+		}
 		start := r.opts.now()
 		_, perr := r.execStepMap(ctx, probeMap, scope)
 		lats = append(lats, float64(r.opts.now().Sub(start).Milliseconds()))
 		n++
 		if perr != nil {
 			errs++
-		}
-		if err := sleepCtx(ctx, interval); err != nil {
-			return sdk.VerbResult{}, err
 		}
 	}
 	return sdk.VerbResult{Value: stats.Summarize(lats, errs)}, nil
@@ -734,6 +784,9 @@ func (r *runner) execWaitUntil(ctx context.Context, args map[string]any, scope i
 	if v, ok := conv.ToFloat(args["interval"]); ok {
 		interval = v
 	}
+	if interval < minPollInterval {
+		interval = minPollInterval
+	}
 	readExpr, _ := args["read"].(string)
 	if readExpr != "" {
 		readExpr, err = scope.String(readExpr)
@@ -748,25 +801,31 @@ func (r *runner) execWaitUntil(ctx context.Context, args map[string]any, scope i
 	waitCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout*float64(time.Second)))
 	defer cancel()
 	var lastObserved any
+	var lastErr error
 	for {
 		result, perr := r.execStepMap(waitCtx, probeMap, scope)
+		value := result.Value
+		if perr == nil && readExpr != "" {
+			value, perr = jqx.EvalWith(readExpr, value, resultVars(result))
+		}
 		if perr == nil {
-			value := result.Value
-			if readExpr != "" {
-				value, perr = jqx.EvalWith(readExpr, value, resultVars(result))
+			lastObserved = value
+			pass, _, cerr := builtins.Check(value, op, operand)
+			switch {
+			case cerr != nil:
+				// a not-yet-shaped observation (null before warm-up, a string
+				// before the counter exists) is condition-not-met, not fatal:
+				// waiting through the not-ready phase is this verb's purpose
+				lastErr = cerr
+			case pass:
+				r.emit.Emit(Event{Type: EvGateObserved, Time: r.opts.now(), Scenario: r.sc.Name,
+					Verb: "wait_until", Payload: map[string]any{"observed": value, "op": op}})
+				return sdk.VerbResult{Value: value}, nil
+			default:
+				lastErr = nil // cleanly unmet: any earlier error is stale
 			}
-			if perr == nil {
-				lastObserved = value
-				pass, _, cerr := builtins.Check(value, op, operand)
-				if cerr != nil {
-					return sdk.VerbResult{}, fmt.Errorf("wait_until: %w", cerr)
-				}
-				if pass {
-					r.emit.Emit(Event{Type: EvGateObserved, Time: r.opts.now(), Scenario: r.sc.Name,
-						Verb: "wait_until", Payload: map[string]any{"observed": value, "op": op}})
-					return sdk.VerbResult{Value: value}, nil
-				}
-			}
+		} else {
+			lastErr = perr
 		}
 		select {
 		case <-waitCtx.Done():
@@ -774,7 +833,11 @@ func (r *runner) execWaitUntil(ctx context.Context, args map[string]any, scope i
 			if ctx.Err() != nil {
 				return sdk.VerbResult{}, ctx.Err()
 			}
-			return sdk.VerbResult{}, fmt.Errorf("wait_until: condition (%s %v) not observed within %gs; last observed: %v", op, operand, timeout, lastObserved)
+			msg := fmt.Sprintf("wait_until: condition (%s %v) not observed within %gs; last observed: %v", op, operand, timeout, lastObserved)
+			if lastErr != nil {
+				msg += fmt.Sprintf(" (last error: %v)", lastErr)
+			}
+			return sdk.VerbResult{}, errors.New(msg)
 		case <-time.After(time.Duration(interval * float64(time.Second))):
 		}
 	}
