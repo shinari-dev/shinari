@@ -196,3 +196,19 @@ func TestMissingConfDirIsConfigureError(t *testing.T) {
 		t.Fatal("want error for missing confDir")
 	}
 }
+
+func TestHostWithInjectionCharactersIsRejected(t *testing.T) {
+	p := provider(t, map[string]any{"confDir": t.TempDir()})
+	for _, host := range []string{"a.test\nserver=6.6.6.6", "a/b.test", "a b"} {
+		if _, err := p.Run(context.Background(), "nxdomain", map[string]any{"host": host}); err == nil {
+			t.Errorf("host %q must be rejected before it reaches the snippet", host)
+		}
+	}
+}
+
+func TestSetDNSRejectsNonIP(t *testing.T) {
+	p := provider(t, map[string]any{"confDir": t.TempDir()})
+	if _, err := p.Run(context.Background(), "set_dns", map[string]any{"host": "a.test", "ip": "6.6.6.6\naddress=/b/1.1.1.1"}); err == nil {
+		t.Error("a non-IP address value must be rejected")
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -80,6 +81,8 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	// often spawns children (e.g. a fault tool's helper) that would otherwise
 	// outlive the shell, inherit its stdout pipe, and block cmd.Wait forever.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	var killMu sync.Mutex
+	var killTimer *time.Timer
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return nil
@@ -90,7 +93,9 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		// system faulted. Give the whole group that chance, then escalate to
 		// SIGKILL if it ignores the term within the grace window.
 		_ = syscall.Kill(pgid, syscall.SIGTERM)
-		time.AfterFunc(termGrace, func() { _ = syscall.Kill(pgid, syscall.SIGKILL) })
+		killMu.Lock()
+		killTimer = time.AfterFunc(termGrace, func() { _ = syscall.Kill(pgid, syscall.SIGKILL) })
+		killMu.Unlock()
 		return nil
 	}
 	// Backstop: if a child still holds a pipe after the process exits, do not
@@ -114,6 +119,13 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
+	// The group exited: an armed SIGKILL backstop must not fire later against
+	// a possibly-recycled process group id.
+	killMu.Lock()
+	if killTimer != nil {
+		killTimer.Stop()
+	}
+	killMu.Unlock()
 	combined := stdout.String() + stderr.String()
 	if err != nil {
 		return sdk.VerbResult{Output: combined},

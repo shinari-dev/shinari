@@ -21,7 +21,8 @@ import (
 	"github.com/shinari-dev/shinari/utils/conv"
 )
 
-// defaultTimeout caps every query/scrape request.
+// defaultTimeout applies only when the caller passed no deadline — the same
+// rule as httpp: a per-step timeout: of any value is authoritative.
 const defaultTimeout = 30 * time.Second
 
 type Provider struct {
@@ -31,7 +32,16 @@ type Provider struct {
 
 func init() { sdk.Register("prom", New) }
 
-func New() sdk.Provider { return &Provider{client: &http.Client{Timeout: defaultTimeout}} }
+func New() sdk.Provider { return &Provider{client: &http.Client{}} }
+
+// boundCtx applies defaultTimeout only when the step set no deadline, so a
+// client-level cap can never override an explicit longer step timeout.
+func boundCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, defaultTimeout)
+}
 
 func (p *Provider) Type() string { return "prom" }
 
@@ -71,6 +81,8 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	}
 	want, _ := args["labels"].(map[string]any)
 
+	ctx, cancel := boundCtx(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, conv.JoinURL(p.base, path), nil)
 	if err != nil {
 		return sdk.VerbResult{}, fmt.Errorf("prom.scrape %s: %w", metric, err)
@@ -81,6 +93,12 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		// an error page is not exposition text; reporting "metric not found"
+		// over a 500 would mask the real failure
+		return sdk.VerbResult{Output: string(raw)},
+			fmt.Errorf("prom.scrape %s: endpoint returned status %d", metric, resp.StatusCode)
+	}
 
 	if v, ok := selectSample(string(raw), metric, want); ok {
 		return sdk.VerbResult{Value: v, Output: string(raw)}, nil
@@ -99,6 +117,8 @@ func (p *Provider) runQuery(ctx context.Context, args map[string]any) (sdk.VerbR
 	if expr == "" {
 		return sdk.VerbResult{}, fmt.Errorf("prom.query needs a query: expression")
 	}
+	ctx, cancel := boundCtx(ctx)
+	defer cancel()
 	u := conv.JoinURL(p.base, "/api/v1/query") + "?query=" + url.QueryEscape(expr)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
@@ -217,12 +237,15 @@ func selectSample(body, metric string, want map[string]any) (float64, bool) {
 func parseLine(line string) (name string, labels map[string]string, val float64, ok bool) {
 	var rest string
 	if open := strings.IndexByte(line, '{'); open >= 0 {
-		closing := strings.IndexByte(line, '}')
-		if closing < 0 || closing < open {
+		closing := closeBrace(line, open)
+		if closing < 0 {
 			return "", nil, 0, false
 		}
 		name = strings.TrimSpace(line[:open])
-		labels = parseLabels(line[open+1 : closing])
+		labels, ok = parseLabels(line[open+1 : closing])
+		if !ok {
+			return "", nil, 0, false
+		}
 		rest = strings.TrimSpace(line[closing+1:])
 	} else {
 		fields := strings.Fields(line)
@@ -243,15 +266,90 @@ func parseLine(line string) (name string, labels map[string]string, val float64,
 	return name, labels, v, true
 }
 
-func parseLabels(s string) map[string]string {
-	out := map[string]string{}
-	for _, pair := range strings.Split(s, ",") {
-		kv := strings.SplitN(pair, "=", 2)
-		if len(kv) == 2 {
-			out[strings.TrimSpace(kv[0])] = strings.Trim(strings.TrimSpace(kv[1]), `"`)
+// closeBrace finds the `}` closing the label block opened at open, skipping
+// quoted label values (which may legally contain `}`, `,`, and escapes).
+func closeBrace(s string, open int) int {
+	inQuote := false
+	for i := open + 1; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			if inQuote {
+				i++ // skip the escaped byte
+			}
+		case '"':
+			inQuote = !inQuote
+		case '}':
+			if !inQuote {
+				return i
+			}
 		}
 	}
-	return out
+	return -1
+}
+
+// parseLabels scans `k="v",k2="v2"` with exposition escapes (\\ \" \n) so a
+// value containing a comma, brace, or quote selects correctly.
+func parseLabels(s string) (map[string]string, bool) {
+	out := map[string]string{}
+	i := 0
+	for i < len(s) {
+		for i < len(s) && (s[i] == ',' || s[i] == ' ' || s[i] == '\t') {
+			i++
+		}
+		if i >= len(s) {
+			break
+		}
+		eq := strings.IndexByte(s[i:], '=')
+		if eq < 0 {
+			return out, false
+		}
+		key := strings.TrimSpace(s[i : i+eq])
+		i += eq + 1
+		if i >= len(s) || s[i] != '"' {
+			// tolerate an unquoted value: read to the next comma
+			if j := strings.IndexByte(s[i:], ','); j >= 0 {
+				out[key] = strings.TrimSpace(s[i : i+j])
+				i += j
+			} else {
+				out[key] = strings.TrimSpace(s[i:])
+				i = len(s)
+			}
+			continue
+		}
+		i++ // opening quote
+		var b strings.Builder
+		closed := false
+		for i < len(s) {
+			c := s[i]
+			if c == '\\' && i+1 < len(s) {
+				switch s[i+1] {
+				case 'n':
+					b.WriteByte('\n')
+				case '\\':
+					b.WriteByte('\\')
+				case '"':
+					b.WriteByte('"')
+				default:
+					b.WriteByte(c)
+					b.WriteByte(s[i+1])
+				}
+				i += 2
+				continue
+			}
+			if c == '"' {
+				i++
+				closed = true
+				break
+			}
+			b.WriteByte(c)
+			i++
+		}
+		if !closed {
+			return out, false
+		}
+		out[key] = b.String()
+	}
+	return out, true
 }
 
 func labelsMatch(have map[string]string, want map[string]any) bool {

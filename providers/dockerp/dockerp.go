@@ -37,14 +37,11 @@ func (p *Provider) Type() string { return "docker" }
 
 func (p *Provider) Configure(cfg map[string]any) error {
 	projectDir, _ := cfg["projectDir"].(string)
-	if files, ok := cfg["composeFiles"].([]any); ok {
-		for _, f := range files {
-			path := fmt.Sprintf("%v", f)
-			if projectDir != "" && !filepath.IsAbs(path) {
-				path = filepath.Join(projectDir, path)
-			}
-			p.composeFiles = append(p.composeFiles, path)
+	for _, f := range listOf(cfg["composeFiles"]) {
+		if projectDir != "" && !filepath.IsAbs(f) {
+			f = filepath.Join(projectDir, f)
 		}
+		p.composeFiles = append(p.composeFiles, f)
 	}
 	if proj, ok := cfg["project"].(string); ok {
 		p.project = proj
@@ -60,6 +57,24 @@ func (p *Provider) Configure(cfg map[string]any) error {
 	// the shell first. Sorted so the assembled environment is deterministic.
 	p.env = envKV(cfg["projectEnv"])
 	return nil
+}
+
+// listOf accepts both the list form and the scalar shorthand for a list-shaped
+// value: `services: postgres` means the same as `services: [postgres]`, never
+// "all services" — a silently ignored scalar changed the command's meaning.
+func listOf(v any) []string {
+	switch t := v.(type) {
+	case nil:
+		return nil
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, e := range t {
+			out = append(out, fmt.Sprintf("%v", e))
+		}
+		return out
+	default:
+		return []string{fmt.Sprintf("%v", t)}
+	}
 }
 
 // envKV renders a projectEnv map into sorted KEY=VALUE strings. Sorting is only
@@ -113,12 +128,12 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 		{Name: "ps", Kind: sdk.KindProbe, Primary: "service", Args: []sdk.ArgSpec{
 			{Name: "service", Type: "string"},
 		}},
-		// exec runs a command inside a running container and returns its stdout,
-		// so a scenario can read internal runtime state (thread/fd counts,
-		// memory, an in-container metric) and baseline-then-compare it with the
-		// standard assert operators. A probe: it observes, it does not inject a
-		// fault — keep the command read-only.
-		{Name: "exec", Kind: sdk.KindProbe, Primary: "command", Args: []sdk.ArgSpec{
+		// exec runs an arbitrary command inside a running container. An action
+		// by default (execp parity): nothing constrains the command to be
+		// read-only, and dry-run must not execute it. A step reading internal
+		// state (thread/fd counts, an in-container metric) reclassifies itself
+		// with the per-step `kind: probe` override.
+		{Name: "exec", Kind: sdk.KindAction, SideEffects: true, Primary: "command", Args: []sdk.ArgSpec{
 			{Name: "service", Type: "string", Required: true},
 			{Name: "command", Type: "string", Required: true},
 		}},
@@ -294,10 +309,8 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		// compose file can carry worker/worker-rr/worker-pf and a scenario picks
 		// one. It is a top-level flag, so it precedes the up subcommand.
 		var cmdArgs []string
-		if profiles, ok := args["profiles"].([]any); ok {
-			for _, p := range profiles {
-				cmdArgs = append(cmdArgs, "--profile", fmt.Sprintf("%v", p))
-			}
+		for _, prof := range listOf(args["profiles"]) {
+			cmdArgs = append(cmdArgs, "--profile", prof)
 		}
 		cmdArgs = append(cmdArgs, "up", "-d")
 		// --wait blocks until services are healthy; opt out with wait: false to
@@ -306,11 +319,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		if w, ok := args["wait"].(bool); !ok || w {
 			cmdArgs = append(cmdArgs, "--wait")
 		}
-		if list, ok := args["services"].([]any); ok {
-			for _, s := range list {
-				cmdArgs = append(cmdArgs, fmt.Sprintf("%v", s))
-			}
-		}
+		cmdArgs = append(cmdArgs, listOf(args["services"])...)
 		out, err = p.compose(ctx, cmdArgs...)
 	case "down":
 		out, err = p.compose(ctx, "down", "-v", "--remove-orphans")

@@ -3,7 +3,10 @@
 
 package conv
 
-import "testing"
+import (
+	"testing"
+	"unicode/utf8"
+)
 
 func TestToFloat(t *testing.T) {
 	cases := []struct {
@@ -104,5 +107,15 @@ func TestNormalize(t *testing.T) {
 	}
 	if got := Normalize(nil); got != nil {
 		t.Errorf("Normalize(nil) = %#v, want nil", got)
+	}
+}
+
+func TestTruncateNeverCutsInsideARune(t *testing.T) {
+	s := "héllo wörld — ünïcode"
+	for n := 1; n < len(s); n++ {
+		got := Truncate(s, n)
+		if !utf8.ValidString(got) {
+			t.Fatalf("Truncate(%q, %d) = %q is not valid UTF-8", s, n, got)
+		}
 	}
 }

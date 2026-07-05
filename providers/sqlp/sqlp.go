@@ -101,12 +101,20 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		if err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("sql.exec %s: %w", conv.Truncate(q, 120), err)
 		}
-		ra, _ := res.RowsAffected()
-		li, _ := res.LastInsertId()
-		return sdk.VerbResult{
-			Value:  map[string]any{"rowsAffected": ra, "lastInsertId": li},
-			Output: fmt.Sprintf("rowsAffected=%d lastInsertId=%d", ra, li),
-		}, nil
+		// A driver that does not support a counter errors (pgx has no
+		// LastInsertId): omit the key rather than report a fake 0 a scenario
+		// could capture and assert on.
+		value := map[string]any{}
+		var parts []string
+		if ra, raErr := res.RowsAffected(); raErr == nil {
+			value["rowsAffected"] = ra
+			parts = append(parts, fmt.Sprintf("rowsAffected=%d", ra))
+		}
+		if li, liErr := res.LastInsertId(); liErr == nil {
+			value["lastInsertId"] = li
+			parts = append(parts, fmt.Sprintf("lastInsertId=%d", li))
+		}
+		return sdk.VerbResult{Value: value, Output: strings.Join(parts, " ")}, nil
 	case "ping":
 		if err := p.db.PingContext(ctx); err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("sql.ping: %w", err)

@@ -65,11 +65,17 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 
 // accepted reports whether status is in the expectStatus list, if any — the
 // same tolerance http verbs offer, so a 503 shed under fault can count as
-// graceful degradation instead of an error.
+// graceful degradation instead of an error. A scalar (`expectStatus: 503`)
+// means the one-element list.
 func accepted(spec any, status int) bool {
-	list, ok := spec.([]any)
-	if !ok {
+	var list []any
+	switch t := spec.(type) {
+	case nil:
 		return false
+	case []any:
+		list = t
+	default:
+		list = []any{t}
 	}
 	for _, s := range list {
 		if n, ok := conv.ToFloat(s); ok && int(n) == status {
@@ -164,6 +170,13 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	// No explicit Stop() here: the range above only ends once the attack has
 	// finished (duration elapsed) or the cancellation goroutine already called
 	// Stop. The deferred close(stop) releases that goroutine.
+
+	// A cancelled attack produced a truncated window: assertions must not
+	// silently judge a shorter run than the author declared.
+	if err := ctx.Err(); err != nil {
+		return sdk.VerbResult{Value: stats.Summarize(lats, errs)},
+			fmt.Errorf("load.run: attack interrupted after %d of %gs worth of requests: %w", len(lats), dur, err)
+	}
 
 	meta := map[string]any{
 		"target":      url,

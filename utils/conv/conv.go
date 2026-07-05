@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // ToFloat coerces a decoded value to a float64. Numbers convert directly;
@@ -60,13 +61,18 @@ func Normalize(v any) any {
 	return v
 }
 
-// Truncate caps s at n runes-worth of bytes, appending an ellipsis when it
-// had to cut — for bounded error/diagnostic output.
+// Truncate caps s at n bytes without cutting inside a multibyte rune,
+// appending an ellipsis when it had to cut — for bounded error/diagnostic
+// output that stays valid UTF-8 in JSON reports and journals.
 func Truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "..."
+	cut := s[:n]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut + "..."
 }
 
 // BaseURL returns a provider's configured base URL: the first non-empty value

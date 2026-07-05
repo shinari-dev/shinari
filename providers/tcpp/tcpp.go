@@ -84,14 +84,16 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		return sdk.VerbResult{}, fmt.Errorf("tcp.connect: no addr (set config.addr or pass with: \"host:port\")")
 	}
 
-	if _, ok := ctx.Deadline(); !ok && p.defaultTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, p.defaultTimeout)
-		defer cancel()
-	}
+	// The explicit timeout arg is authoritative; the 5s default applies only
+	// when neither the arg nor the step set a deadline. Nesting the arg inside
+	// the default would silently cap it at 5s.
 	if t, ok := conv.ToFloat(args["timeout"]); ok && t > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(t*float64(time.Second)))
+		defer cancel()
+	} else if _, ok := ctx.Deadline(); !ok && p.defaultTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.defaultTimeout)
 		defer cancel()
 	}
 

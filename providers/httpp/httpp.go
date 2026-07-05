@@ -77,11 +77,17 @@ func argSpecs() []sdk.ArgSpec {
 	}
 }
 
-// accepted reports whether status is in the expectStatus list, if any.
+// accepted reports whether status is in the expectStatus list, if any. A
+// scalar (`expectStatus: 503`) means the one-element list.
 func accepted(spec any, status int) bool {
-	list, ok := spec.([]any)
-	if !ok {
+	var list []any
+	switch t := spec.(type) {
+	case nil:
 		return false
+	case []any:
+		list = t
+	default:
+		list = []any{t}
 	}
 	for _, s := range list {
 		if n, ok := conv.ToFloat(s); ok && int(n) == status {

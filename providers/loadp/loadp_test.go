@@ -7,7 +7,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/shinari-dev/shinari/sdk"
 )
@@ -152,5 +154,43 @@ func TestRunValidatesArgs(t *testing.T) {
 		if _, err := p.Run(context.Background(), "run", args); err == nil {
 			t.Errorf("case %d: expected validation error for %v", i, args)
 		}
+	}
+}
+
+func TestRunExpectStatusScalarShorthand(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(503)
+	}))
+	defer srv.Close()
+	p := provider(t, srv.URL)
+
+	res, err := p.Run(context.Background(), "run", map[string]any{
+		"target": "/x", "rate": 50, "duration": 0.2, "expectStatus": 503,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := res.Value.(map[string]any)
+	if m["errorRate"].(float64) != 0 {
+		t.Fatalf("errorRate = %v, want 0 (scalar expectStatus must not be ignored)", m["errorRate"])
+	}
+}
+
+func TestRunCancelledAttackErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+	p := provider(t, srv.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	// declared 10s of load, cancelled after 0.15s: the truncated window must
+	// not pass silently as if the full attack ran
+	_, err := p.Run(ctx, "run", map[string]any{
+		"target": "/x", "rate": 20, "duration": 10,
+	})
+	if err == nil || !strings.Contains(err.Error(), "interrupted") {
+		t.Fatalf("a cancelled attack must error, got %v", err)
 	}
 }

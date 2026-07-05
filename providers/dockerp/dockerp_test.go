@@ -63,6 +63,33 @@ func TestUpBuildsComposeCommand(t *testing.T) {
 	}
 }
 
+func TestUpScalarServiceShorthand(t *testing.T) {
+	// `services: postgres` means [postgres], never "silently start everything"
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "up", map[string]any{"services": "postgres"}); err != nil {
+		t.Fatal(err)
+	}
+	got := recorded(t, argsFile)
+	want := "-f assets/stack.yml -p chaos-run up -d --wait postgres"
+	if got != want {
+		t.Errorf("argv = %q, want %q", got, want)
+	}
+}
+
+func TestConfigureScalarComposeFile(t *testing.T) {
+	bin, argsFile := stubBin(t)
+	p := New().(*Provider)
+	if err := p.Configure(map[string]any{"composeFiles": "assets/stack.yml", "bin": bin}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Run(context.Background(), "down", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorded(t, argsFile); !strings.Contains(got, "-f assets/stack.yml") {
+		t.Errorf("scalar composeFiles must not be ignored, argv = %q", got)
+	}
+}
+
 func TestKillUsesSIGKILL(t *testing.T) {
 	p, argsFile := provider(t)
 	if _, err := p.Run(context.Background(), "kill", map[string]any{"service": "worker-a"}); err != nil {

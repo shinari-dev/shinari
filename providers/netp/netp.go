@@ -10,9 +10,11 @@ package netp
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/shinari-dev/shinari/sdk"
@@ -66,6 +68,11 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 
 func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
 	host, _ := args["host"].(string)
+	if host != "" && !hostPattern.MatchString(host) {
+		// host and ip are written raw into the dnsmasq snippet: a value with a
+		// newline or slash would inject directives or corrupt address=/.../
+		return sdk.VerbResult{}, fmt.Errorf("net.%s: invalid host %q", verb, host)
+	}
 	var body string
 	switch verb {
 	case "clear":
@@ -85,6 +92,9 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		}
 		var b strings.Builder
 		for _, ip := range addrs {
+			if net.ParseIP(ip) == nil {
+				return sdk.VerbResult{}, fmt.Errorf("net.set_dns: %q is not an IP address", ip)
+			}
 			fmt.Fprintf(&b, "address=/%s/%s\n", host, ip)
 		}
 		body = b.String()
@@ -178,6 +188,11 @@ func (p *Provider) removeConf(ctx context.Context, verb string, files []string) 
 	}
 	return sdk.VerbResult{Value: removed, Output: out, Meta: map[string]any{"removed": len(removed)}}, nil
 }
+
+// hostPattern is the shape a dnsmasq address=/HOST/ domain may take: labels,
+// dots, dashes, underscores, and a wildcard label. Everything else (slashes,
+// whitespace, newlines) would corrupt or inject snippet directives.
+var hostPattern = regexp.MustCompile(`^[A-Za-z0-9_*][A-Za-z0-9_.*-]*$`)
 
 func sanitize(s string) string {
 	return strings.Map(func(r rune) rune {

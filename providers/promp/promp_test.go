@@ -64,6 +64,34 @@ func TestScrapeQuantile(t *testing.T) {
 	}
 }
 
+func TestScrapeQuotedLabelEdgeCases(t *testing.T) {
+	// legal exposition: label values containing }, comma, and escaped quotes
+	labels, ok := parseLabels(`path="/jobs{id},status",name="say \"hi\""`)
+	if !ok {
+		t.Fatal("parseLabels rejected legal exposition")
+	}
+	if labels["path"] != `/jobs{id},status` || labels["name"] != `say "hi"` {
+		t.Fatalf("labels = %v", labels)
+	}
+	name, ls, val, ok := parseLine(`requests{path="/a{b},c"} 7`)
+	if !ok || name != "requests" || ls["path"] != "/a{b},c" || val != 7 {
+		t.Fatalf("parseLine = %q %v %v %v", name, ls, val, ok)
+	}
+}
+
+func TestScrapeNon200IsError(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	t.Cleanup(s.Close)
+	p := New()
+	_ = p.Configure(map[string]any{"baseUrl": s.URL})
+	_, err := p.Run(context.Background(), "scrape", map[string]any{"metric": "up"})
+	if err == nil || !strings.Contains(err.Error(), "status 500") {
+		t.Fatalf("a 500 must surface as an HTTP failure, not a missing metric: %v", err)
+	}
+}
+
 func TestScrapeMissingIsError(t *testing.T) {
 	s := scrapeServer(t)
 	p := New()
