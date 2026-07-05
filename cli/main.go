@@ -12,7 +12,7 @@ import (
 	"os"
 )
 
-const version = "0.6.0-dev"
+const version = "0.5.1"
 
 // exitUsage is EX_USAGE: distinct from the verdict codes 0..3.
 const exitUsage = 64
