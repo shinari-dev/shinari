@@ -34,7 +34,7 @@ go build -o shinari ./cli
 ```
 
 Either way, run `shinari` with no arguments and you should see the command list:
-`init`, `validate`, `list`, `run`.
+`new`, `init`, `validate`, `list`, `explain`, `run`, `tui`, `log`, `watch`.
 
 The remaining steps assume `shinari` is on your `PATH`. If you built from source
 and did not install it, call the local binary as `./shinari` instead.
@@ -66,12 +66,14 @@ shinari -p examples/quickstart validate
 
 ```text
 [warn] rule 8: ... no lifecycle provider (up/down) configured ...
-valid — 2 scenario(s), 2 warning(s)
+[warn] rule 15: ... finding has no explicit id: ...
+valid — 5 scenario(s), 6 warning(s)
 ```
 
 `validate` is static: it resolves every verb, checks every argument and every
-`${...}` reference, and never touches the system. The warning is expected;
-this project uses no docker stack.
+`${...}` reference, and never touches the system. The warnings are expected:
+this project uses no docker stack (rule 8), and its one finding deliberately
+leaves its ledger identity unpinned (rule 15).
 
 ## 4. List what was discovered
 
@@ -80,9 +82,13 @@ shinari -p examples/quickstart list
 ```
 
 ```text
+concurrency
+  concurrent-submits — Two jobs are submitted and completed at the same instant ...
 core
   clean-complete — A job submitted and completed normally runs exactly once.
+  env-config — Demonstrates environment injection: ...
 recovery
+  orphans-after-crash — Two jobs run; one completes and one is orphaned by a crash. ...
   worker-killed-mid-task — A worker dies mid-task and a peer recovers the job. ...
 ```
 

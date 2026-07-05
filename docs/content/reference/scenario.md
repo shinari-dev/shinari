@@ -84,9 +84,14 @@ So `${.vars.job}` reads a var, `${.outputs.rsp.value.total}` reaches into a
 captured object, and full jq is available past the first two segments
 (`${.outputs.total.value // 0}`, `${.outputs.runs.value | length}`). A reference
 that is the entire value (`with: ${.outputs.job}`) preserves the result's type;
-embedded references stringify, and a jq result of null renders as empty.
+embedded references stringify (maps and lists as JSON), and a jq result of null
+renders as empty.
 Captures are scenario-global, ordered, last-write-wins, visible across sections.
 A reference to a name that no namespace declares is a `validate` error (rule 10).
+
+To pass a **literal** `${...}` through untouched (a shell snippet in `exec.run`,
+a template payload), escape it with a second dollar: `$${HOME}` renders as
+`${HOME}` and is never evaluated.
 
 A step's result is captured as an **Observation envelope** `{value, output,
 meta}`: `as: rsp` binds the whole envelope, so the payload is

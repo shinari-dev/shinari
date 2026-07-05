@@ -16,19 +16,21 @@ providers ship as examples on top of
 
 ## Named instances
 
-The configured name is the namespace. Configure one type twice to address two
-deployments:
+The configured name is the namespace. Configure one native type twice with
+`source:` to address two deployments:
 
 ```yaml
 providers:
-  appA:
-    use: ./providers/app
+  apiA:
+    source: http
     config:
-      apiBase: http://a:8080
-  appB:
-    use: ./providers/app
+      baseUrl: http://a:8080
+  apiB:
+    source: http
     config:
-      apiBase: http://b:8080
+      baseUrl: http://b:8080
 ```
 
-…then `appA.submit`, `appB.submit`. Native types use `source:` the same way.
+…then `apiA.get`, `apiB.get`. A composed instance (`use:`) takes no `config:`
+of its own: its body's leaf verbs resolve against the native instances
+configured beside it, so the native instance's config decides the target.

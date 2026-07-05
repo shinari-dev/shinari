@@ -41,6 +41,7 @@ The whole harness is one YAML file. Write the failure you fear, and Shinari runs
 it for real:
 
 ```yaml
+apiVersion: shinari/v1
 kind: Scenario
 name: checkout-survives-cache-outage
 
@@ -64,17 +65,18 @@ method:
 
 verify:
   - run: assert
-    with: { of: "${.rsp.value.total}", equals: 19.90 }
+    with: { of: "${.outputs.rsp.value.total}", equals: 19.90 }
     desc: "served from Postgres, priced correctly"
   - run: assert
-    with: { of: "${.rsp.meta.durationMs}", lt: 200 }
+    with: { of: "${.outputs.rsp.meta.durationMs}", lt: 200 }
     desc: "checkout answered under 200ms with the cache down"
     finding: "cold cache: checkout latency spikes for ~30s after restart"
 ```
 
-`${.rsp.value...}` is the response payload; `${.rsp.meta.durationMs}` is the
-latency Shinari measured for that call. Every capture is an Observation
-envelope `{value, output, meta}`, and `${...}` is a jq expression over it.
+`${.outputs.rsp.value...}` is the response payload; `${.outputs.rsp.meta.durationMs}`
+is the latency Shinari measured for that call. Every capture is an Observation
+envelope `{value, output, meta}` bound under the name the step chose with `as:`,
+and `${...}` is a jq expression over the namespaced scope.
 
 ```text
 $ shinari run
@@ -151,7 +153,7 @@ Domain vocabularies are **composed providers**: YAML macros over other verbs,
 written in pure YAML with zero Go (see
 [`examples/quickstart/providers/jobstore.yml`](examples/quickstart/providers/jobstore.yml)).
 Unprefixed language builtins round it out: `assert`, `sleep`, `wait_until`,
-`background`, `stop_background`.
+`sample`, `background`, `stop_background`, `parallel`, `repeat`.
 
 ## Install
 

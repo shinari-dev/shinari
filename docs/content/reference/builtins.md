@@ -21,12 +21,12 @@ Kind: assertion. Exactly **one** operator key per step.
 
 | operator | passes when |
 |---|---|
-| `equals` / `notEquals` | numeric comparison when both sides parse as numbers, else string equality |
-| `contains` / `absent` | substring (strings) or membership (lists); `absent` is the negation |
+| `equals` / `notEquals` | numeric comparison when both sides parse as numbers, else string equality; `null` equals only an explicit null, never `""` |
+| `contains` / `absent` | substring (strings) or membership (lists); `absent` is the negation; any other `of` type is an error |
 | `in` | `of` equals any element of the operand list |
 | `matches` | the operand regex matches `of` |
 | `gt` `lt` `gte` `lte` | numeric comparison |
-| `between` | `of` within `[min, max]`, inclusive |
+| `between` | `of` within `[min, max]`, inclusive; reversed bounds are an error |
 
 ## sleep
 
@@ -59,7 +59,10 @@ until a condition holds or a timeout expires.
 ```
 
 On success it emits a `gate.observed` event and yields the observed value; on
-timeout it fails with the **last observed value** in the message.
+timeout it fails with the **last observed value** (and the last probe error,
+if any) in the message. An observation the operator cannot evaluate yet (a
+`null` counter before warm-up) counts as condition-not-met and polling
+continues; waiting through the not-ready phase is the verb's purpose.
 
 ## background / stop_background
 
@@ -83,7 +86,10 @@ log followers):
 its result. The capture (`loadResult`) exists only **after**
 `stop_background`; referencing it earlier is a `validate` error (rule 6).
 A background step killed by the stop is not a failure; its output becomes the
-value.
+value. A background that died **on its own** (a missing binary, a connection
+refused) fails the `stop_background` step: the load the scenario relied on
+never ran. Names are handles: starting a second background under a live name
+is an error, and a background step cannot itself start another background.
 
 ## sample
 
@@ -95,7 +101,7 @@ over a window, not a single reading. `Kind: probe`.
 | `probe` | the step to sample (a nested `{ run, with, read }`) |
 | `count` | number of calls (use this or `duration`) |
 | `duration` | seconds to sample for (use this or `count`) |
-| `interval` | seconds between calls (default 0) |
+| `interval` | seconds between calls (default 0, floored at 0.01 so a window never hot-spins against the probe) |
 
 Returns an Observation whose `value` is
 `{ n, errors, errorRate, min, max, mean, p50, p95, p99 }` (latencies in ms):
@@ -181,6 +187,7 @@ recovery survives repeated bounces, not just the first.
       - run: wait_until
         with:
           probe: { run: http.get, with: "http://localhost:8080/health" }
+          read: "$meta.status"
           equals: 200
           timeout: 10
 ```

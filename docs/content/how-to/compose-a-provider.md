@@ -23,8 +23,7 @@ verbs:
         with:
           path: "/jobs/${.params.job}"
           form: "${.params.inputs}"
-        capture:
-          id: ".id"
+        read: ".id"
   await:
     params: [of, timeout]
     do:
@@ -63,8 +62,9 @@ providers:
 ```
 
 The instance name (`app`) becomes the verb namespace: `app.submit`,
-`app.count`. Configure the same definition twice under two names (`appA`,
-`appB`) to talk to two deployments.
+`app.count`. The body's leaf verbs (`http.post`, `http.get`) resolve against
+the instances configured in the same project, so the `http` instance's
+`baseUrl` decides which deployment the vocabulary talks to.
 
 ## 3. Use the vocabulary
 
@@ -81,7 +81,7 @@ method:
 verify:
   - run: app.await
     with:
-      of: "${.outputs.job}"
+      of: "${.outputs.job.value}"
       timeout: 420
   - run: app.count
     with: sleep
@@ -92,6 +92,12 @@ verify:
       equals: 1
     desc: "exactly once"
 ```
+
+A composed verb's result is its **last body step's value**, after that step's
+`read:` transform. `app.submit` ends in `read: ".id"`, so the verb returns the
+job id; `as: job` then wraps it in the usual `{value, output, meta}` envelope,
+which is why the scenario passes `${.outputs.job.value}` (the id itself) to
+`app.await`.
 
 ## What the engine infers for you
 

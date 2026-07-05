@@ -26,6 +26,9 @@ shorthands like `-p`) and may appear before or after the command. Run
 | `list` | print discovered scenarios grouped by suite |
 | `explain` | print a scenario's lifecycle timeline (resolved verb, kind, fault effect) without running it |
 | `run` | execute targeted scenarios; write reports; exit by verdict |
+| `tui` | interactive control center: browse, explain, dry-run, run, history |
+| `log` | finding trend across recorded runs (see `run --record`) |
+| `watch <journal.jsonl>` | replay a saved run journal |
 
 ### new
 
@@ -69,6 +72,7 @@ Global (any command, any position):
 | flag | default | meaning |
 |---|---|---|
 | `--project`, `-p <dir>` | `.` | project directory (the discovery root) |
+| `--color <mode>` | `auto` | colorize output: `auto`, `always`, or `never` |
 | `--version` | | print the version and exit |
 
 `run`:
@@ -82,6 +86,9 @@ Global (any command, any position):
 | `--include-tags <expr>` | | run only scenarios matching the tag expression |
 | `--exclude-tags <expr>` | | drop scenarios matching the tag expression |
 | `--env-file <path>` | project `.env` | read `env:` values from this file (missing named file is an error) |
+| `--update`, `-u` | off | write/refresh the findings ledger (`shinari.findings.yml`) from this run; a targeted run refreshes only its own scenarios' entries |
+| `--record` | off | append a run-record to `shinari-history.jsonl` for `shinari log` and the TUI |
+| `--otlp <host:port>` | | export the run as OTLP traces to this gRPC endpoint |
 
 `list`:
 

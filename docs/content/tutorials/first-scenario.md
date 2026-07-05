@@ -77,15 +77,19 @@ shinari run
 ```
 
 ```text
-=== survive-nothing
-  ✓ exec.run
-  -- Do the thing
-  ⚡ fault injected: exec.run
-  ✓ exec.run
-  ✓ we said hello
-  ✓ exec.run
-  => PASSED
+━━ survive-nothing ─────────────────────────────────────────
+  setup     ✓ exec.run
+  method    ✓ exec.run
+  verify    ✓ we said hello
+  teardown  ✓ exec.run
+
+  ✔ PASSED · 9ms
+
+1 scenario: 1 passed (0s)
 ```
+
+A step that injects a fault in `method` would carry a `⚡ (fault injected)`
+marker; this `exec.run` declares no `effect:`, so it renders as a plain step.
 
 Note the capture: `as: said` stored the step's output under the `outputs`
 namespace, and `${.outputs.said.value}` read it back in `verify`. The var read
@@ -98,15 +102,18 @@ ordered, last-write-wins.
 Change the assertion to `equals: goodbye` and run again:
 
 ```text
-  ✗ we said hello — assert failed: expected hello == goodbye
-  => FAILED
+  verify    ✗ we said hello — assert failed: expected hello == goodbye
+
+  ✘ FAILED · 7ms
 ```
 
 Exit code `1`: *your system broke*. Now break the harness instead; change
 `setup` to `exec.run, with: "exit 1"`:
 
 ```text
-  => ERRORED
+  setup     ✗ exec.run — exec.run "exit 1": exit status 1
+
+  ✘ ERRORED · 4ms
 ```
 
 Exit code `2`: *the run never happened*. Distinct exit codes let CI tell the

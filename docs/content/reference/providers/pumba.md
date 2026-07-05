@@ -30,6 +30,6 @@ Caveats, all confirmed against a live Docker + Pumba run:
 - The fault is backgrounded and is not synchronized: nothing waits for Pumba to
   attach and apply the rule before the scenario proceeds. Add a `wait_until`/
   `sleep` if a step must observe the fault already in effect.
-- Surviving a fault is asserted today; *observing the degradation itself* (for
-  example, that latency actually rose) needs a latency-capturing probe that the
-  current verb set does not provide.
+- To *observe the degradation itself* (for example, that latency actually
+  rose), assert on `${.outputs.<name>.meta.durationMs}` or run a `sample`
+  window while the fault is active.

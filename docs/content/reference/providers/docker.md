@@ -206,14 +206,14 @@ service it returns the full list.
   with: { of: "${.outputs.code}", equals: 0 }
 ```
 
-### exec (probe)
+### exec (action)
 
 Runs a command inside a running container (`compose exec -T <service> sh -c`)
-and returns its stdout, so a scenario can read internal runtime state (thread
-or fd counts, memory, an in-container metric) and baseline-then-compare it with
-the standard assert operators. A probe: it observes, it does not inject a
-fault. Keep the command read-only; a fault injected through `exec` belongs on
-an action step with an explicit `effect:` override.
+and returns its stdout. An action by default, like `exec.run`: nothing
+constrains the command to be read-only, so dry-run skips it. A step that only
+reads internal runtime state (thread or fd counts, memory, an in-container
+metric) reclassifies itself with the per-step `kind: probe` override; a fault
+injected through `exec` adds an explicit `effect:` instead.
 
 | arg | type | req | description |
 |---|---|---|---|
@@ -225,6 +225,7 @@ an action step with an explicit `effect:` override.
 ```yaml
 - run: docker.exec
   with: { service: worker, command: "ls /proc/1/task | wc -l" }
+  kind: probe
   as: threads_before
 ```
 

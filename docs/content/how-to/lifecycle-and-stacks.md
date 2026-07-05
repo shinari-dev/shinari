@@ -79,15 +79,17 @@ multi-network container from each network to isolate it fully:
 
 ## Inspect runtime state
 
-`docker.exec` is a probe that runs a command inside a running container and
-returns its stdout, so a scenario can baseline a resource count, inject churn,
-then assert it has not drifted. Keep the command read-only:
+`docker.exec` runs a command inside a running container and returns its
+stdout, so a scenario can baseline a resource count, inject churn, then assert
+it has not drifted. It is an action by default; mark a read-only reading with
+`kind: probe` so dry-run and steadyState treat it correctly:
 
 ```yaml
 - run: docker.exec
   with:
     service: app
     command: "ls /proc/1/task | wc -l"   # thread count
+  kind: probe
   as: threads_before
 ```
 
