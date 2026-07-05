@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 // scenarioTemplate returns a valid starter scenario. kind is "minimal" or
@@ -28,9 +29,20 @@ func scenarioTemplate(name, kind string) string {
 	return head + setup + steady + method + verify + teardown
 }
 
+// scaffoldName is the shape a scaffolded scenario name or suite may take: it
+// is interpolated raw into YAML and a filename, so quotes, colons, slashes,
+// and whitespace are out.
+var scaffoldName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
 // writeScenario writes a scaffolded scenario under scenarios/<suite>/<name>.yml
 // and returns its path. It errors rather than overwrite an existing file.
 func writeScenario(root, suite, name, kind string) (string, error) {
+	if !scaffoldName.MatchString(name) {
+		return "", fmt.Errorf("scenario name %q must match %s", name, scaffoldName)
+	}
+	if !scaffoldName.MatchString(suite) {
+		return "", fmt.Errorf("suite %q must match %s", suite, scaffoldName)
+	}
 	dir := filepath.Join(root, "scenarios", suite)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err

@@ -88,7 +88,13 @@ func newHTMLRun(res engine.RunResult) htmlRun {
 		case engine.ScenarioInconclusive:
 			run.Inconclusive++
 		}
-		run.Findings += len(sc.Findings)
+		// count active gaps only, matching the console summary and SARIF — a
+		// now-passing finding is a promotion prompt, not an open gap
+		for _, f := range sc.Findings {
+			if !f.NowPasses {
+				run.Findings++
+			}
+		}
 
 		hs := htmlScenario{
 			Index: i,

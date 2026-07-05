@@ -124,6 +124,9 @@ func cmdRun(dir, color, out, envFile string, targets []string, dryRun, keepUp, v
 			Verdict:  string(res.Verdict()),
 			Duration: res.End.Sub(res.Start),
 		}
+		for _, sc := range res.Scenarios {
+			hrec.Scenarios = append(hrec.Scenarios, sc.Name)
+		}
 		for _, f := range observed {
 			hrec.Findings = append(hrec.Findings, history.Finding{
 				ID: f.ID, Scenario: f.Scenario, Narrative: f.Narrative, NowPasses: f.NowPasses,

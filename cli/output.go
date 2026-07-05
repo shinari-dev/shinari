@@ -65,17 +65,20 @@ func resolveOutput(cfg model.OutputConfig, outFlag, otlpFlag string) (outputPlan
 	}
 
 	otlp := cfg.Exporters["otlp"]
-	if otlp.Protocol != "" && otlp.Protocol != "grpc" {
-		return p, fmt.Errorf("output: otlp protocol %q is not supported (only grpc)", otlp.Protocol)
-	}
 	endpoint := otlp.Endpoint
 	enabled := otlp.Enabled != nil && *otlp.Enabled
 	if otlpFlag != "" {
 		endpoint = otlpFlag
 		enabled = true
 	}
-	if enabled && endpoint == "" {
-		return p, fmt.Errorf("output: otlp is enabled but no endpoint is set")
+	// A disabled exporter's config must not abort runs that never use it.
+	if enabled {
+		if otlp.Protocol != "" && otlp.Protocol != "grpc" {
+			return p, fmt.Errorf("output: otlp protocol %q is not supported (only grpc)", otlp.Protocol)
+		}
+		if endpoint == "" {
+			return p, fmt.Errorf("output: otlp is enabled but no endpoint is set")
+		}
 	}
 	p.OTLP = otlpPlan{Enabled: enabled, Endpoint: endpoint}
 

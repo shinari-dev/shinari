@@ -26,7 +26,8 @@ type runModel struct {
 	err      error
 	cancel   context.CancelFunc
 	afterRan bool
-	dry      bool // dry-run (actions skipped, not recorded)
+	afterErr error // reports/history write failure — shown instead of "recorded ✓"
+	dry      bool  // dry-run (actions skipped, not recorded)
 
 	// The run view is two stacked, independently scrolling frames managed by the
 	// shared twoPane: the scenario summary on top, the streamed event log below
@@ -38,8 +39,9 @@ type runModel struct {
 	height int
 
 	// AfterRun runs once when the run completes: records history + writes
-	// reports. Injected by the command so cli/tui stays decoupled.
-	AfterRun func(engine.RunResult)
+	// reports. Injected by the command so cli/tui stays decoupled. Its error
+	// is surfaced in the header — a full disk must not read as "recorded ✓".
+	AfterRun func(engine.RunResult, []engine.Event) error
 }
 
 func newRun() runModel {
@@ -79,7 +81,7 @@ func (r runModel) Update(msg tea.Msg) (runModel, tea.Cmd) {
 	case DoneMsg:
 		r.done, r.res, r.err = true, msg.Res, msg.Err
 		if !r.afterRan && r.AfterRun != nil {
-			r.AfterRun(msg.Res)
+			r.afterErr = r.AfterRun(msg.Res, r.events)
 			r.afterRan = true
 		}
 		r.refresh()
@@ -115,7 +117,11 @@ func (r runModel) headerLine() string {
 	if r.done {
 		h := verdictBadge(string(r.res.Verdict()))
 		if r.afterRan {
-			h += lipgloss.NewStyle().Foreground(fgDim).Render("  ·  recorded ✓")
+			if r.afterErr != nil {
+				h += lipgloss.NewStyle().Foreground(fail).Render("  ·  record failed: " + r.afterErr.Error())
+			} else {
+				h += lipgloss.NewStyle().Foreground(fgDim).Render("  ·  recorded ✓")
+			}
 		}
 		return h
 	}

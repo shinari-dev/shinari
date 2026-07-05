@@ -396,3 +396,31 @@ func TestVersionFlag(t *testing.T) {
 		t.Fatalf("--version output %q does not contain %q", stdout.String(), version)
 	}
 }
+
+func TestRecordCarriesScenarioNames(t *testing.T) {
+	dir := project(t, false)
+	var out, errOut bytes.Buffer
+	if code := run([]string{"--project", dir, "run", "--record", "--out", filepath.Join(t.TempDir(), "r")}, &out, &errOut, noEnv, noLookup); code != 0 {
+		t.Fatalf("code = %d: %s%s", code, out.String(), errOut.String())
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "shinari-history.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"scenarios":["exactly-once"]`) {
+		t.Fatalf("a --record entry must carry scenario names (the TUI matches on them), got: %s", data)
+	}
+}
+
+func TestDisabledOtlpExporterConfigDoesNotAbort(t *testing.T) {
+	dir := project(t, false)
+	proj := "apiVersion: shinari/v1\nkind: Project\nname: demo\nproviders:\n  sut: { source: clifake }\n" +
+		"output:\n  exporters:\n    otlp: { enabled: false, protocol: http }\n"
+	if err := os.WriteFile(filepath.Join(dir, "project.yml"), []byte(proj), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut bytes.Buffer
+	if code := run([]string{"--project", dir, "run", "--out", filepath.Join(t.TempDir(), "r")}, &out, &errOut, noEnv, noLookup); code != 0 {
+		t.Fatalf("a disabled exporter's protocol must not abort the run: code = %d, err: %s", code, errOut.String())
+	}
+}

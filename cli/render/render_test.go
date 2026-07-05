@@ -6,6 +6,7 @@ package render
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -139,5 +140,41 @@ func TestConsoleStreams(t *testing.T) {
 	}
 	if !strings.Contains(s, "✘ FAILED") || !strings.Contains(s, "1 finding held") {
 		t.Errorf("verdict line missing:\n%s", s)
+	}
+}
+
+func TestTSVEscapesEveryAuthorControlledCell(t *testing.T) {
+	res := sample()
+	res.Scenarios[0].Name = "evil\tname"
+	res.Scenarios[0].Steps[0].Desc = "multi\nline\rdesc"
+	var buf bytes.Buffer
+	if err := TSV(&buf, res); err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if got := len(strings.Split(line, "\t")); got != 6 {
+			t.Fatalf("row %d has %d columns, want 6: %q", i, got, line)
+		}
+	}
+}
+
+func TestResultsJSONSurvivesNaNCapture(t *testing.T) {
+	res := sample()
+	res.Scenarios[0].Steps[0].Captured = map[string]any{"rate": math.NaN(), "nested": []any{math.Inf(1)}}
+	var buf bytes.Buffer
+	if err := ResultsJSON(&buf, res); err != nil {
+		t.Fatalf("a NaN capture must not abort report writing (it masks the verdict): %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJournalSurvivesNaNPayload(t *testing.T) {
+	events := []engine.Event{{Type: engine.EvStepPassed, Payload: map[string]any{"value": math.NaN()}}}
+	var buf bytes.Buffer
+	if err := Journal(&buf, events); err != nil {
+		t.Fatalf("a NaN payload must not abort the journal: %v", err)
 	}
 }

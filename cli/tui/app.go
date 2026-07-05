@@ -54,7 +54,7 @@ type App struct {
 	RunFn       func(ctx context.Context, sc *model.Scenario, send func(engine.Event)) (engine.RunResult, error)
 	DryStreamFn func(ctx context.Context, sc *model.Scenario, send func(engine.Event)) (engine.RunResult, error)
 	RunSetFn    func(ctx context.Context, targets []string, send func(engine.Event)) (engine.RunResult, error)
-	After       func(engine.RunResult)
+	After       func(engine.RunResult, []engine.Event) error
 	History     []history.Record
 
 	// Editor is the user's $EDITOR, injected by the CLI (cli/tui never reads env).
@@ -514,7 +514,7 @@ func (a App) startRunAll() (tea.Model, tea.Cmd) {
 
 // launchRun starts a streaming run sub-model driven by fn; after (may be nil)
 // runs on completion. dry labels the view as a dry-run.
-func (a App) launchRun(fn func(context.Context, *model.Scenario, func(engine.Event)) (engine.RunResult, error), after func(engine.RunResult), dry bool) (tea.Model, tea.Cmd) {
+func (a App) launchRun(fn func(context.Context, *model.Scenario, func(engine.Event)) (engine.RunResult, error), after func(engine.RunResult, []engine.Event) error, dry bool) (tea.Model, tea.Cmd) {
 	sc := a.Selected()
 	if sc == nil || fn == nil {
 		return a, nil

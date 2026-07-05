@@ -8,24 +8,27 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
 	"github.com/shinari-dev/shinari/core/engine"
 )
 
-// TSV writes results.tsv: one row per check.
+// tsvCell strips the characters that would break TSV row structure.
+var tsvCell = strings.NewReplacer("\t", " ", "\n", " ", "\r", " ")
+
+// TSV writes results.tsv: one row per check. Every author-controlled cell is
+// escaped — a tab or newline in a scenario name or desc must not split a row.
 func TSV(w io.Writer, res engine.RunResult) error {
 	if _, err := fmt.Fprintln(w, "scenario\tsection\tcheck\tverdict\tdurationMs\terror"); err != nil {
 		return err
 	}
 	for _, sc := range res.Scenarios {
 		for _, st := range sc.Steps {
-			label := st.Label()
 			ms := st.End.Sub(st.Start).Milliseconds()
-			errMsg := strings.ReplaceAll(st.Err, "\t", " ")
-			errMsg = strings.ReplaceAll(errMsg, "\n", " ")
 			if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
-				sc.Name, st.Section, label, st.Verdict, ms, errMsg); err != nil {
+				tsvCell.Replace(sc.Name), tsvCell.Replace(st.Section), tsvCell.Replace(st.Label()),
+				st.Verdict, ms, tsvCell.Replace(st.Err)); err != nil {
 				return err
 			}
 		}
@@ -43,6 +46,11 @@ type resultsDoc struct {
 
 // ResultsJSON writes results.json — the CI artifact.
 func ResultsJSON(w io.Writer, res engine.RunResult) error {
+	for i := range res.Scenarios {
+		for j := range res.Scenarios[i].Steps {
+			finiteJSON(res.Scenarios[i].Steps[j].Captured)
+		}
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(resultsDoc{
@@ -57,11 +65,41 @@ func ResultsJSON(w io.Writer, res engine.RunResult) error {
 func Journal(w io.Writer, events []engine.Event) error {
 	enc := json.NewEncoder(w)
 	for _, e := range events {
+		finiteJSON(e.Payload)
 		if err := enc.Encode(e); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// finiteJSON replaces NaN/Inf floats in place: legal jq results, illegal JSON.
+// Without this one odd captured value aborts report writing and masks the
+// run's verdict behind exit 2.
+func finiteJSON(m map[string]any) {
+	for k, v := range m {
+		m[k] = finiteValue(v)
+	}
+}
+
+func finiteValue(v any) any {
+	switch t := v.(type) {
+	case float64:
+		if math.IsNaN(t) || math.IsInf(t, 0) {
+			return fmt.Sprintf("%v", t)
+		}
+		return t
+	case map[string]any:
+		finiteJSON(t)
+		return t
+	case []any:
+		for i, e := range t {
+			t[i] = finiteValue(e)
+		}
+		return t
+	default:
+		return v
+	}
 }
 
 // JUnit XML — minimal schema CI servers consume.

@@ -5,8 +5,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -73,37 +75,36 @@ func cmdTui(dir string, stdout, stderr io.Writer, getenv func(string) string, lo
 	// explain + dry-run are injected so cli/tui stays decoupled from package main.
 	app.SetExplainFn(func(sc *model.Scenario) string { return explainString(set, sc) })
 
-	// dry-run streams through the same live run view (actions skipped, not recorded).
-	app.DryStreamFn = func(ctx context.Context, sc *model.Scenario, send func(engine.Event)) (engine.RunResult, error) {
-		return engine.Run(ctx, set, []string{sc.Name},
-			engine.Multi(engine.EmitterFunc(send)), engine.Options{DryRun: true, Env: resolvedEnv})
+	// runLocked serializes TUI runs against concurrent `shinari run`s (and
+	// other TUIs) through the same per-project flock the CLI path takes.
+	runLocked := func(ctx context.Context, targets []string, send func(engine.Event), opts engine.Options) (engine.RunResult, error) {
+		unlock, lerr := lockRun(set.Root)
+		if lerr != nil {
+			return engine.RunResult{}, fmt.Errorf("another shinari run is active for this project: %w", lerr)
+		}
+		defer unlock()
+		return engine.Run(ctx, set, targets, engine.EmitterFunc(send), opts)
 	}
 
-	// run streams events live and, on completion, writes reports + records history.
+	// dry-run streams through the same live run view (actions skipped, not recorded).
+	app.DryStreamFn = func(ctx context.Context, sc *model.Scenario, send func(engine.Event)) (engine.RunResult, error) {
+		return runLocked(ctx, []string{sc.Name}, send, engine.Options{DryRun: true, Env: resolvedEnv})
+	}
+
+	// run streams events live; reports + history land in After.
 	app.RunFn = func(ctx context.Context, sc *model.Scenario, send func(engine.Event)) (engine.RunResult, error) {
-		rec := &engine.Recorder{}
-		em := engine.Multi(rec, engine.EmitterFunc(send))
-		res, err := engine.Run(ctx, set, []string{sc.Name}, em,
+		return runLocked(ctx, []string{sc.Name}, send,
 			engine.Options{Env: resolvedEnv, KeepUp: getenv("KEEP_UP") == "1"})
-		if err == nil {
-			_, _ = writeReports(plan, res, rec.Events)
-		}
-		return res, err
 	}
 
 	// run-all runs every target (the visible/filtered set) in one streamed run.
 	app.RunSetFn = func(ctx context.Context, targets []string, send func(engine.Event)) (engine.RunResult, error) {
-		rec := &engine.Recorder{}
-		em := engine.Multi(rec, engine.EmitterFunc(send))
-		res, err := engine.Run(ctx, set, targets, em,
+		return runLocked(ctx, targets, send,
 			engine.Options{Env: resolvedEnv, KeepUp: getenv("KEEP_UP") == "1"})
-		if err == nil {
-			_, _ = writeReports(plan, res, rec.Events)
-		}
-		return res, err
 	}
-	app.After = func(res engine.RunResult) {
-		hrec := history.Record{RunID: res.Start.UTC().String(), Time: res.Start, Verdict: string(res.Verdict()), Duration: res.End.Sub(res.Start)}
+	app.After = func(res engine.RunResult, events []engine.Event) error {
+		_, werr := writeReports(plan, res, events)
+		hrec := history.Record{RunID: res.Start.UTC().Format(time.RFC3339Nano), Time: res.Start, Verdict: string(res.Verdict()), Duration: res.End.Sub(res.Start)}
 		for _, sc := range res.Scenarios {
 			hrec.Scenarios = append(hrec.Scenarios, sc.Name)
 			for _, f := range sc.Findings {
@@ -112,7 +113,8 @@ func cmdTui(dir string, stdout, stderr io.Writer, getenv func(string) string, lo
 				})
 			}
 		}
-		_ = history.Append(history.Path(set.Root), hrec)
+		herr := history.Append(history.Path(set.Root), hrec)
+		return errors.Join(werr, herr)
 	}
 
 	// load existing history for the History tab.

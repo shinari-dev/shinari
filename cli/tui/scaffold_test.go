@@ -62,3 +62,15 @@ func TestWriteScenarioCreatesValidProject(t *testing.T) {
 		t.Fatal("writing over an existing file should error")
 	}
 }
+
+func TestScaffoldRejectsYAMLBreakingNames(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"", "a: b", `x"y`, "a/b", "sp ace"} {
+		if _, err := writeScenario(root, "resilience", name, "minimal"); err == nil {
+			t.Errorf("name %q must be rejected before it is interpolated into YAML", name)
+		}
+	}
+	if _, err := writeScenario(root, "bad: suite", "ok-name", "minimal"); err == nil {
+		t.Error("a YAML-breaking suite must be rejected")
+	}
+}

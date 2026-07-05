@@ -18,7 +18,7 @@ func TestRunModelFoldsAndFinishes(t *testing.T) {
 	r := newRun()
 	r.setSize(80, 24)
 	var afterCalled bool
-	r.AfterRun = func(engine.RunResult) { afterCalled = true }
+	r.AfterRun = func(engine.RunResult, []engine.Event) error { afterCalled = true; return nil }
 
 	r, _ = r.Update(EventMsg{Event: engine.Event{Type: engine.EvScenarioStarted, Scenario: "s", Time: time.Unix(0, 0)}})
 	if strings.Contains(r.View(), "PASSED") {
