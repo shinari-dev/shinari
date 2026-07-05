@@ -623,6 +623,48 @@ verify:
 	}
 }
 
+func TestBackgroundEventsFlushAtJoin(t *testing.T) {
+	// a background wait_until observes its gate from the goroutine; the event
+	// must be buffered and land in the stream at the join (stop_background),
+	// never written to the shared emitter concurrently with the timeline
+	sut, sc, reg := newWorld(t, `
+apiVersion: shinari/v1
+kind: Scenario
+name: bg-events
+method:
+  - phase: load
+    steps:
+      - run: background
+        with:
+          name: w
+          step: { run: wait_until, with: { probe: { run: sut.echo, with: ok }, equals: ok, timeout: 5, interval: 0.01 } }
+      - { run: sut.status, with: a }
+      - { run: sut.status, with: b }
+      - { run: stop_background, with: w }
+verify:
+  - { run: assert, with: { of: 1, equals: 1 } }
+`)
+	res, rec := run(t, sut, sc, reg)
+	if res.Verdict != ScenarioPassed {
+		t.Fatalf("verdict = %s (%s)", res.Verdict, res.Reason)
+	}
+	gate, join := -1, -1
+	for i, e := range rec.Events {
+		if e.Type == EvGateObserved {
+			gate = i
+		}
+		if e.Type == EvStepStarted && e.Verb == "stop_background" {
+			join = i
+		}
+	}
+	if gate == -1 {
+		t.Fatal("background wait_until's gate event missing from the stream")
+	}
+	if join == -1 || gate < join {
+		t.Fatalf("gate event at %d must flush at the join (stop_background started at %d)", gate, join)
+	}
+}
+
 func TestTeardownDrainsUnstoppedBackground(t *testing.T) {
 	sut, sc, reg := newWorld(t, `
 apiVersion: shinari/v1

@@ -42,6 +42,7 @@ func (o Options) now() time.Time {
 type bgHandle struct {
 	cancel context.CancelFunc
 	done   chan struct{}
+	events *Recorder // events the background step emitted; flushed at the join
 	result sdk.VerbResult
 	err    error
 }
@@ -150,6 +151,30 @@ func (r *runner) stopBackgrounds() {
 		h.cancel()
 		<-h.done
 		delete(r.bg, name)
+		r.flushBackground(h)
+	}
+}
+
+// backgroundRunner clones the runner for a background goroutine: it emits into
+// the handle's buffer (replayed into the stream at the join, so event order
+// stays deterministic and the shared emitter is never written concurrently)
+// and carries no background map — a background step cannot start further
+// backgrounds nobody could join.
+func (r *runner) backgroundRunner(em Emitter) *runner {
+	return &runner{
+		reg: r.reg, emit: em, sc: r.sc, opts: r.opts,
+		env: r.env, res: &ScenarioResult{}, limiter: r.limiter,
+	}
+}
+
+// flushBackground replays a joined background's buffered events onto the
+// timeline. Safe: the join (<-h.done) happens-before this read.
+func (r *runner) flushBackground(h *bgHandle) {
+	if h.events == nil {
+		return
+	}
+	for _, e := range h.events.Events {
+		r.emit.Emit(e)
 	}
 }
 
@@ -593,13 +618,17 @@ func (r *runner) execBuiltin(ctx context.Context, name string, args map[string]a
 		if bgName == "" || stepMap == nil {
 			return sdk.VerbResult{}, fmt.Errorf("background needs { name, step }")
 		}
+		if r.bg == nil {
+			return sdk.VerbResult{}, fmt.Errorf("background cannot start inside a background step")
+		}
 		bgCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-		h := &bgHandle{cancel: cancel, done: make(chan struct{})}
+		h := &bgHandle{cancel: cancel, done: make(chan struct{}), events: &Recorder{}}
 		r.bg[bgName] = h
 		bgScope := r.snapshotScope() // immutable; never the live maps the timeline writes
+		br := r.backgroundRunner(h.events)
 		go func() {
 			defer close(h.done)
-			h.result, h.err = r.execStepMap(bgCtx, stepMap, bgScope)
+			h.result, h.err = br.execStepMap(bgCtx, stepMap, bgScope)
 		}()
 		return sdk.VerbResult{}, nil
 
@@ -612,6 +641,7 @@ func (r *runner) execBuiltin(ctx context.Context, name string, args map[string]a
 		h.cancel()
 		<-h.done
 		delete(r.bg, bgName)
+		r.flushBackground(h)
 		if h.err != nil {
 			// A canceled load generator is the expected shape; surface its
 			// output, not a failure.

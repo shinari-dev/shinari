@@ -57,8 +57,10 @@ func (d Drift) Report(w io.Writer) error {
 
 // Reconcile diffs the observed findings of a run against the golden, by id. A
 // finding that now passes (NowPasses) is excluded: core already flips the run
-// for that, and it is not an acknowledged active gap.
-func Reconcile(g File, observed []engine.FindingRecord) Drift {
+// for that, and it is not an acknowledged active gap. The diff is scoped to
+// ran: a ledger entry for a scenario outside this run (targeted or
+// tag-filtered) was never given a chance to be observed, so it is not drift.
+func Reconcile(g File, observed []engine.FindingRecord, ran map[string]bool) Drift {
 	want := map[string]Entry{}
 	for _, e := range g.Findings {
 		want[e.ID] = e
@@ -75,7 +77,7 @@ func Reconcile(g File, observed []engine.FindingRecord) Drift {
 		}
 	}
 	for id, e := range want {
-		if !seen[id] {
+		if !seen[id] && ran[e.Scenario] {
 			d.Missing = append(d.Missing, e)
 		}
 	}
@@ -93,6 +95,22 @@ func FromObserved(observed []engine.FindingRecord) File {
 		}
 		f.Findings = append(f.Findings, Entry{ID: r.ID, Scenario: r.Scenario, Narrative: r.Narrative})
 	}
+	sort.Slice(f.Findings, func(i, j int) bool { return f.Findings[i].ID < f.Findings[j].ID })
+	return f
+}
+
+// Merge folds a run's observed active findings into an existing ledger:
+// entries of scenarios that ran are replaced by what the run observed, entries
+// of scenarios outside the run scope are kept. A full run therefore rebuilds
+// the whole file; a targeted run refreshes only its own scenarios.
+func Merge(prev File, observed []engine.FindingRecord, ran map[string]bool) File {
+	var f File
+	for _, e := range prev.Findings {
+		if !ran[e.Scenario] {
+			f.Findings = append(f.Findings, e)
+		}
+	}
+	f.Findings = append(f.Findings, FromObserved(observed).Findings...)
 	sort.Slice(f.Findings, func(i, j int) bool { return f.Findings[i].ID < f.Findings[j].ID })
 	return f
 }

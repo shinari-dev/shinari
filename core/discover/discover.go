@@ -47,47 +47,59 @@ func Load(dir string) (*Set, error) {
 		if rerr != nil {
 			return rerr
 		}
-		h, ok, herr := model.ParseHeader(data)
-		if !ok {
-			return nil // not a Shinari resource: silently ignored
-		}
-		if herr != nil {
-			errs = append(errs, herr.Error()+" ("+path+")")
-			return nil
-		}
-		switch h.Kind {
-		case model.KindProject:
-			p, perr := model.ParseProject(data, path)
-			if perr != nil {
-				errs = append(errs, perr.Error())
-				return nil
+		for _, doc := range splitDocs(data) {
+			h, ok, herr := model.ParseHeader(doc)
+			if !ok {
+				continue // not a Shinari resource: silently ignored
 			}
-			if set.Project != nil {
-				errs = append(errs, fmt.Sprintf("two kind: Project resources found: %s and %s — a project has exactly one root", set.Project.File, path))
-				return nil
+			if herr != nil {
+				errs = append(errs, herr.Error()+" ("+path+")")
+				continue
 			}
-			p.Dir = filepath.Dir(path)
-			set.Project = p
-		case model.KindScenario:
-			sc, serr := model.ParseScenario(data, path)
-			if serr != nil {
-				errs = append(errs, serr.Error())
-				return nil
+			switch h.Kind {
+			case model.KindProject:
+				p, perr := model.ParseProject(doc, path)
+				if perr != nil {
+					errs = append(errs, perr.Error())
+					continue
+				}
+				if set.Project != nil {
+					errs = append(errs, fmt.Sprintf("two kind: Project resources found: %s and %s — a project has exactly one root", set.Project.File, path))
+					continue
+				}
+				p.Dir = filepath.Dir(path)
+				set.Project = p
+			case model.KindScenario:
+				sc, serr := model.ParseScenario(doc, path)
+				if serr != nil {
+					errs = append(errs, serr.Error())
+					continue
+				}
+				sc.Suite = suiteOf(dir, path)
+				set.Scenarios = append(set.Scenarios, sc)
+			case model.KindProvider:
+				pd, derr := model.ParseProviderDef(doc, path)
+				if derr != nil {
+					errs = append(errs, derr.Error())
+					continue
+				}
+				set.Providers = append(set.Providers, pd)
 			}
-			sc.Suite = suiteOf(dir, path)
-			set.Scenarios = append(set.Scenarios, sc)
-		case model.KindProvider:
-			pd, derr := model.ParseProviderDef(data, path)
-			if derr != nil {
-				errs = append(errs, derr.Error())
-				return nil
-			}
-			set.Providers = append(set.Providers, pd)
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	// Scenario names are run targets and the findings-ledger identity, so a
+	// duplicate is ambiguity, not convention.
+	byName := map[string]string{}
+	for _, sc := range set.Scenarios {
+		if prev, dup := byName[sc.Name]; dup {
+			errs = append(errs, fmt.Sprintf("two scenarios named %q: %s and %s — scenario names must be unique", sc.Name, prev, sc.File))
+			continue
+		}
+		byName[sc.Name] = sc.File
 	}
 	if len(errs) > 0 {
 		return set, fmt.Errorf("discovery found %d invalid resource(s):\n  - %s", len(errs), strings.Join(errs, "\n  - "))
@@ -96,6 +108,32 @@ func Load(dir string) (*Set, error) {
 		return set, fmt.Errorf("no kind: Project resource found under %s — a project root is required", dir)
 	}
 	return set, nil
+}
+
+// splitDocs cuts a file into its YAML documents on `---` separator lines.
+// A bare `---` at column 0 cannot occur inside indented block content, so a
+// text-level split is safe and keeps each document's bytes intact for the
+// per-kind parsers.
+func splitDocs(data []byte) [][]byte {
+	lines := strings.Split(string(data), "\n")
+	var docs [][]byte
+	var cur []string
+	flush := func() {
+		if len(cur) > 0 {
+			docs = append(docs, []byte(strings.Join(cur, "\n")))
+		}
+		cur = nil
+	}
+	for _, line := range lines {
+		rest, isSep := strings.CutPrefix(line, "---")
+		if isSep && (rest == "" || rest[0] == ' ' || rest[0] == '\t') {
+			flush()
+			continue
+		}
+		cur = append(cur, line)
+	}
+	flush()
+	return docs
 }
 
 // suiteOf derives the organizational suite of a scenario: the first

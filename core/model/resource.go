@@ -7,6 +7,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -43,10 +44,14 @@ func (h Header) Recognized() bool {
 
 // ParseHeader decodes only the header fields from raw YAML. It returns
 // ok=false (and no error) when the document is not a Shinari resource.
+// A document that carries the apiVersion marker but is not parseable YAML
+// is ours-but-broken: ok=true with the parse error, never a silent skip.
 func ParseHeader(data []byte) (Header, bool, error) {
 	var h Header
 	if err := yaml.Unmarshal(data, &h); err != nil {
-		// Not even YAML we can read a header from: not a resource.
+		if carriesMarker(data) {
+			return Header{}, true, fmt.Errorf("malformed YAML in a file marked apiVersion: %s: %w", APIVersionV1, err)
+		}
 		return Header{}, false, nil
 	}
 	if !h.Recognized() {
@@ -56,4 +61,16 @@ func ParseHeader(data []byte) (Header, bool, error) {
 		return h, true, fmt.Errorf("resource kind %s is missing required field 'name'", h.Kind)
 	}
 	return h, true, nil
+}
+
+// carriesMarker line-scans raw bytes for the apiVersion marker, so a syntax
+// error elsewhere in the file cannot demote a Shinari resource to "not ours".
+func carriesMarker(data []byte) bool {
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "apiVersion:") && strings.Contains(trimmed, APIVersionV1) {
+			return true
+		}
+	}
+	return false
 }

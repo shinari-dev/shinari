@@ -176,6 +176,22 @@ func TestHeaderRecognition(t *testing.T) {
 	}
 }
 
+func TestMarkedButUnparseableIsError(t *testing.T) {
+	// bad indent under steadyState: yaml.Unmarshal fails, but the apiVersion
+	// marker says the file is ours — it must error, not vanish.
+	broken := "apiVersion: shinari/v1\nkind: Scenario\nname: bad\nsteadyState:\n- run: assert\n   with: { of: 1 }\n"
+	_, ok, err := ParseHeader([]byte(broken))
+	if !ok || err == nil {
+		t.Fatalf("marked but unparseable file must be ok=true with error, got ok=%v err=%v", ok, err)
+	}
+	// the same syntax error without the marker stays silently ignored
+	foreign := "services:\n- app\n   image: nginx\n"
+	_, ok, err = ParseHeader([]byte(foreign))
+	if ok || err != nil {
+		t.Fatalf("unmarked unparseable file must stay ignored, got ok=%v err=%v", ok, err)
+	}
+}
+
 func TestRecognizedButNamelessIsError(t *testing.T) {
 	_, ok, err := ParseHeader([]byte("apiVersion: shinari/v1\nkind: Scenario\n"))
 	if !ok || err == nil {

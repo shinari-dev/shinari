@@ -15,7 +15,7 @@ import (
 func TestReconcileMatch(t *testing.T) {
 	g := File{Findings: []Entry{{ID: "sha-a", Scenario: "s", Narrative: "gap"}}}
 	obs := []engine.FindingRecord{{ID: "sha-a", Scenario: "s", Narrative: "gap"}}
-	if d := Reconcile(g, obs); !d.Empty() {
+	if d := Reconcile(g, obs, map[string]bool{"s": true}); !d.Empty() {
 		t.Fatalf("expected no drift, got %+v", d)
 	}
 }
@@ -23,7 +23,7 @@ func TestReconcileMatch(t *testing.T) {
 func TestReconcileUnexpected(t *testing.T) {
 	g := File{}
 	obs := []engine.FindingRecord{{ID: "sha-new", Scenario: "s", Narrative: "new gap"}}
-	d := Reconcile(g, obs)
+	d := Reconcile(g, obs, map[string]bool{"s": true})
 	if len(d.Unexpected) != 1 || d.Unexpected[0].ID != "sha-new" {
 		t.Fatalf("expected 1 unexpected finding, got %+v", d)
 	}
@@ -31,16 +31,25 @@ func TestReconcileUnexpected(t *testing.T) {
 
 func TestReconcileMissing(t *testing.T) {
 	g := File{Findings: []Entry{{ID: "sha-gone", Scenario: "s", Narrative: "old gap"}}}
-	d := Reconcile(g, nil)
+	d := Reconcile(g, nil, map[string]bool{"s": true})
 	if len(d.Missing) != 1 || d.Missing[0].ID != "sha-gone" {
 		t.Fatalf("expected 1 missing finding, got %+v", d)
+	}
+}
+
+func TestReconcileScopedToRanScenarios(t *testing.T) {
+	// the ledger holds a finding for a scenario that was not part of this
+	// (targeted or tag-filtered) run: that is not drift
+	g := File{Findings: []Entry{{ID: "sha-elsewhere", Scenario: "other", Narrative: "gap"}}}
+	if d := Reconcile(g, nil, map[string]bool{"s": true}); !d.Empty() {
+		t.Fatalf("a ledger entry outside the run scope must not be missing drift, got %+v", d)
 	}
 }
 
 func TestReconcileIgnoresNowPasses(t *testing.T) {
 	g := File{}
 	obs := []engine.FindingRecord{{ID: "sha-x", Scenario: "s", NowPasses: true}}
-	if d := Reconcile(g, obs); !d.Empty() {
+	if d := Reconcile(g, obs, map[string]bool{"s": true}); !d.Empty() {
 		t.Fatalf("a now-passing finding must not count as unexpected drift, got %+v", d)
 	}
 }
@@ -54,6 +63,18 @@ func TestFromObservedSortedAndSkipsNowPasses(t *testing.T) {
 	f := FromObserved(obs)
 	if len(f.Findings) != 2 || f.Findings[0].ID != "sha-a" || f.Findings[1].ID != "sha-b" {
 		t.Fatalf("expected 2 entries sorted by id, got %+v", f.Findings)
+	}
+}
+
+func TestMergeKeepsEntriesOutsideRunScope(t *testing.T) {
+	prev := File{Findings: []Entry{
+		{ID: "sha-keep", Scenario: "other", Narrative: "gap elsewhere"},
+		{ID: "sha-stale", Scenario: "s", Narrative: "refreshed away"},
+	}}
+	obs := []engine.FindingRecord{{ID: "sha-new", Scenario: "s", Narrative: "fresh gap"}}
+	f := Merge(prev, obs, map[string]bool{"s": true})
+	if len(f.Findings) != 2 || f.Findings[0].ID != "sha-keep" || f.Findings[1].ID != "sha-new" {
+		t.Fatalf("targeted -u must keep other scenarios' entries and refresh its own, got %+v", f.Findings)
 	}
 }
 

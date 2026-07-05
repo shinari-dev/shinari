@@ -242,8 +242,15 @@ func (r *Registry) bodyKind(inst *Instance, verbName string, cv model.ComposedVe
 			continue
 		}
 		if !strings.Contains(st.Run, ".") {
-			if st.Run == "assert" {
-				sawAssert = true
+			// Builtin leaves carry specs too: a body of background+exec.run is
+			// an action with side effects, not a probe dry-run would execute.
+			if spec, ok := r.builtins[st.Run]; ok {
+				if spec.SideEffects {
+					sawMutation = true
+				}
+				if spec.Kind == sdk.KindAssertion {
+					sawAssert = true
+				}
 			}
 			continue
 		}

@@ -112,8 +112,10 @@ func cmdRun(dir, color, out, envFile string, targets []string, dryRun, keepUp, v
 	exit := res.Verdict().ExitCode()
 
 	var observed []engine.FindingRecord
+	ran := map[string]bool{}
 	for _, sc := range res.Scenarios {
 		observed = append(observed, sc.Findings...)
+		ran[sc.Name] = true
 	}
 	if record {
 		hrec := history.Record{
@@ -147,22 +149,22 @@ func cmdRun(dir, color, out, envFile string, targets []string, dryRun, keepUp, v
 
 	goldenPath := filepath.Join(set.Root, "shinari.findings.yml")
 
+	g, exists, gerr := golden.Load(goldenPath)
+	if gerr != nil {
+		fmt.Fprintln(stderr, gerr)
+		return 2
+	}
+
 	if update {
-		if werr := golden.Write(goldenPath, golden.FromObserved(observed)); werr != nil {
+		if werr := golden.Write(goldenPath, golden.Merge(g, observed, ran)); werr != nil {
 			fmt.Fprintln(stderr, werr)
 			return 2
 		}
 		fmt.Fprintln(stdout, pal.Dim("findings ledger updated → "+goldenPath))
 		return exit
 	}
-
-	g, exists, gerr := golden.Load(goldenPath)
-	if gerr != nil {
-		fmt.Fprintln(stderr, gerr)
-		return 2
-	}
 	if exists {
-		if drift := golden.Reconcile(g, observed); !drift.Empty() {
+		if drift := golden.Reconcile(g, observed, ran); !drift.Empty() {
 			fmt.Fprintln(stdout, pal.Bold("findings ledger drift:"))
 			_ = drift.Report(stdout)
 			if exit == 0 {

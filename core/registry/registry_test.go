@@ -198,6 +198,37 @@ func TestComposedKindInference(t *testing.T) {
 	}
 }
 
+func TestComposedKindInferenceSeesBuiltinLeaves(t *testing.T) {
+	// a fault macro whose body is only builtins (background wrapping a leaf)
+	// must infer action-with-side-effects, or dry-run would execute it
+	set := loadSet(t, map[string]string{
+		"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: p\n",
+		"providers/fault.yml": `apiVersion: shinari/v1
+kind: Provider
+name: fault
+verbs:
+  inject:
+    params: [target]
+    do:
+      - { run: background, with: { name: f, step: { run: http.post, with: { path: "/chaos/${.params.target}" } } } }
+`,
+	})
+	r, err := New(set, map[string]model.ProviderConfig{
+		"http":  {},
+		"fault": {Use: "./providers/fault"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := r.Resolve("fault.inject")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Spec.Kind != sdk.KindAction || !res.Spec.SideEffects {
+		t.Fatalf("fault.inject inferred %s (sideEffects=%v), want action with side effects", res.Spec.Kind, res.Spec.SideEffects)
+	}
+}
+
 func TestMacroNestingBounded(t *testing.T) {
 	set := loadSet(t, map[string]string{
 		"project.yml": "apiVersion: shinari/v1\nkind: Project\nname: p\n",

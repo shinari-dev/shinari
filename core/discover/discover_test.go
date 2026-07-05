@@ -82,6 +82,43 @@ func TestMalformedMarkedFileIsErrorNotSkip(t *testing.T) {
 	}
 }
 
+func TestMultiDocFileYieldsAllResources(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "project.yml", minimalProject)
+	write(t, dir, "scenarios/pair.yml",
+		"---\napiVersion: shinari/v1\nkind: Scenario\nname: first\n---\napiVersion: shinari/v1\nkind: Scenario\nname: second\n")
+	set, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Scenarios) != 2 {
+		t.Fatalf("want both documents discovered, got %d scenario(s)", len(set.Scenarios))
+	}
+}
+
+func TestUnparseableMarkedFileIsErrorNotSkip(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "project.yml", minimalProject)
+	// recognized marker, YAML syntax error (bad indent): must error, not vanish
+	write(t, dir, "scenarios/broken.yml",
+		"apiVersion: shinari/v1\nkind: Scenario\nname: broken\nsetup:\n- run: assert\n   with: { of: 1 }\n")
+	_, err := Load(dir)
+	if err == nil || !strings.Contains(err.Error(), "broken.yml") {
+		t.Fatalf("want unparseable-resource error naming the file, got %v", err)
+	}
+}
+
+func TestDuplicateScenarioNamesIsError(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "project.yml", minimalProject)
+	write(t, dir, "scenarios/a.yml", "apiVersion: shinari/v1\nkind: Scenario\nname: twin\n")
+	write(t, dir, "scenarios/b.yml", "apiVersion: shinari/v1\nkind: Scenario\nname: twin\n")
+	_, err := Load(dir)
+	if err == nil || !strings.Contains(err.Error(), "twin") {
+		t.Fatalf("want duplicate-name error, got %v", err)
+	}
+}
+
 func TestTwoProjectsIsError(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "project.yml", minimalProject)
