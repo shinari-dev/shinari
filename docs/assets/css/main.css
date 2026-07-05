@@ -812,3 +812,52 @@ h2:hover .hanchor, h3:hover .hanchor { opacity: 1; }
   .hero::before { animation: none; }
   *, *::before, *::after { transition: none !important; }
 }
+
+/* ---------- copy-to-clipboard button ---------- */
+
+.has-copy { position: relative; }
+
+.copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text-soft);
+  background: var(--panel-soft);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.has-copy:hover .copy-btn,
+.copy-btn:focus-visible { opacity: 1; }
+
+.copy-btn:hover {
+  color: var(--ember-soft);
+  border-color: var(--ember);
+  background: var(--ember-wash);
+}
+
+.copy-btn.copied { color: var(--pass); border-color: var(--pass); background: var(--panel-soft); opacity: 1; }
+.copy-btn.copy-fail { color: var(--amber); border-color: var(--amber); background: var(--panel-soft); opacity: 1; }
+
+.copy-btn svg { display: block; }
+
+/* Bar-less blocks (markdown fences, the hero one-liner) have no title bar to
+   hold the button, so reserve room on the right so it never sits on top of the
+   code. Panels with a bar (.code-panel/.terminal) don't need it. */
+.highlight.has-copy pre,
+pre.has-copy { padding-right: 3rem; }
+
+/* touch devices have no hover, so keep the button discoverable */
+@media (hover: none) {
+  .copy-btn { opacity: 0.6; }
+}

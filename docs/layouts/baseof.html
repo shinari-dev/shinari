@@ -5,5 +5,8 @@
   {{ partial "header.html" . }}
   {{ block "main" . }}{{ end }}
   {{ partial "footer.html" . }}
+  {{ with resources.Get "js/copy-code.js" | minify | fingerprint }}
+  <script src="{{ .RelPermalink }}" defer></script>
+  {{ end }}
 </body>
 </html>
