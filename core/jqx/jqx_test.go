@@ -4,8 +4,10 @@
 package jqx
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestEvalWithMetaVariable(t *testing.T) {
@@ -49,6 +51,31 @@ func TestYAMLIntNormalized(t *testing.T) {
 	v, err := Eval(".n", map[string]any{"n": 5})
 	if err != nil || v != float64(5) {
 		t.Fatalf("got %v (%T), %v", v, v, err)
+	}
+}
+
+func TestNormalizeProviderShapedValues(t *testing.T) {
+	// typed values a provider may hand back must not make gojq fail opaquely
+	if v, err := Eval(". + 1", int32(3)); err != nil || v != float64(4) {
+		t.Errorf("int32: got %v, %v", v, err)
+	}
+	if v, err := Eval(". + 1", uint(3)); err != nil || v != float64(4) {
+		t.Errorf("uint: got %v, %v", v, err)
+	}
+	if v, err := Eval(". * 2", float32(1.5)); err != nil || v != float64(3) {
+		t.Errorf("float32: got %v, %v", v, err)
+	}
+	if v, err := Eval(". * 2", json.Number("2.5")); err != nil || v != float64(5) {
+		t.Errorf("json.Number: got %v, %v", v, err)
+	}
+	if v, err := Eval("length", []string{"a", "b"}); err != nil || v != 2 {
+		t.Errorf("[]string: got %v, %v", v, err)
+	}
+	if v, err := Eval(".k", map[string]string{"k": "v"}); err != nil || v != "v" {
+		t.Errorf("map[string]string: got %v, %v", v, err)
+	}
+	if _, err := Eval("length", time.Now()); err != nil {
+		t.Errorf("time.Time must normalize to a string, got %v", err)
 	}
 }
 

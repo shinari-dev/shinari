@@ -7,6 +7,7 @@
 package interp
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -15,10 +16,13 @@ import (
 	"github.com/shinari-dev/shinari/utils/conv"
 )
 
-// refRe matches a ${ jq } reference. The jq body cannot contain a literal `}`
-// (so jq object construction like ${ {a: .x} } is unsupported in interpolation);
-// reach for those shapes in a read:/capture: step instead.
-var refRe = regexp.MustCompile(`\$\{([^}]*)\}`)
+// refRe matches a ${ jq } reference, optionally escaped by a second dollar:
+// `$${...}` renders as the literal `${...}` with no evaluation, so shell
+// snippets and template payloads can carry shell-style `${VAR}`. The jq body
+// cannot contain a literal `}` (so jq object construction like ${ {a: .x} }
+// is unsupported in interpolation); reach for those shapes in a
+// read:/capture: step instead.
+var refRe = regexp.MustCompile(`\$?\$\{([^}]*)\}`)
 
 // Scope resolves references. The jq input document has one key per namespace:
 // vars (project + scenario vars), outputs (author-named step results), env
@@ -48,10 +52,14 @@ func (sc Scope) root() map[string]any {
 	}
 }
 
-// Refs returns every ${...} expression in s, in order.
+// Refs returns every ${...} expression in s, in order. Escaped `$${...}`
+// literals are not references.
 func Refs(s string) []string {
 	var out []string
 	for _, m := range refRe.FindAllStringSubmatch(s, -1) {
+		if strings.HasPrefix(m[0], "$$") {
+			continue
+		}
 		out = append(out, m[1])
 	}
 	return out
@@ -64,6 +72,9 @@ func (sc Scope) String(s string) (string, error) {
 	var firstErr error
 	root := sc.root()
 	out := refRe.ReplaceAllStringFunc(s, func(m string) string {
+		if strings.HasPrefix(m, "$$") {
+			return m[1:] // escaped: drop one dollar, evaluate nothing
+		}
 		expr := m[2 : len(m)-1]
 		v, err := jqx.Eval(expr, root)
 		if err != nil {
@@ -72,7 +83,7 @@ func (sc Scope) String(s string) (string, error) {
 			}
 			return m
 		}
-		return Stringify(v)
+		return stringifyEmbedded(v)
 	})
 	return out, firstErr
 }
@@ -81,7 +92,7 @@ func (sc Scope) String(s string) (string, error) {
 // is exactly one ${...} (`with: ${.outputs.job}`); otherwise it behaves like String.
 func (sc Scope) Value(s string) (any, error) {
 	trimmed := strings.TrimSpace(s)
-	if m := refRe.FindStringSubmatch(trimmed); m != nil && m[0] == trimmed {
+	if m := refRe.FindStringSubmatch(trimmed); m != nil && m[0] == trimmed && !strings.HasPrefix(trimmed, "$$") {
 		return jqx.Eval(m[1], sc.root())
 	}
 	return sc.String(s)
@@ -118,4 +129,18 @@ func (sc Scope) Any(v any) (any, error) {
 }
 
 // Stringify renders a value the way interpolation embeds it.
-func Stringify(v any) string { return conv.ToString(v) }
+func Stringify(v any) string { return stringifyEmbedded(v) }
+
+// stringifyEmbedded renders a jq result inside a larger string: scalars as
+// plain text, maps and lists as JSON — whatever consumes the string (an HTTP
+// body, an exec argv) gets JSON, never Go's fmt rendering (`map[a:1]`).
+func stringifyEmbedded(v any) string {
+	switch v.(type) {
+	case nil, string, bool, int, int64, float64:
+		return conv.ToString(v)
+	}
+	if b, err := json.Marshal(v); err == nil {
+		return string(b)
+	}
+	return conv.ToString(v)
+}

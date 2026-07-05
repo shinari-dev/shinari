@@ -51,3 +51,30 @@ func TestInvalidJQIsError(t *testing.T) {
 		t.Fatal("want error for invalid jq expression")
 	}
 }
+
+func TestEscapedDollarBraceIsLiteral(t *testing.T) {
+	// shell-style ${VAR} in an exec snippet: escape with a second dollar
+	got, err := scope().String("echo $${HOME} for ${.vars.job}")
+	if err != nil || got != "echo ${HOME} for sleep-1" {
+		t.Fatalf("got %q err %v", got, err)
+	}
+	if refs := Refs("run $${PATH} then ${.vars.n}"); len(refs) != 1 || refs[0] != ".vars.n" {
+		t.Fatalf("escaped literals must not count as references, got %v", refs)
+	}
+	// a whole-string escaped literal stays a string, not a jq eval
+	v, err := scope().Value("$${HOME}")
+	if err != nil || v != "${HOME}" {
+		t.Fatalf("v = %v err %v", v, err)
+	}
+}
+
+func TestNonScalarEmbedsAsJSON(t *testing.T) {
+	sc := Scope{Vars: map[string]any{
+		"m": map[string]any{"a": 1.0},
+		"l": []any{"a", "b"},
+	}}
+	got, err := sc.String(`m is ${.vars.m} and l is ${.vars.l}`)
+	if err != nil || got != `m is {"a":1} and l is ["a","b"]` {
+		t.Fatalf("got %q err %v", got, err)
+	}
+}

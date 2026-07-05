@@ -43,6 +43,10 @@ func TestCheckOperators(t *testing.T) {
 		{5, "lte", 4, false},
 		{5, "between", []any{1, 10}, true},
 		{50, "between", []any{1, 10}, false},
+		{nil, "equals", nil, true},     // explicit null asserts absence
+		{nil, "equals", "", false},     // a typo'd reference must not pass equals ""
+		{"", "equals", nil, false},     // and the mirror image
+		{nil, "notEquals", nil, false}, // null is null
 	}
 	for _, c := range cases {
 		got, msg, err := Check(c.of, c.op, c.operand)
@@ -66,6 +70,24 @@ func TestCheckBadOperands(t *testing.T) {
 	if _, _, err := Check("abc", "gt", "def"); err == nil {
 		t.Error("gt on non-numbers must error")
 	}
+	if _, _, err := Check(5, "between", []any{10, 1}); err == nil || !strings.Contains(err.Error(), "reversed") {
+		t.Errorf("reversed between bounds must error, got %v", err)
+	}
+	if _, _, err := Check(map[string]any{"a": 1}, "contains", "a:1"); err == nil {
+		t.Error("contains on a map must error, not substring-match its fmt rendering")
+	}
+}
+
+func TestAssertOfIsRequired(t *testing.T) {
+	for _, a := range Specs()["assert"].Args {
+		if a.Name == "of" {
+			if !a.Required {
+				t.Fatal("assert's `of` must be required — a missing of compares nil and passes vacuously")
+			}
+			return
+		}
+	}
+	t.Fatal("assert spec has no `of` arg")
 }
 
 func TestSpecsCoverLanguage(t *testing.T) {

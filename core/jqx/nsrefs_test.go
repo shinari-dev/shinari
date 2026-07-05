@@ -37,6 +37,17 @@ func TestNSRefs(t *testing.T) {
 
 		// distinct, in source order.
 		{".vars.a + .vars.a + .vars.b", []Ref{{"vars", "a"}, {"vars", "b"}}},
+
+		// refs inside if/object/unary/try/reduce/foreach read the root too —
+		// they used to be invisible to the validator.
+		{"if .vars.x then 1 else 2 end", []Ref{{"vars", "x"}}},
+		{"if .vars.x then .outputs.a else .outputs.b end",
+			[]Ref{{"vars", "x"}, {"outputs", "a"}, {"outputs", "b"}}},
+		{"{a: .vars.x}", []Ref{{"vars", "x"}}},
+		{"-.vars.n", []Ref{{"vars", "n"}}},
+		{"try .vars.x catch .vars.y", []Ref{{"vars", "x"}, {"vars", "y"}}},
+		{"reduce .outputs.runs[] as $r (0; . + 1)", []Ref{{"outputs", "runs"}}},
+		{"foreach .outputs.runs[] as $r (0; . + 1)", []Ref{{"outputs", "runs"}}},
 	}
 	for _, c := range cases {
 		got := NSRefs(c.expr)

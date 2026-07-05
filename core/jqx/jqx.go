@@ -20,7 +20,9 @@
 package jqx
 
 import (
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/itchyny/gojq"
 )
@@ -103,6 +105,45 @@ func NSRefs(expr string) []Ref {
 			if t.Array != nil {
 				walkQuery(t.Array.Query, root) // [EXPR]: EXPR reads the same input
 			}
+		case gojq.TermTypeUnary:
+			if t.Unary != nil {
+				walkTerm(t.Unary.Term, root) // -.vars.n reads the same input
+			}
+		case gojq.TermTypeIf:
+			if t.If != nil {
+				// cond, then, elif, else all evaluate against the same input
+				walkQuery(t.If.Cond, root)
+				walkQuery(t.If.Then, root)
+				for _, e := range t.If.Elif {
+					walkQuery(e.Cond, root)
+					walkQuery(e.Then, root)
+				}
+				walkQuery(t.If.Else, root)
+			}
+		case gojq.TermTypeObject:
+			if t.Object != nil {
+				// {a: .vars.x}: every key/value query reads the same input
+				for _, kv := range t.Object.KeyVals {
+					walkQuery(kv.KeyQuery, root)
+					walkQuery(kv.Val, root)
+				}
+			}
+		case gojq.TermTypeTry:
+			if t.Try != nil {
+				walkQuery(t.Try.Body, root)
+				walkQuery(t.Try.Catch, root)
+			}
+		case gojq.TermTypeReduce:
+			if t.Reduce != nil {
+				// the source and init read the input; update rebinds `.`
+				walkQuery(t.Reduce.Query, root)
+				walkQuery(t.Reduce.Start, root)
+			}
+		case gojq.TermTypeForeach:
+			if t.Foreach != nil {
+				walkQuery(t.Foreach.Query, root)
+				walkQuery(t.Foreach.Start, root)
+			}
 		}
 	}
 	walkQuery(q, true)
@@ -146,14 +187,54 @@ func EvalWith(expr string, value any, vars map[string]any) (any, error) {
 	return v, nil
 }
 
-// normalize converts Go values gojq rejects (int, map[any]any from YAML)
-// into JSON-shaped equivalents.
+// normalize converts Go values gojq rejects (small ints, typed slices/maps a
+// provider may return, map[any]any from YAML) into JSON-shaped equivalents.
 func normalize(v any) any {
 	switch t := v.(type) {
 	case int:
 		return float64(t)
+	case int8:
+		return float64(t)
+	case int16:
+		return float64(t)
+	case int32:
+		return float64(t)
 	case int64:
 		return float64(t)
+	case uint:
+		return float64(t)
+	case uint8:
+		return float64(t)
+	case uint16:
+		return float64(t)
+	case uint32:
+		return float64(t)
+	case uint64:
+		return float64(t)
+	case float32:
+		return float64(t)
+	case json.Number:
+		f, err := t.Float64()
+		if err != nil {
+			return t.String()
+		}
+		return f
+	case time.Time:
+		return t.Format(time.RFC3339Nano)
+	case time.Duration:
+		return float64(t.Milliseconds())
+	case []string:
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = e
+		}
+		return out
+	case map[string]string:
+		out := make(map[string]any, len(t))
+		for k, e := range t {
+			out[k] = e
+		}
+		return out
 	case []any:
 		out := make([]any, len(t))
 		for i, e := range t {

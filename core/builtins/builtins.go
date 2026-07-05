@@ -36,7 +36,7 @@ func isOperator(k string) bool {
 // the timeline: nested probes, goroutines), not in a provider.
 func Specs() map[string]sdk.VerbSpec {
 	ops := make([]sdk.ArgSpec, 0, len(Operators)+1)
-	ops = append(ops, sdk.ArgSpec{Name: "of", Type: "any"})
+	ops = append(ops, sdk.ArgSpec{Name: "of", Type: "any", Required: true})
 	for _, op := range Operators {
 		ops = append(ops, sdk.ArgSpec{Name: op, Type: "any"})
 	}
@@ -145,6 +145,10 @@ func Check(of any, op string, operand any) (bool, string, error) {
 		if !aok || !lok || !hok {
 			return false, "", fmt.Errorf("'between' needs numbers, got %v in %v", of, operand)
 		}
+		if lo > hi {
+			// swapped bounds would be a permanently-failing check with no diagnostic
+			return false, "", fmt.Errorf("'between' bounds are reversed: [%v, %v]", bounds[0], bounds[1])
+		}
 		return a >= lo && a <= hi, failMsg(of, "between", operand), nil
 	default:
 		return false, "", fmt.Errorf("unknown assert operator %q", op)
@@ -152,8 +156,12 @@ func Check(of any, op string, operand any) (bool, string, error) {
 }
 
 // eq applies the comparison coercion: numeric when both sides parse as numbers,
-// else string comparison.
+// else string comparison. nil equals only an explicit null — never "" — so a
+// typo'd reference (jq yields null) cannot satisfy `equals: ""`.
 func eq(a, b any) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
 	if an, aok := conv.ToFloat(a); aok {
 		if bn, bok := conv.ToFloat(b); bok {
 			return an == bn
@@ -176,7 +184,9 @@ func contains(of, operand any) (bool, error) {
 	case nil:
 		return false, nil
 	default:
-		return strings.Contains(conv.ToString(of), conv.ToString(operand)), nil
+		// falling back to a substring match over Go's fmt rendering would let
+		// `contains: "a:1"` match the map {a: 1}
+		return false, fmt.Errorf("'contains'/'absent' need a string or list, got %T", of)
 	}
 }
 
