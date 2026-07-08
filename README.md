@@ -210,7 +210,7 @@ scenarios/<suite>/<name>.yml # kind: Scenario
 The [documentation](https://shinari.dev) (source in [`docs/`](docs/)) covers:
 
 - **[Tutorials](docs/content/tutorials)**: getting started, your first scenario, your first finding
-- **[How-to guides](docs/content/how-to)**: network faults, DNS faults, composing providers, running in CI, debugging a run
+- **[How-to guides](docs/content/how-to)**: network faults, DNS faults, composing providers, running in CI, debugging a run, and authoring with Claude Code
 - **[Reference](docs/content/reference)**: every key, verb, and report format
 - **[Concepts](docs/content/concepts)**: the model behind scenarios, findings, and verdicts
 
