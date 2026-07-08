@@ -63,12 +63,13 @@ top-level key is a parse error.
   kind: <action|probe|assertion>  # override the verb's kind (the exec.run escape)
   effect: <outage|degradation>     # declare a fault a polymorphic verb injects
   finding: <string>             # mark this assertion a known, expected gap
+  id: <string>                  # stable finding identity (pins it across edits)
   timeout: <seconds>
   onAbsent: skip                # skip if the verb is not configured
 ```
 
 Reserved envelope keys (the only ones allowed): `run, with, as, read, capture,
-desc, when, onAbsent, skipReason, finding, kind, effect, timeout`. Note `finding:`
+desc, when, onAbsent, skipReason, finding, id, kind, effect, timeout`. Note `finding:`
 is a **step key**, not a `with:` key.
 
 **`when:`** is a jq predicate over the scope (`when: "${.outputs.n > 1}"`),
@@ -136,7 +137,9 @@ resolves the block (core never reads the process environment).
 expected* gap. When it fails it is recorded as `FINDING` and the scenario stays
 **green**. When it starts *passing* (the gap was fixed) the run flips to
 `FAILED` ("promote this to a hard assertion"). `finding:` is only legal on
-assertion-kind checks (rule 5).
+assertion-kind checks (rule 5). A finding's ledger identity is derived from the
+check itself unless you pin it with `id:`; give a long-lived finding a stable
+`id:` so editing its check does not silently mint a new one (rule 15).
 
 **Recovery contract (rule 7).** If method injects an outage fault **and**
 captures an id/work item **and** verify awaits that work, the scenario is
@@ -165,7 +168,7 @@ duplicate-work gap as a finding. See the `worker-killed` example.
 - **[reference.md](reference.md)** — the full catalog: every native provider
   (exec, http, docker, toxiproxy, net, sql, prom, load) with config and verbs,
   every builtin (assert, sleep, wait_until, background, stop_background, sample,
-  parallel, repeat), the assert operators, composed providers, and all fourteen
+  parallel, repeat), the assert operators, composed providers, and all eighteen
   validation rules. Read it instead of reverse-engineering verb signatures from
   Go source.
 - **[template.yml](template.yml)** — an annotated, validate-clean scaffold to

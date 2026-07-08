@@ -4,6 +4,15 @@ Full catalog for writing scenarios. The authoritative source is the provider
 packages under `providers/`, `core/builtins/builtins.go`, and
 `core/validate/validate.go`; this is the distilled version.
 
+## Contents
+
+- Resource headers
+- Project file (`kind: Project`, `env:`, sql drivers, `output:`)
+- Builtins (unprefixed) + assert operators + step guards/side-channels
+- Native providers (exec, http, docker, toxiproxy, net, sql, prom, load)
+- Composed providers (`kind: Provider`)
+- Validation rules
+
 ## Resource headers
 
 Every file starts with a header that decides its kind (recognized by
@@ -42,9 +51,23 @@ providers:
     config: { driver: postgres, dsn: "postgres://localhost/myapp" }
   jobstore:
     use: ./providers/jobstore   # composed provider (YAML macro)
+output:                        # optional: where reports go, which exporters run
+  dir: shinari-out
+  exporters:
+    junit: { enabled: false }  # omit a key = exporter default; enabled: false disables
+    otlp:                      # endpoint/protocol apply to otlp only
+      enabled: true
+      endpoint: 127.0.0.1:4317
+      protocol: grpc           # only grpc is supported
 ```
 
 `sql` drivers: `postgres`, `sqlite`. (Note: `sqlite`, not `sqlite3`.)
+
+`output:` is optional and read by the CLI, not the engine. `dir` is the report
+directory; `exporters` keys are `tsv`, `json`, `junit`, `journal`, `findings`,
+`sarif`, `html`, `otlp` (an unknown key warns, rule 16). Each entry's `enabled:`
+is a pointer: omit it to keep the exporter's built-in default, set `enabled: false`
+to disable. `endpoint`/`protocol` apply to `otlp` only (rules 17, 18).
 
 `env:` is project-level only and shaped like `vars:`: each value is a default,
 the matching process variable overrides it, and a null value (no default) makes
@@ -169,7 +192,9 @@ one level only (rule 4).
 
 ## Validation rules
 
-`./shinari -p <dir> validate` runs these (Error blocks, Warn informs):
+`./shinari -p <dir> validate` runs these (Error blocks, Warn informs). Rule 1
+(header recognition) and the parse half of rule 2 (reserved envelope keys)
+surface earlier as parse errors, so the table starts at rule 2.
 
 | Rule | Checks |
 |---|---|
@@ -186,3 +211,7 @@ one level only (rule 4).
 | 12 | no `.outputs.` reference to a capture bound only in a sibling `parallel` branch |
 | 13 | `repeat`: `times >= 1`, non-empty `do:`, no `finding:` in the body, background started in the body is also stopped there |
 | 14 | every `tags:` entry matches `[A-Za-z0-9_./-]+` (error); no duplicate tag (warn) |
+| 15 | a `finding:` without an explicit `id:` warns: its ledger identity is derived from the check and changes if you edit it, so add `id:` to pin a long-lived finding |
+| 16 | project `output.exporters` has no unknown exporter key (warn) |
+| 17 | `output.exporters.otlp` enabled must carry an `endpoint` |
+| 18 | `output.exporters.otlp` `protocol` is `grpc` (the only supported value) |

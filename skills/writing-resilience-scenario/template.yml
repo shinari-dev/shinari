@@ -68,6 +68,9 @@ verify:
     with: { of: "${.outputs.underFault.value.errorRate}", equals: 0 }
     desc: "no requests dropped during the outage"
     finding: "the api drops in-flight requests when the db is killed; needs connection retry before this is a hard assertion"
+    # id: pins the finding's ledger identity so editing the check above does not
+    # silently mint a new finding (rule 15 warns when it is absent).
+    id: api-drops-inflight-on-db-kill
 
 # teardown always runs; if omitted it defaults to [docker.down].
 teardown:
