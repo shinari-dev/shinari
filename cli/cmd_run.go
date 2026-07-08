@@ -189,7 +189,7 @@ func writeReports(plan outputPlan, res engine.RunResult, events []engine.Event) 
 		"journal":  func(w io.Writer) error { return render.Journal(w, events) },
 		"findings": func(w io.Writer) error { return render.FindingsReport(w, res) },
 		"sarif":    func(w io.Writer) error { return render.SARIF(w, res) },
-		"html":     func(w io.Writer) error { return render.HTML(w, res) },
+		"html":     func(w io.Writer) error { return render.HTML(w, res, version) },
 	}
 	var written []string
 	for _, rf := range reportFiles {

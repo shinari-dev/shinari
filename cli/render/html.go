@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/shinari-dev/shinari/core/engine"
+	"github.com/shinari-dev/shinari/utils/conv"
 )
 
 const (
@@ -22,8 +23,8 @@ const (
 // HTML writes report.html: a self-contained rendering of the run — inline CSS
 // and one small inline script, no external assets — so the single file can be
 // attached to a Slack thread or CI artifact and opens offline.
-func HTML(w io.Writer, res engine.RunResult) error {
-	return htmlTmpl.Execute(w, newHTMLRun(res))
+func HTML(w io.Writer, res engine.RunResult, version string) error {
+	return htmlTmpl.Execute(w, newHTMLRun(res, version))
 }
 
 // htmlRun is the template's view of a RunResult: durations and counts are
@@ -40,6 +41,7 @@ type htmlRun struct {
 	Findings     int
 	Scenarios    []htmlScenario
 	MarkdownJS   template.JS // per-scenario LLM markdown, indexed by htmlScenario.Index
+	Version      string
 	DocsURL      string
 	GithubURL    string
 }
@@ -49,12 +51,14 @@ type htmlScenario struct {
 	Name        string
 	Suite       string
 	Description string
-	Reason      string
+	Reason      string  // kept as text for the LLM markdown payload
+	ReasonLog   logView // same text, prepared for the collapsible toggle
 	Verdict     engine.ScenarioVerdict
 	Duration    string
 	Injected    []string
 	Held        []string
 	Findings    []engine.FindingRecord
+	HasFindings bool // an active (still-failing) finding held the verdict green
 	Steps       []htmlStep
 	Open        bool // expand the scenario when it needs attention
 }
@@ -64,15 +68,32 @@ type htmlStep struct {
 	Label    string
 	Verdict  engine.CheckVerdict
 	Duration string
-	Detail   string
+	Detail   logView
 }
 
-func newHTMLRun(res engine.RunResult) htmlRun {
+// logView is a block of text — a step's detail or a scenario's failure reason —
+// prepared for progressive disclosure: failure diagnostics run to hundreds of
+// lines, so the report shows a short preview and hides the rest behind a
+// "view full logs" toggle. The "logblock" template renders it.
+type logView struct {
+	Full    string // shown verbatim in <pre> when expanded
+	Preview string // first few lines, shown collapsed
+	Long    bool   // exceeds the preview budget → offer a toggle
+	Lines   int
+}
+
+func newLogView(s string) logView {
+	preview, long, lines := clampDetail(s)
+	return logView{Full: s, Preview: preview, Long: long, Lines: lines}
+}
+
+func newHTMLRun(res engine.RunResult, version string) htmlRun {
 	run := htmlRun{
 		Verdict:   res.Verdict(),
 		Started:   res.Start.UTC().Format("2006-01-02 15:04:05 UTC"),
 		Duration:  fmtDur(res.End.Sub(res.Start)),
 		Total:     len(res.Scenarios),
+		Version:   version,
 		DocsURL:   docsURL,
 		GithubURL: githubURL,
 	}
@@ -90,19 +111,22 @@ func newHTMLRun(res engine.RunResult) htmlRun {
 		}
 		// count active gaps only, matching the console summary and SARIF — a
 		// now-passing finding is a promotion prompt, not an open gap
+		active := 0
 		for _, f := range sc.Findings {
 			if !f.NowPasses {
-				run.Findings++
+				active++
 			}
 		}
+		run.Findings += active
 
 		hs := htmlScenario{
 			Index: i,
 			Name:  sc.Name, Suite: sc.Suite, Description: sc.Description,
-			Reason: sc.Reason, Verdict: sc.Verdict,
+			Reason: sc.Reason, ReasonLog: newLogView(sc.Reason), Verdict: sc.Verdict,
 			Duration: fmtDur(sc.End.Sub(sc.Start)),
 			Injected: sc.Injected, Held: sc.Held, Findings: sc.Findings,
-			Open: sc.Verdict != engine.ScenarioPassed,
+			HasFindings: active > 0,
+			Open:        sc.Verdict != engine.ScenarioPassed,
 		}
 		for _, st := range sc.Steps {
 			detail := st.Err
@@ -114,7 +138,7 @@ func newHTMLRun(res engine.RunResult) htmlRun {
 			}
 			hs.Steps = append(hs.Steps, htmlStep{
 				Section: st.Section, Label: st.Label(), Verdict: st.Verdict,
-				Duration: fmtDur(st.End.Sub(st.Start)), Detail: detail,
+				Duration: fmtDur(st.End.Sub(st.Start)), Detail: newLogView(detail),
 			})
 		}
 		run.Scenarios = append(run.Scenarios, hs)
@@ -170,10 +194,33 @@ func scenarioMarkdown(sc htmlScenario) string {
 	b.WriteString("| --- | --- | --- | --- | --- |\n")
 	for _, st := range sc.Steps {
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n",
-			mdCell(st.Section), mdCell(st.Label), st.Verdict, st.Duration, mdCell(st.Detail))
+			mdCell(st.Section), mdCell(st.Label), st.Verdict, st.Duration, mdCell(st.Detail.Full))
 	}
 	return b.String()
 }
+
+// clampDetail splits a step's detail into a short preview and a longness flag.
+// Failure diagnostics can run to hundreds of lines; the report shows the first
+// few up front and hides the rest behind a "view full logs" toggle so the step
+// table stays scannable.
+func clampDetail(s string) (preview string, long bool, lines int) {
+	all := strings.Split(s, "\n")
+	lines = len(all)
+	long = lines > logPreviewLines || len(s) > logPreviewBytes
+	if !long {
+		return s, false, lines
+	}
+	head := all
+	if len(head) > logPreviewLines {
+		head = head[:logPreviewLines]
+	}
+	return conv.Truncate(strings.Join(head, "\n"), logPreviewBytes), true, lines
+}
+
+const (
+	logPreviewLines = 3
+	logPreviewBytes = 300
+)
 
 // mdCell keeps a value on one table row: pipes are escaped, newlines flattened.
 func mdCell(s string) string {
@@ -235,6 +282,7 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
   .v-FAILED { color: var(--fail); border-color: color-mix(in srgb, var(--fail) 40%, transparent); background: color-mix(in srgb, var(--fail) 10%, transparent); }
   .v-ERRORED { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent); background: color-mix(in srgb, var(--err) 10%, transparent); }
   .v-INCONCLUSIVE { color: var(--skip); border-color: color-mix(in srgb, var(--skip) 40%, transparent); background: color-mix(in srgb, var(--skip) 10%, transparent); }
+  .v-FINDING { color: var(--finding); border-color: color-mix(in srgb, var(--finding) 40%, transparent); background: color-mix(in srgb, var(--finding) 10%, transparent); }
 
   .stats {
     display: flex; gap: 12px; flex-wrap: wrap;
@@ -306,10 +354,29 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
   .c-PASS { color: var(--pass); } .c-FAIL { color: var(--fail); }
   .c-SKIP { color: var(--skip); } .c-FINDING { color: var(--finding); }
 
+  .logs > summary { list-style: none; cursor: pointer; }
+  .logs > summary::-webkit-details-marker { display: none; }
+  .logs pre { margin: 0; font: inherit; white-space: pre-wrap; word-break: break-word; }
+  .logs .full { display: none; margin-top: 6px; max-height: 360px; overflow: auto; }
+  .logs[open] .preview { display: none; }
+  .logs[open] .full { display: block; }
+  .logs .more { display: inline-block; margin-top: 4px; color: var(--ember); font-size: 12px; }
+  .logs > summary:hover .more { text-decoration: underline; }
+  .logs .more .hide { display: none; }
+  .logs[open] .more .show { display: none; }
+  .logs[open] .more .hide { display: inline; }
+
   footer {
-    max-width: 960px; margin: 0 auto; padding: 0 24px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px 16px;
+    max-width: 960px; margin: 8px auto 0; padding: 20px 24px 40px;
+    border-top: 1px solid var(--border);
     color: var(--muted); font-size: 12px;
   }
+  footer .brand { font-size: 13px; font-weight: 700; letter-spacing: .02em; }
+  footer .brand em { color: var(--ember); font-style: normal; }
+  footer .brand span { color: var(--muted); font-weight: 400; letter-spacing: 0; }
+  footer nav { display: flex; gap: 18px; }
   footer a { color: var(--muted); text-decoration: none; }
   footer a:hover { color: var(--ember); }
 </style>
@@ -335,12 +402,13 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
       <h2>{{.Name}}</h2>
       {{if .Suite}}<span class="suite">{{.Suite}}</span>{{end}}
       <span class="badge v-{{.Verdict}}">{{.Verdict}}</span>
+      {{if .HasFindings}}<span class="badge v-FINDING" title="passed with a known, expected failure on the ledger">FINDING</span>{{end}}
       <span class="dur">{{.Duration}}</span>
       <button type="button" class="copy" data-i="{{.Index}}" onclick="shinariCopy(event, this)">copy for LLM</button>
     </summary>
     <div class="body">
       {{if .Description}}<p class="desc">{{.Description}}</p>{{end}}
-      {{if .Reason}}<p class="reason">{{.Reason}}</p>{{end}}
+      {{if .Reason}}<div class="reason">{{template "logblock" .ReasonLog}}</div>{{end}}
       {{if or .Injected .Held .Findings}}
       <div class="ledger">
         {{if .Injected}}<section><h3>Injected</h3><ul>{{range .Injected}}<li><code>{{.}}</code></li>{{end}}</ul></section>{{end}}
@@ -364,7 +432,7 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
           <td>{{.Label}}</td>
           <td class="c-{{.Verdict}}">{{.Verdict}}</td>
           <td class="dur">{{.Duration}}</td>
-          <td class="mono">{{.Detail}}</td>
+          <td class="mono">{{template "logblock" .Detail}}</td>
         </tr>
         {{end}}
       </table></div>
@@ -373,9 +441,11 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 {{end}}
 </main>
 <footer>
-  generated by <a href="{{.GithubURL}}">shinari</a> ·
-  <a href="{{.DocsURL}}">docs</a> ·
-  <a href="{{.GithubURL}}">github</a>
+  <span class="brand"><em>shinari</em> <span>v{{.Version}}</span></span>
+  <nav>
+    <a href="{{.DocsURL}}">Docs</a>
+    <a href="{{.GithubURL}}">GitHub</a>
+  </nav>
 </footer>
 <script>
 const SHINARI_MD = {{.MarkdownJS}};
@@ -403,4 +473,4 @@ function fallback(text, done) {
 </script>
 </body>
 </html>
-`))
+{{define "logblock"}}{{if .Long}}<details class="logs"><summary><pre class="preview">{{.Preview}}</pre><span class="more"><span class="show">▸ view full logs{{if gt .Lines 1}} ({{.Lines}} lines){{end}}</span><span class="hide">▾ hide logs</span></span></summary><pre class="full">{{.Full}}</pre></details>{{else}}{{.Full}}{{end}}{{end}}`))
