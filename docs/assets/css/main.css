@@ -160,11 +160,57 @@ pre {
 .nav-links a:hover { color: var(--text); text-decoration: none; background: var(--panel-soft); }
 .nav-links a.active { color: var(--ember-soft); box-shadow: inset 0 -2px 0 var(--ember); border-radius: 6px 6px 0 0; }
 .nav-links a.gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: #fff;
   background: linear-gradient(135deg, var(--ember), var(--ember-deep));
   margin-left: 10px;
 }
 .nav-links a.gh:hover { box-shadow: 0 0 18px var(--ember-glow); }
+.nav-links a.gh .gh-mark { display: block; }
+.nav-links a.gh .gh-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.nav-links a.gh .gh-stars::before { content: "★"; font-size: 11px; }
+
+/* ---------- star banner ---------- */
+
+.star-banner {
+  position: relative;
+  z-index: 60;
+  background: linear-gradient(90deg, var(--ember-wash), rgba(255, 79, 43, 0.03));
+  border-bottom: 1px solid var(--line);
+}
+.star-banner-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 42px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.star-banner-text {
+  margin: 0;
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+.star-banner-text a { color: var(--ember-soft); font-weight: 600; }
+.star-banner-mark { color: var(--amber); margin-right: 6px; }
+
+@media (max-width: 720px) {
+  .star-banner-text { font-size: 12.5px; }
+}
 
 /* ---------- hero ---------- */
 

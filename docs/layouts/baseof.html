@@ -2,10 +2,14 @@
 <html lang="{{ site.Language.Locale }}">
 {{ partial "head.html" . }}
 <body class="{{ if .IsHome }}is-home{{ end }}">
+  {{ partial "star-banner.html" . }}
   {{ partial "header.html" . }}
   {{ block "main" . }}{{ end }}
   {{ partial "footer.html" . }}
   {{ with resources.Get "js/copy-code.js" | minify | fingerprint }}
+  <script src="{{ .RelPermalink }}" defer></script>
+  {{ end }}
+  {{ with resources.Get "js/github.js" | minify | fingerprint }}
   <script src="{{ .RelPermalink }}" defer></script>
   {{ end }}
 </body>
