@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/shinari-dev/shinari/core/builtins"
 	"github.com/shinari-dev/shinari/core/discover"
 	"github.com/shinari-dev/shinari/core/model"
 	"github.com/shinari-dev/shinari/sdk"
+	"github.com/shinari-dev/shinari/utils/conv"
 )
 
 // VerbName returns the bare verb of a run: value, stripping the leading
@@ -330,7 +332,7 @@ func strongerEffect(a, b sdk.Effect) sdk.Effect {
 
 // BindArgs shapes an interpolated with: value into the verb's args map:
 // scalar/list shorthand binds to Primary; a map is checked against the
-// arg spec (unknown and missing-required are errors).
+// arg spec (unknown, missing-required, and mistyped values are errors).
 func BindArgs(spec sdk.VerbSpec, with any) (map[string]any, error) {
 	args := map[string]any{}
 	switch v := with.(type) {
@@ -364,11 +366,73 @@ func BindArgs(spec sdk.VerbSpec, with any) (map[string]any, error) {
 		}
 	}
 	for _, a := range spec.Args {
-		if a.Required {
-			if _, ok := args[a.Name]; !ok {
+		v, present := args[a.Name]
+		if !present || v == nil {
+			// An explicit nil (`cmd:` with no value) is as absent as a missing
+			// key: a provider reading it would silently get the zero value.
+			if a.Required {
 				return nil, fmt.Errorf("verb %s: missing required arg %q", spec.Name, a.Name)
 			}
+			continue
 		}
+		coerced, err := coerceArg(a, v)
+		if err != nil {
+			return nil, fmt.Errorf("verb %s: %w", spec.Name, err)
+		}
+		args[a.Name] = coerced
 	}
 	return args, nil
+}
+
+// coerceArg checks a bound value against the arg's declared type. Lossless
+// scalar conversions are applied (42 for a string arg, "true" for a bool arg)
+// so providers always see the declared type; a structural mismatch (a map for
+// a string) is an error rather than a provider-side zero value that would run
+// as a silent no-op. A string still carrying a ${...} splice is left alone:
+// static validation sees pre-interpolation values it cannot judge.
+func coerceArg(a sdk.ArgSpec, v any) (any, error) {
+	if s, ok := v.(string); ok && strings.Contains(s, "${") {
+		return v, nil
+	}
+	switch a.Type {
+	case "string":
+		switch v.(type) {
+		case string:
+			return v, nil
+		case []any, map[string]any:
+			return nil, fmt.Errorf("arg %q: want string, got %T", a.Name, v)
+		default:
+			return conv.ToString(v), nil
+		}
+	case "number":
+		if f, ok := conv.ToFloat(v); ok {
+			return f, nil
+		}
+		return nil, fmt.Errorf("arg %q: want number, got %v (%T)", a.Name, v, v)
+	case "bool":
+		switch t := v.(type) {
+		case bool:
+			return t, nil
+		case string:
+			if b, err := strconv.ParseBool(t); err == nil {
+				return b, nil
+			}
+		}
+		return nil, fmt.Errorf("arg %q: want bool, got %v (%T)", a.Name, v, v)
+	case "list":
+		// A scalar is the documented one-element shorthand; only a map has no
+		// list reading.
+		if _, ok := v.(map[string]any); ok {
+			return nil, fmt.Errorf("arg %q: want list, got a map", a.Name)
+		}
+		return v, nil
+	case "map":
+		if _, ok := v.(map[string]any); ok {
+			return v, nil
+		}
+		return nil, fmt.Errorf("arg %q: want map, got %v (%T)", a.Name, v, v)
+	default:
+		// "any", "", or a spec-author-defined label: not the registry's to judge.
+		return v, nil
+	}
 }

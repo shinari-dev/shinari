@@ -374,6 +374,60 @@ func TestBindArgs(t *testing.T) {
 	}
 }
 
+func TestBindArgsEnforcesDeclaredTypes(t *testing.T) {
+	spec := sdk.VerbSpec{Name: "run", Primary: "cmd", Args: []sdk.ArgSpec{
+		{Name: "cmd", Type: "string", Required: true},
+		{Name: "rate", Type: "number"},
+		{Name: "wait", Type: "bool"},
+		{Name: "headers", Type: "map"},
+		{Name: "codes", Type: "list"},
+	}}
+
+	// Lossless scalar coercions: providers see the declared type instead of a
+	// zero value from a failed type assertion (the silent-no-op hole).
+	args, err := BindArgs(spec, map[string]any{"cmd": 42, "rate": "5", "wait": "false"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if args["cmd"] != "42" {
+		t.Errorf("cmd = %#v, want the coerced string \"42\"", args["cmd"])
+	}
+	if args["rate"] != float64(5) {
+		t.Errorf("rate = %#v, want float64(5)", args["rate"])
+	}
+	if args["wait"] != false {
+		t.Errorf("wait = %#v, want false", args["wait"])
+	}
+
+	// Structural mismatches are errors, not zero values.
+	for _, bad := range []map[string]any{
+		{"cmd": []any{"ls"}},                           // list for string
+		{"cmd": "ls", "rate": "fast"},                  // non-numeric for number
+		{"cmd": "ls", "wait": "maybe"},                 // non-bool for bool
+		{"cmd": "ls", "headers": "Accept: */*"},        // scalar for map
+		{"cmd": "ls", "codes": map[string]any{"a": 1}}, // map for list
+	} {
+		if _, err := BindArgs(spec, bad); err == nil {
+			t.Errorf("args %v must be a type error", bad)
+		}
+	}
+
+	// A scalar remains a legal one-element shorthand for a list arg.
+	if _, err := BindArgs(spec, map[string]any{"cmd": "ls", "codes": 503}); err != nil {
+		t.Errorf("scalar shorthand for a list arg must pass: %v", err)
+	}
+
+	// An explicit nil for a required arg is as absent as a missing key.
+	if _, err := BindArgs(spec, map[string]any{"cmd": nil}); err == nil {
+		t.Error("nil for a required arg must error")
+	}
+
+	// Pre-interpolation values (static validate) are not judged.
+	if _, err := BindArgs(spec, map[string]any{"cmd": "ls", "rate": "${.vars.rate}"}); err != nil {
+		t.Errorf("a ${...} splice must be left alone: %v", err)
+	}
+}
+
 func TestBindArgsRejectsUnknownArgOnZeroArgVerb(t *testing.T) {
 	spec := sdk.VerbSpec{Name: "down"} // declares no args
 	if _, err := BindArgs(spec, map[string]any{"anything": 1}); err == nil {

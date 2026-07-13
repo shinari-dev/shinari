@@ -10,7 +10,7 @@ file, scenario, step, and reason.
 | # | rule | severity |
 |---|---|---|
 | 1 | **Header**: every resource has a recognized `apiVersion` + `kind`; a *marked but malformed* file is an error, never a silent skip | error |
-| 2 | **Schema**: each step is one `run:` with only reserved envelope keys; `with:` matches the verb's arg spec (unknown arg, missing required, missing/duplicate assert operator) — including the nested `probe:`/`step:` of `wait_until`, `sample`, and `background` | error |
+| 2 | **Schema**: each step is one `run:` with only reserved envelope keys; `with:` matches the verb's arg spec (unknown arg, missing required, a literal value of the wrong declared type, missing/duplicate assert operator) — including the nested `probe:`/`step:` of `wait_until`, `sample`, and `background`. Values still carrying `${...}` are judged at run time, after interpolation | error |
 | 3 | **Provider resolution**: every `<provider>.<verb>` resolves to a configured instance and declared verb (suppressed by `onAbsent: skip`); nested `probe:`/`step:` verbs and the builtins inside composed-provider bodies are resolved too | error |
 | 4 | **Macro nesting ≤ 1**: composed verbs call native verbs/builtins freely, another composed verb only one level deep | error |
 | 5 | **`finding:` placement**: only on checks whose effective kind is `assertion` | error |
