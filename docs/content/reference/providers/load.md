@@ -29,9 +29,11 @@ to override it.
 Blocks for `duration` seconds while issuing `rate` requests per second, then
 returns the window statistics. Its `effect` is `none`: load is the workload, not
 a fault, so it does not trip the degradation-observation rule. A request counts
-as an error when the transport fails or the status is `>= 400` and not listed
-in `expectStatus`: list the codes the system is *supposed* to shed under
-fault (a 503 from a load-shedder is graceful degradation, not an error).
+as an error when the transport fails or the status is `>= 400`. With
+`expectStatus`, the listed codes are the exact set that counts as success —
+anything else is an error, including a healthy `200` when only the shed `503`
+is listed. List every status the window should see (`[200, 503]` for a
+load-shedder under fault).
 
 | arg | type | req | description |
 |---|---|---|---|
@@ -41,7 +43,7 @@ fault (a 503 from a load-shedder is graceful degradation, not an error).
 | `method` | string | no | HTTP method (default `GET`) |
 | `headers` | map | no | request headers |
 | `body` | any | no | request body |
-| `expectStatus` | list | no | status codes `>= 400` that do not count as errors |
+| `expectStatus` | list | no | the exact set of statuses counted as success (default: `< 400`) |
 
 **Returns** the window stats as the value, `{ n, errors, errorRate, min, max,
 mean, p50, p95, p99 }` (latencies in ms), identical in shape to `sample`.

@@ -77,8 +77,8 @@ func argSpecs() []sdk.ArgSpec {
 	}
 }
 
-// accepted reports whether status is in the expectStatus list, if any. A
-// scalar (`expectStatus: 503`) means the one-element list.
+// accepted reports whether status is in the expectStatus list. A scalar
+// (`expectStatus: 503`) means the one-element list.
 func accepted(spec any, status int) bool {
 	var list []any
 	switch t := spec.(type) {
@@ -176,7 +176,12 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		return sdk.VerbResult{}, fmt.Errorf("http.%s %s: %w", verb, path, err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		// a partial body must not pass as the response: a capture or assertion
+		// judging truncated content would silently test the wrong thing
+		return sdk.VerbResult{}, fmt.Errorf("http.%s %s: reading response: %w", verb, path, err)
+	}
 	meta := map[string]any{"status": resp.StatusCode, "bytes": len(raw)}
 
 	var value any = string(raw)
@@ -186,7 +191,18 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 			value = decoded
 		}
 	}
-	if accepted(args["expectStatus"], resp.StatusCode) || resp.StatusCode < httpErrorStatus {
+	// expectStatus is the exact acceptance set: a step that expects the
+	// degraded 503 must fail when a healthy 200 shows up instead. Only
+	// without it does the plain "< 400 is fine" rule apply.
+	spec := args["expectStatus"]
+	if spec != nil {
+		if accepted(spec, resp.StatusCode) {
+			return sdk.VerbResult{Value: value, Output: string(raw), Meta: meta}, nil
+		}
+		return sdk.VerbResult{Value: value, Output: string(raw), Meta: meta},
+			fmt.Errorf("http.%s %s: status %d not in expectStatus %v: %s", verb, path, resp.StatusCode, spec, conv.Truncate(string(raw), 200))
+	}
+	if resp.StatusCode < httpErrorStatus {
 		return sdk.VerbResult{Value: value, Output: string(raw), Meta: meta}, nil
 	}
 	return sdk.VerbResult{Value: value, Output: string(raw), Meta: meta},

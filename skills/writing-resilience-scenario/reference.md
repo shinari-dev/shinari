@@ -125,6 +125,8 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
 ### http — `config: {baseUrl}`
 - `get` (probe), `post`/`put`/`delete` (action). `with: {path, body, form,
   headers, expectStatus: [..]}`. `path` is the primary; relative to `baseUrl`.
+  `expectStatus` is the exact acceptance set: list every passing status
+  (`[200, 503]`), since an unlisted 200 fails the step.
   Result: `.value` (parsed body), `.output` (raw), `.meta.status`, `.meta.bytes`.
 
 ### docker — `config: {composeFiles, project}` (the lifecycle provider)
@@ -147,7 +149,8 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
   replaces the set. Polymorphic: restating a smaller set is a fault, so add
   `effect: degradation` per step; growing it back is recovery.
 - `nxdomain` (`host`, outage) — the empty set. `dns_blackhole` (`host`,
-  outage) — a one-member unroutable set (`0.0.0.0`).
+  outage) — a one-member unroutable set (`192.0.2.1`, TEST-NET-1;
+  configurable via config `blackholeIp`).
 
 ### sql — `source: sql`, `config: {driver, dsn}`
 - `query` (probe, primary `sql`, `args: [..]`) -> `.value` is rows.

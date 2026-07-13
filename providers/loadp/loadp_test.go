@@ -141,6 +141,28 @@ func TestRunExpectStatusStillCountsUnlistedCodes(t *testing.T) {
 	}
 }
 
+func TestRunExpectStatusIsTheExactAcceptanceSet(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+	p := provider(t, srv.URL)
+
+	// The window declares "the system sheds with 503": clean 200s are the
+	// wrong outcome and must count as errors, or "100% healthy" and "100%
+	// shed" would both report errorRate 0.
+	res, err := p.Run(context.Background(), "run", map[string]any{
+		"target": "/x", "rate": 50, "duration": 0.2, "expectStatus": []any{503},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := res.Value.(map[string]any)
+	if m["errorRate"].(float64) != 1 {
+		t.Fatalf("errorRate = %v, want 1 (200 is not in the acceptance set)", m["errorRate"])
+	}
+}
+
 func TestRunValidatesArgs(t *testing.T) {
 	p := New().(*Provider)
 	cases := []map[string]any{

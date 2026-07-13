@@ -10,6 +10,7 @@ package netp
 import (
 	"context"
 	"fmt"
+	"hash/crc32"
 	"net"
 	"os"
 	"os/exec"
@@ -21,9 +22,16 @@ import (
 	"github.com/shinari-dev/shinari/utils/conv"
 )
 
+// defaultBlackholeIP is TEST-NET-1 (RFC 5737): reserved, never routed, so a
+// connect() hangs or drops. 0.0.0.0 would NOT blackhole — on Linux connecting
+// to it reaches the local host, so any listener on the target port would
+// answer the "outage" and the scenario would pass without the fault.
+const defaultBlackholeIP = "192.0.2.1"
+
 type Provider struct {
-	confDir   string
-	reloadCmd string
+	confDir     string
+	reloadCmd   string
+	blackholeIP string
 }
 
 func init() { sdk.Register("net", New) }
@@ -38,6 +46,13 @@ func (p *Provider) Configure(cfg map[string]any) error {
 	}
 	if c, ok := cfg["reloadCmd"].(string); ok {
 		p.reloadCmd = c
+	}
+	p.blackholeIP = defaultBlackholeIP
+	if ip, ok := cfg["blackholeIp"].(string); ok && ip != "" {
+		if net.ParseIP(ip) == nil {
+			return fmt.Errorf("net provider: blackholeIp %q is not an IP address", ip)
+		}
+		p.blackholeIP = ip
 	}
 	if p.confDir == "" {
 		return fmt.Errorf("net provider needs config confDir (where dnsmasq conf snippets are written)")
@@ -102,8 +117,9 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		// empty address= returns NXDOMAIN for the domain
 		body = fmt.Sprintf("address=/%s/\n", host)
 	case "dns_blackhole":
-		// 0.0.0.0 resolves but routes nowhere
-		body = fmt.Sprintf("address=/%s/0.0.0.0\n", host)
+		// resolves, but to an address no packet returns from: connections
+		// hang or drop instead of failing fast like nxdomain
+		body = fmt.Sprintf("address=/%s/%s\n", host, p.blackholeIP)
 	default:
 		return sdk.VerbResult{}, fmt.Errorf("net has no verb %q", verb)
 	}
@@ -134,9 +150,16 @@ func addresses(args map[string]any) []string {
 }
 
 // confFile is the snippet path owned by host: one file per host, so restating
-// or clearing a host touches only its own override.
+// or clearing a host touches only its own override. When sanitize had to
+// rewrite runes, a checksum of the raw host keeps distinct hosts that
+// sanitize to the same name (a_b.test vs a*b.test) from sharing a file —
+// otherwise clearing one would lift the other's fault.
 func (p *Provider) confFile(host string) string {
-	return filepath.Join(p.confDir, "shinari-"+sanitize(host)+".conf")
+	name := sanitize(host)
+	if name != host {
+		name = fmt.Sprintf("%s-%08x", name, crc32.ChecksumIEEE([]byte(host)))
+	}
+	return filepath.Join(p.confDir, "shinari-"+name+".conf")
 }
 
 // reload runs reloadCmd, if configured, so dnsmasq picks up the change.

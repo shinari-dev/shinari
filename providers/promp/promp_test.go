@@ -92,6 +92,22 @@ func TestScrapeNon200IsError(t *testing.T) {
 	}
 }
 
+func TestScrapeTruncatedBodyIsError(t *testing.T) {
+	// Promise 1000 bytes, deliver a few, close: a broken transfer must surface
+	// as a read error, not as "metric not found" over the partial body.
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		_, _ = w.Write([]byte("up 1\n"))
+	}))
+	t.Cleanup(s.Close)
+	p := New()
+	_ = p.Configure(map[string]any{"baseUrl": s.URL})
+	_, err := p.Run(context.Background(), "scrape", map[string]any{"metric": "up"})
+	if err == nil || !strings.Contains(err.Error(), "reading response") {
+		t.Fatalf("want a read error, got %v", err)
+	}
+}
+
 func TestScrapeMissingIsError(t *testing.T) {
 	s := scrapeServer(t)
 	p := New()

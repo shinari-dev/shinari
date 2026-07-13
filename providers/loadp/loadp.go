@@ -63,10 +63,10 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 	}}
 }
 
-// accepted reports whether status is in the expectStatus list, if any — the
-// same tolerance http verbs offer, so a 503 shed under fault can count as
-// graceful degradation instead of an error. A scalar (`expectStatus: 503`)
-// means the one-element list.
+// accepted reports whether status is in the expectStatus list — the same
+// exact-acceptance-set semantics as the http verbs, so a 503 shed under fault
+// can count as graceful degradation instead of an error. A scalar
+// (`expectStatus: 503`) means the one-element list.
 func accepted(spec any, status int) bool {
 	var list []any
 	switch t := spec.(type) {
@@ -153,16 +153,22 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 
 	var lats []float64
 	errs := 0
+	expect := args["expectStatus"]
 	for res := range attacker.Attack(targeter, pacer, duration, "shinari-load") {
 		lats = append(lats, float64(res.Latency)/float64(time.Millisecond))
-		// vegeta stamps res.Error with the status text for a >= 400 response
-		// too, so judge the status first: a listed code is tolerated, and
-		// res.Error is left to catch transport failures (code 0).
 		switch {
-		case res.Code >= 400:
-			if !accepted(args["expectStatus"], int(res.Code)) {
+		case expect != nil:
+			// expectStatus is the exact acceptance set: a healthy 200 during a
+			// window that expects shed 503s is a miss, and a transport failure
+			// (code 0) is never in the set.
+			if !accepted(expect, int(res.Code)) {
 				errs++
 			}
+		case res.Code >= 400:
+			// vegeta stamps res.Error with the status text for a >= 400
+			// response too, so judge the status first and leave res.Error to
+			// catch transport failures (code 0).
+			errs++
 		case res.Error != "":
 			errs++
 		}

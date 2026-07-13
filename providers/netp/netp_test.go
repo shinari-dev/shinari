@@ -190,6 +190,69 @@ func TestResetLiftsAllShinariSnippets(t *testing.T) {
 	}
 }
 
+func TestBlackholeUsesUnroutableAddress(t *testing.T) {
+	dir := t.TempDir()
+	p := provider(t, map[string]any{"confDir": dir})
+	res, err := p.Run(context.Background(), "dns_blackhole", map[string]any{"host": "api.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(res.Value.(string))
+	// 0.0.0.0 is not a blackhole: on Linux connect() to it reaches the local
+	// host, so a local listener would answer the "outage".
+	if string(data) != "address=/api.test/192.0.2.1\n" {
+		t.Errorf("conf = %q, want the TEST-NET-1 blackhole", data)
+	}
+}
+
+func TestBlackholeIPIsConfigurable(t *testing.T) {
+	dir := t.TempDir()
+	p := provider(t, map[string]any{"confDir": dir, "blackholeIp": "240.0.0.1"})
+	res, err := p.Run(context.Background(), "dns_blackhole", map[string]any{"host": "api.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(res.Value.(string))
+	if string(data) != "address=/api.test/240.0.0.1\n" {
+		t.Errorf("conf = %q", data)
+	}
+}
+
+func TestBlackholeIPRejectsNonIP(t *testing.T) {
+	p := New().(*Provider)
+	err := p.Configure(map[string]any{"confDir": t.TempDir(), "blackholeIp": "not-an-ip"})
+	if err == nil {
+		t.Fatal("want Configure error for a non-IP blackholeIp")
+	}
+}
+
+func TestSanitizedHostsDoNotShareSnippetFiles(t *testing.T) {
+	dir := t.TempDir()
+	p := provider(t, map[string]any{"confDir": dir})
+	// a_b.test and a*b.test sanitize to the same name: they must still own
+	// distinct files, or clearing one would lift the other's fault.
+	r1, err := p.Run(context.Background(), "nxdomain", map[string]any{"host": "a_b.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := p.Run(context.Background(), "dns_blackhole", map[string]any{"host": "a*b.test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r1.Value.(string) == r2.Value.(string) {
+		t.Fatalf("distinct hosts share snippet file %v", r1.Value)
+	}
+	if _, err := p.Run(context.Background(), "clear", map[string]any{"host": "a*b.test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r1.Value.(string)); err != nil {
+		t.Error("clearing a*b.test lifted a_b.test's fault")
+	}
+	if _, err := os.Stat(r2.Value.(string)); !os.IsNotExist(err) {
+		t.Error("clear did not remove a*b.test's own snippet")
+	}
+}
+
 func TestMissingConfDirIsConfigureError(t *testing.T) {
 	p := New().(*Provider)
 	if err := p.Configure(map[string]any{}); err == nil {

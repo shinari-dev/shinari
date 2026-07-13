@@ -35,7 +35,7 @@ as an observation.
 | `path` | string | yes | request path, appended to `baseUrl`; an absolute URL overrides it (primary) |
 | `headers` | map | no | request headers |
 | `basicAuth` | map | no | `{ username, password }`, overriding the provider-level credentials |
-| `expectStatus` | list | no | status codes to tolerate instead of failing (see [Status handling](#status-handling)) |
+| `expectStatus` | list | no | the exact set of statuses that passes (see [Status handling](#status-handling)) |
 
 **Returns** the response envelope: the decoded JSON (or raw string) in `value`,
 the raw body in `output`, and `meta.status` / `meta.bytes`. See
@@ -82,7 +82,7 @@ Actions, so they are skipped on `--dry-run`. The request body comes from
 | `form` | map | no | URL-encoded form body |
 | `headers` | map | no | request headers |
 | `basicAuth` | map | no | `{ username, password }`, overriding the provider-level credentials |
-| `expectStatus` | list | no | status codes to tolerate instead of failing (see [Status handling](#status-handling)) |
+| `expectStatus` | list | no | the exact set of statuses that passes (see [Status handling](#status-handling)) |
 
 **Returns** the same response envelope as `get`. See [Response](#response).
 
@@ -168,10 +168,11 @@ the full envelope; the three compose:
 
 ## Status handling
 
-A status `< 400` succeeds. A status `>= 400` is a step failure (the message
-carries the status and a truncated body) unless that code is listed in
-`expectStatus`, in which case the step returns normally with the status in
-`meta`. List the codes you want to tolerate to observe graceful degradation:
+Without `expectStatus`, a status `< 400` succeeds and a status `>= 400` is a
+step failure (the message carries the status and a truncated body). With
+`expectStatus`, the listed codes are the exact set that passes: any other
+status fails, including a healthy `200`. List every status you accept,
+healthy and degraded alike:
 
 ```yaml
 - run: http.get
@@ -181,6 +182,10 @@ carries the status and a truncated body) unless that code is listed in
 - run: assert
   with: { of: "${.outputs.rsp.meta.status}", in: [200, 503] }
 ```
+
+Because the set is exact, `expectStatus: 503` alone doubles as an assertion
+that the endpoint really is degraded during the fault window — a healthy `200`
+fails the step instead of passing silently.
 
 A request that never completes (connection refused, DNS failure, timeout) is a
 step error rather than a status failure. Each request has a 30s default timeout;

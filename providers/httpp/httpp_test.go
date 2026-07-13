@@ -165,6 +165,34 @@ func TestExpectStatusAcceptsListedCode(t *testing.T) {
 	}
 }
 
+func TestExpectStatusIsTheExactAcceptanceSet(t *testing.T) {
+	s := server(t)
+	p := provider(t, s.URL)
+	// GET /jobs answers 200: a step that expects only the degraded 503 must
+	// fail on it — a healthy response is the wrong outcome, not a pass.
+	_, err := p.Run(context.Background(), "get", map[string]any{
+		"path": "/jobs", "expectStatus": 503,
+	})
+	if err == nil || !strings.Contains(err.Error(), "expectStatus") {
+		t.Fatalf("a 200 must fail when the step expects only 503, got %v", err)
+	}
+}
+
+func TestTruncatedBodyIsError(t *testing.T) {
+	// Promise 1000 bytes, deliver 4, close: the client sees an unexpected EOF
+	// and the step must fail rather than judge the partial body.
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		_, _ = w.Write([]byte("part"))
+	}))
+	t.Cleanup(s.Close)
+	p := provider(t, s.URL)
+	_, err := p.Run(context.Background(), "get", map[string]any{"path": "/jobs"})
+	if err == nil || !strings.Contains(err.Error(), "reading response") {
+		t.Fatalf("a broken transfer must surface as a read error, got %v", err)
+	}
+}
+
 func TestContextDeadlineGovernsTimeout(t *testing.T) {
 	// A server that delays longer than the step's deadline.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

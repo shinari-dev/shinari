@@ -17,7 +17,8 @@ providers:
 
 `confDir` is where the per-host snippet files are written (relative paths
 resolve against the project root); `reloadCmd` is run after each write to
-reload dnsmasq.
+reload dnsmasq. `blackholeIp` (optional) overrides the address
+`dns_blackhole` resolves to; the default is `192.0.2.1` (TEST-NET-1).
 
 Every fault verb returns the path of the snippet file it wrote as the value,
 with the reload command's output (if any) in `output` and an empty `meta`. The
@@ -74,9 +75,12 @@ The empty set, the opposite of `set_dns`.
 
 ### dns_blackhole (action, outage)
 
-Resolves the name to an unroutable address: writes `address=/host/0.0.0.0`, so
-lookups succeed but connections go nowhere. A one-member unroutable set, in
-contrast to `nxdomain`'s empty set.
+Resolves the name to an unroutable address: writes `address=/host/192.0.2.1`
+(TEST-NET-1, reserved and never routed — configurable via `blackholeIp`), so
+lookups succeed but connections hang or drop. A one-member unroutable set, in
+contrast to `nxdomain`'s empty set. `0.0.0.0` is deliberately not used: on
+Linux, connecting to it reaches the local host, so any local listener on the
+target port would answer the "outage".
 
 | arg | type | req | description |
 |---|---|---|---|

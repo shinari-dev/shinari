@@ -83,9 +83,10 @@ returns, is the DNS-outage resilience property.
   with: api.partner.com
 ```
 
-Resolves to `0.0.0.0`: lookups succeed, connections go nowhere, and clients hit
-connect timeouts instead of resolution errors. Different failure, different
-code path in your retry logic. Test both.
+Resolves to `192.0.2.1` (TEST-NET-1, reserved and never routed): lookups
+succeed, connections hang until they time out, and clients hit connect
+timeouts instead of resolution errors. Different failure, different code path
+in your retry logic. Test both.
 
 ## Restore
 

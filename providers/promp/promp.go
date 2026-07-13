@@ -92,7 +92,12 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		return sdk.VerbResult{}, fmt.Errorf("prom.scrape %s: %w", metric, err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		// a partial body is not exposition text we can trust: reporting
+		// "metric not found" over a broken transfer would mask the real failure
+		return sdk.VerbResult{Output: string(raw)}, fmt.Errorf("prom.scrape %s: reading response: %w", metric, err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		// an error page is not exposition text; reporting "metric not found"
 		// over a 500 would mask the real failure
@@ -129,7 +134,10 @@ func (p *Provider) runQuery(ctx context.Context, args map[string]any) (sdk.VerbR
 		return sdk.VerbResult{}, fmt.Errorf("prom.query: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return sdk.VerbResult{Output: string(raw)}, fmt.Errorf("prom.query: reading response: %w", err)
+	}
 
 	var body struct {
 		Status    string `json:"status"`
