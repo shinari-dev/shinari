@@ -37,26 +37,47 @@ func (p *Provider) Type() string { return "redis" }
 // is lazy on the first verb, after setup has brought the cache up — so like
 // sql.Open / grpc.NewClient, Configure must not ping.
 func (p *Provider) Configure(cfg map[string]any) error {
+	var opts *redis.Options
 	if url, _ := cfg["url"].(string); url != "" {
-		opts, err := redis.ParseURL(url)
+		parsed, err := redis.ParseURL(url)
 		if err != nil {
 			return fmt.Errorf("redis: parse url: %w", err)
 		}
-		p.rdb = redis.NewClient(opts)
-		return nil
+		opts = parsed
+	} else {
+		addr, _ := cfg["addr"].(string)
+		if addr == "" {
+			return fmt.Errorf("redis: addr or url is required")
+		}
+		opts = &redis.Options{Addr: addr}
+		opts.Username, _ = cfg["username"].(string)
+		opts.Password, _ = cfg["password"].(string)
+		if db, ok := conv.ToFloat(cfg["db"]); ok {
+			opts.DB = int(db)
+		}
 	}
-	addr, _ := cfg["addr"].(string)
-	if addr == "" {
-		return fmt.Errorf("redis: addr or url is required")
-	}
-	opts := &redis.Options{Addr: addr}
-	opts.Username, _ = cfg["username"].(string)
-	opts.Password, _ = cfg["password"].(string)
-	if db, ok := conv.ToFloat(cfg["db"]); ok {
-		opts.DB = int(db)
-	}
+	tameRetries(opts, cfg)
 	p.rdb = redis.NewClient(opts)
 	return nil
+}
+
+// tameRetries maps the determinism knobs onto the client options. go-redis
+// silently retries every command 3 times with backoff by default: a probe
+// during a flapping cache would report healthy (and slow) while the fault is
+// live, so retries default OFF — a probe observes exactly one attempt.
+// maxRetries: N re-enables N retries; dialTimeout/readTimeout (seconds) bound
+// how long a single attempt may hang on a blackholed cache.
+func tameRetries(opts *redis.Options, cfg map[string]any) {
+	opts.MaxRetries = -1 // go-redis: -1 disables, 0 means "the default 3"
+	if n, ok := conv.ToFloat(cfg["maxRetries"]); ok && n > 0 {
+		opts.MaxRetries = int(n)
+	}
+	if f, ok := conv.ToFloat(cfg["dialTimeout"]); ok && f > 0 {
+		opts.DialTimeout = time.Duration(f * float64(time.Second))
+	}
+	if f, ok := conv.ToFloat(cfg["readTimeout"]); ok && f > 0 {
+		opts.ReadTimeout = time.Duration(f * float64(time.Second))
+	}
 }
 
 // Close releases the client created in Configure.

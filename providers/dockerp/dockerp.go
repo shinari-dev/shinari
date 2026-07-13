@@ -104,20 +104,33 @@ func (p *Provider) processEnv() []string {
 }
 
 func (p *Provider) Verbs() []sdk.VerbSpec {
-	upArgs := []sdk.ArgSpec{{Name: "services", Type: "list"}, {Name: "wait", Type: "bool"}, {Name: "profiles", Type: "list"}}
+	upArgs := []sdk.ArgSpec{
+		{Name: "services", Type: "list"}, {Name: "wait", Type: "bool"}, {Name: "profiles", Type: "list"},
+		// waitTimeout bounds --wait: the verb most likely to hang (a service
+		// that never turns healthy) gets a declared limit instead of blocking
+		// until the engine deadline.
+		{Name: "waitTimeout", Type: "number"},
+	}
 	service := []sdk.ArgSpec{{Name: "service", Type: "string", Required: true}}
+	// stop/restart: timeout is the grace period before compose escalates the
+	// SIGTERM to SIGKILL (compose -t), bounding how long a wedged shutdown
+	// handler can stall the step.
+	graceArgs := append(append([]sdk.ArgSpec{}, service...), sdk.ArgSpec{Name: "timeout", Type: "number"})
+	// kill: signal picks what lands (default SIGKILL), so one verb covers the
+	// hard-kill and the "SIGTERM but never exits" shutdown-path faults.
+	killArgs := append(append([]sdk.ArgSpec{}, service...), sdk.ArgSpec{Name: "signal", Type: "string"})
 	networkArgs := []sdk.ArgSpec{{Name: "service", Type: "string", Required: true}, {Name: "network", Type: "string"}}
 	return []sdk.VerbSpec{
 		{Name: "up", Kind: sdk.KindAction, SideEffects: true, Primary: "services", Args: upArgs},
 		{Name: "down", Kind: sdk.KindAction, SideEffects: true},
-		{Name: "kill", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
-		{Name: "stop", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
+		{Name: "kill", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: killArgs},
+		{Name: "stop", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: graceArgs},
 		{Name: "start", Kind: sdk.KindAction, SideEffects: true, Primary: "service", Args: service},
 		// restart bounces a service (stop + start) in one step: the graceful
 		// rolling-restart fault. An outage — work in flight when the SIGTERM
 		// lands is dropped — but one that heals itself, so the interesting
 		// assertions are about what peers observed during the bounce.
-		{Name: "restart", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
+		{Name: "restart", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: graceArgs},
 		{Name: "pause", Kind: sdk.KindAction, SideEffects: true, Effect: sdk.EffectOutage, Primary: "service", Args: service},
 		{Name: "unpause", Kind: sdk.KindAction, SideEffects: true, Primary: "service", Args: service},
 		{Name: "logs", Kind: sdk.KindProbe, Primary: "service", Args: []sdk.ArgSpec{
@@ -318,19 +331,28 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		// step before any assertion could observe it).
 		if w, ok := args["wait"].(bool); !ok || w {
 			cmdArgs = append(cmdArgs, "--wait")
+			if f, ok := conv.ToFloat(args["waitTimeout"]); ok && f > 0 {
+				cmdArgs = append(cmdArgs, "--wait-timeout", strconv.Itoa(int(f)))
+			}
 		}
 		cmdArgs = append(cmdArgs, listOf(args["services"])...)
 		out, err = p.compose(ctx, cmdArgs...)
 	case "down":
 		out, err = p.compose(ctx, "down", "-v", "--remove-orphans")
 	case "kill":
-		out, err = p.compose(ctx, "kill", "-s", "SIGKILL", service)
-	case "stop":
-		out, err = p.compose(ctx, "stop", service)
+		sig := "SIGKILL"
+		if s, _ := args["signal"].(string); s != "" {
+			sig = s
+		}
+		out, err = p.compose(ctx, "kill", "-s", sig, service)
+	case "stop", "restart":
+		cmdArgs := []string{verb}
+		if f, ok := conv.ToFloat(args["timeout"]); ok && f >= 0 {
+			cmdArgs = append(cmdArgs, "-t", strconv.Itoa(int(f)))
+		}
+		out, err = p.compose(ctx, append(cmdArgs, service)...)
 	case "start":
 		out, err = p.compose(ctx, "start", service)
-	case "restart":
-		out, err = p.compose(ctx, "restart", service)
 	case "throttle", "unthrottle":
 		out, err = p.updateCPUs(ctx, verb, service, args)
 	case "pause":

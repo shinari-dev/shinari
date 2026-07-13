@@ -7,6 +7,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 
@@ -36,6 +37,46 @@ func TestConfigureRequiresAddrOrURL(t *testing.T) {
 func TestConfigureAcceptsURL(t *testing.T) {
 	if err := New().Configure(map[string]any{"url": "redis://localhost:6379/0"}); err != nil {
 		t.Fatalf("url configure: %v", err)
+	}
+}
+
+func TestRetriesDefaultOff(t *testing.T) {
+	// go-redis silently retries 3 times by default: a probe would report
+	// healthy through a flapping cache. Both config paths must disable it.
+	// NewClient normalizes the options: -1 (our off) becomes 0, while an
+	// untouched 0 would have become the default 3 — so 0 here proves off.
+	p := New().(*Provider)
+	if err := p.Configure(map[string]any{"addr": "localhost:6379"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.rdb.Options().MaxRetries; got != 0 {
+		t.Errorf("addr path: MaxRetries = %d, want 0 (off; 3 would be go-redis's default)", got)
+	}
+	p2 := New().(*Provider)
+	if err := p2.Configure(map[string]any{"url": "redis://localhost:6379/0"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := p2.rdb.Options().MaxRetries; got != 0 {
+		t.Errorf("url path: MaxRetries = %d, want 0 (off; 3 would be go-redis's default)", got)
+	}
+}
+
+func TestResilienceKnobs(t *testing.T) {
+	p := New().(*Provider)
+	if err := p.Configure(map[string]any{
+		"addr": "localhost:6379", "maxRetries": 2, "dialTimeout": 0.5, "readTimeout": 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	opts := p.rdb.Options()
+	if opts.MaxRetries != 2 {
+		t.Errorf("MaxRetries = %d, want 2", opts.MaxRetries)
+	}
+	if opts.DialTimeout != 500*time.Millisecond {
+		t.Errorf("DialTimeout = %s, want 500ms", opts.DialTimeout)
+	}
+	if opts.ReadTimeout != time.Second {
+		t.Errorf("ReadTimeout = %s, want 1s", opts.ReadTimeout)
 	}
 }
 

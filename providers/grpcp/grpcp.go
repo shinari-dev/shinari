@@ -19,14 +19,21 @@ import (
 	"github.com/shinari-dev/shinari/sdk"
 )
 
+// defaultTimeout applies only when the caller passed no deadline — the same
+// rule as httpp: a per-step timeout: of any value is authoritative. Without
+// it, a health check against a blackholed target would hang for the OS TCP
+// timeout.
+const defaultTimeout = 30 * time.Second
+
 type Provider struct {
-	target string
-	conn   *grpc.ClientConn
+	target         string
+	conn           *grpc.ClientConn
+	defaultTimeout time.Duration // applied only when the caller passed no deadline
 }
 
 func init() { sdk.Register("grpc", New) }
 
-func New() sdk.Provider { return &Provider{} }
+func New() sdk.Provider { return &Provider{defaultTimeout: defaultTimeout} }
 
 func (p *Provider) Type() string { return "grpc" }
 
@@ -69,6 +76,11 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
 	if verb != "health" {
 		return sdk.VerbResult{}, fmt.Errorf("grpc has no verb %q", verb)
+	}
+	if _, ok := ctx.Deadline(); !ok && p.defaultTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, p.defaultTimeout)
+		defer cancel()
 	}
 	service, _ := args["service"].(string) // "" = the whole server
 

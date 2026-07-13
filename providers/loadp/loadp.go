@@ -59,6 +59,8 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 			{Name: "headers", Type: "map"},
 			{Name: "body", Type: "any"},
 			{Name: "expectStatus", Type: "list"},
+			{Name: "timeout", Type: "number"},
+			{Name: "workers", Type: "number"},
 		},
 	}}
 }
@@ -136,7 +138,19 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	targeter := vegeta.NewStaticTargeter(vegeta.Target{
 		Method: method, URL: url, Header: header, Body: body,
 	})
-	attacker := vegeta.NewAttacker()
+	var attackerOpts []func(*vegeta.Attacker)
+	// timeout: bounds one request. Without it vegeta's 30s default applies, so
+	// an attack on a blackholed target overruns its declared window by up to
+	// that much — set it below the window to keep the step's duration honest.
+	if f, ok := conv.ToFloat(args["timeout"]); ok && f > 0 {
+		attackerOpts = append(attackerOpts, vegeta.Timeout(time.Duration(f*float64(time.Second))))
+	}
+	// workers: caps concurrency. vegeta grows workers without bound when the
+	// target stalls; a cap keeps the workload's own footprint declared.
+	if w, ok := conv.ToFloat(args["workers"]); ok && w >= 1 {
+		attackerOpts = append(attackerOpts, vegeta.MaxWorkers(uint64(w)))
+	}
+	attacker := vegeta.NewAttacker(attackerOpts...)
 	pacer := vegeta.Rate{Freq: int(rate + 0.5), Per: time.Second} // round; rate >= 1 guarantees Freq >= 1
 	duration := time.Duration(dur * float64(time.Second))
 

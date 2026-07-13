@@ -6,7 +6,9 @@ package grpcp
 import (
 	"context"
 	"net"
+	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -63,6 +65,31 @@ func TestHealthNotServingIsError(t *testing.T) {
 	}
 	if res.Value != "NOT_SERVING" {
 		t.Errorf("value = %v, want NOT_SERVING (status still surfaced)", res.Value)
+	}
+}
+
+func TestNoDeadlineFallsBackToDefault(t *testing.T) {
+	// A listener that accepts (kernel-level) but never speaks HTTP/2: the
+	// health RPC hangs at the transport, so without its own default deadline
+	// the provider would block for the OS TCP timeout.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	p := New().(*Provider)
+	p.defaultTimeout = 100 * time.Millisecond
+	if err := p.Configure(map[string]any{"target": ln.Addr().String()}); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err = p.Run(context.Background(), "health", map[string]any{})
+	if err == nil || !strings.Contains(err.Error(), "DeadlineExceeded") {
+		t.Fatalf("want the default deadline surfaced, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("default deadline (~100ms) did not apply, took %s", elapsed)
 	}
 }
 

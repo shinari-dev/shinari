@@ -37,6 +37,19 @@ func TestConfigureRequiresDSN(t *testing.T) {
 	}
 }
 
+func TestPoolKnobsApply(t *testing.T) {
+	p := New().(*Provider)
+	dsn := filepath.Join(t.TempDir(), "test.db")
+	if err := p.Configure(map[string]any{
+		"driver": "sqlite", "dsn": dsn, "maxOpenConns": 3, "connMaxLifetime": 60,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.db.Stats().MaxOpenConnections; got != 3 {
+		t.Errorf("MaxOpenConnections = %d, want 3", got)
+	}
+}
+
 // TestConfigureAcceptsMysql proves the mysql driver is registered and opens
 // lazily (sql.Open does not connect), matching the postgres path.
 func TestConfigureAcceptsMysql(t *testing.T) {

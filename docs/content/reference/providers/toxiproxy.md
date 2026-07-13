@@ -17,7 +17,9 @@ providers:
 ```
 
 `adminUrl` is the Toxiproxy admin API. Every verb returns `"ok"` as the value
-(`reset` returns `"reset"`), with an empty `output` and `meta`.
+(`reset` returns `"reset"`), with an empty `output` and `meta`. Admin calls
+honor the step's `timeout:`/cancellation, so a hung admin API fails the step at
+its declared bound instead of stalling the scenario.
 
 ## Direction
 

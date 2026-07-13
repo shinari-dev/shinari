@@ -25,6 +25,12 @@ Configuration takes either an `addr` (`host:port`) with optional `username`,
 lazily, so Redis does not need to be up until the first verb runs (after
 `setup`).
 
+Client retries are **off**: go-redis silently retries each command 3 times by
+default, which would let a probe report a flapping cache as healthy — here a
+probe observes exactly one attempt. `maxRetries: N` re-enables N retries when
+retry behavior is what the scenario exercises; `dialTimeout` / `readTimeout`
+(seconds) bound how long one attempt may hang on a blackholed cache.
+
 ## Verbs
 
 ### ping (probe)

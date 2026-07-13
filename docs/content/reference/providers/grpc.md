@@ -21,6 +21,10 @@ providers:
 `target` is the `host:port` to dial. `tls` is `false` by default (plaintext, the
 common local/CI case); set it `true` to dial over TLS.
 
+A check with no step `timeout:` gets a 30-second default deadline, so a probe
+against a blackholed target fails at a declared bound instead of hanging for
+the OS TCP timeout. A per-step `timeout:` of any value is authoritative.
+
 ## Verbs
 
 ### health (probe)

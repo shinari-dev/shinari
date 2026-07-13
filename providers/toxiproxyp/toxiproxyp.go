@@ -85,17 +85,37 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 	}
 }
 
+// call runs fn under the step's context. The Shopify client offers no context
+// support (its HTTP client has a fixed 30s timeout), so a step deadline or
+// cancellation stops the wait here; the abandoned call is bounded by that
+// client-side timeout. Without this, a hung admin API would stall the step
+// past any engine deadline — on the provider whose job is network faults.
+func call(ctx context.Context, fn func() error) error {
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
 	if verb == "reset" {
-		if err := p.client.ResetState(); err != nil {
+		if err := call(ctx, p.client.ResetState); err != nil {
 			return sdk.VerbResult{}, fmt.Errorf("toxiproxy.reset: %w", err)
 		}
 		return sdk.VerbResult{Value: "reset"}, nil
 	}
 
 	name, _ := args["proxy"].(string)
-	proxy, err := p.client.Proxy(name)
-	if err != nil {
+	var proxy *toxiproxy.Proxy
+	if err := call(ctx, func() error {
+		var perr error
+		proxy, perr = p.client.Proxy(name)
+		return perr
+	}); err != nil {
 		return sdk.VerbResult{}, fmt.Errorf("toxiproxy.%s: proxy %q: %w", verb, name, err)
 	}
 
@@ -114,6 +134,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		return nil
 	}
 
+	var work func() error
 	switch verb {
 	case "add_latency":
 		latency, _ := conv.ToFloat(args["latencyMs"])
@@ -121,7 +142,7 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		if j, _ := conv.ToFloat(args["jitterMs"]); j > 0 {
 			attrs["jitter"] = j
 		}
-		err = addToxic("latency", "latency", 1.0, attrs)
+		work = func() error { return addToxic("latency", "latency", 1.0, attrs) }
 	case "packet_loss":
 		toxicity, _ := conv.ToFloat(args["toxicity"])
 		if toxicity == 0 {
@@ -129,44 +150,48 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		}
 		// timeout-with-0 drops data without closing the connection — the
 		// Toxiproxy idiom for packet loss.
-		err = addToxic("packet_loss", "timeout", float32(toxicity), toxiproxy.Attributes{"timeout": 0})
+		work = func() error {
+			return addToxic("packet_loss", "timeout", float32(toxicity), toxiproxy.Attributes{"timeout": 0})
+		}
 	case "bandwidth":
 		rate, _ := conv.ToFloat(args["rateKbps"])
-		err = addToxic("bandwidth", "bandwidth", 1.0, toxiproxy.Attributes{"rate": rate})
+		work = func() error { return addToxic("bandwidth", "bandwidth", 1.0, toxiproxy.Attributes{"rate": rate}) }
 	case "blackhole":
-		err = addToxic("blackhole", "timeout", 1.0, toxiproxy.Attributes{"timeout": 0})
+		work = func() error { return addToxic("blackhole", "timeout", 1.0, toxiproxy.Attributes{"timeout": 0}) }
 	case "timeout":
 		ms, _ := conv.ToFloat(args["timeoutMs"])
 		// a non-zero timeout drops all data, then closes the connection after
 		// the interval — a link that wedges and is torn down after a bounded
 		// wait, distinct from blackhole (timeout 0), which never closes.
-		err = addToxic("timeout", "timeout", 1.0, toxiproxy.Attributes{"timeout": ms})
+		work = func() error { return addToxic("timeout", "timeout", 1.0, toxiproxy.Attributes{"timeout": ms}) }
 	case "partition":
-		err = proxy.Disable()
+		work = proxy.Disable
 	case "clear":
 		// scoped restore: remove this proxy's toxics and re-enable it (undoing a
 		// partition), leaving every other proxy untouched — unlike reset, which
 		// clears toxics and re-enables proxies globally. Re-enables even when a
 		// toxic removal fails (aggregating errors), so a partial failure never
 		// leaves the system partitioned.
-		var errs []error
-		if toxics, terr := proxy.Toxics(); terr == nil {
-			for _, tx := range toxics {
-				if rerr := proxy.RemoveToxic(tx.Name); rerr != nil {
-					errs = append(errs, rerr)
+		work = func() error {
+			var errs []error
+			if toxics, terr := proxy.Toxics(); terr == nil {
+				for _, tx := range toxics {
+					if rerr := proxy.RemoveToxic(tx.Name); rerr != nil {
+						errs = append(errs, rerr)
+					}
 				}
+			} else {
+				errs = append(errs, terr)
 			}
-		} else {
-			errs = append(errs, terr)
+			if eerr := proxy.Enable(); eerr != nil {
+				errs = append(errs, eerr)
+			}
+			return errors.Join(errs...)
 		}
-		if eerr := proxy.Enable(); eerr != nil {
-			errs = append(errs, eerr)
-		}
-		err = errors.Join(errs...)
 	default:
 		return sdk.VerbResult{}, fmt.Errorf("toxiproxy has no verb %q", verb)
 	}
-	if err != nil {
+	if err := call(ctx, work); err != nil {
 		return sdk.VerbResult{}, fmt.Errorf("toxiproxy.%s on %q: %w", verb, name, err)
 	}
 	return sdk.VerbResult{Value: "ok"}, nil

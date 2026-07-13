@@ -6,10 +6,12 @@ package toxiproxyp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 )
 
 // fakeAdmin emulates the Toxiproxy admin API surface the client touches.
@@ -85,6 +87,29 @@ func provider(t *testing.T, url string) *Provider {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func TestStepDeadlineGovernsAdminCalls(t *testing.T) {
+	// The Shopify client has no context support: a hung admin API must not
+	// stall the step past its deadline.
+	release := make(chan struct{})
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	t.Cleanup(s.Close)
+	t.Cleanup(func() { close(release) }) // unblock the handler before Close waits on it
+	p := provider(t, s.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := p.Run(ctx, "add_latency", map[string]any{"proxy": "app", "latencyMs": 100})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want the step deadline surfaced, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("step stalled %s past its 100ms deadline", elapsed)
+	}
 }
 
 func TestAddLatency(t *testing.T) {

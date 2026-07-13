@@ -198,6 +198,36 @@ func TestRunExpectStatusScalarShorthand(t *testing.T) {
 	}
 }
 
+func TestRunPerRequestTimeoutBoundsHungTarget(t *testing.T) {
+	// A target that never answers within the window: without timeout: every
+	// in-flight request would ride vegeta's 30s default past the declared
+	// window; with it the attack ends near its duration and the hangs count
+	// as errors.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	defer srv.Close()
+	p := provider(t, srv.URL)
+
+	start := time.Now()
+	res, err := p.Run(context.Background(), "run", map[string]any{
+		"target": "/x", "rate": 10, "duration": 0.3, "timeout": 0.05, "workers": 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("attack overran its window by %s (per-request timeout not applied?)", elapsed)
+	}
+	m := res.Value.(map[string]any)
+	if m["errorRate"].(float64) != 1 {
+		t.Fatalf("errorRate = %v, want 1 (every request timed out)", m["errorRate"])
+	}
+}
+
 func TestRunCancelledAttackErrors(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(200)

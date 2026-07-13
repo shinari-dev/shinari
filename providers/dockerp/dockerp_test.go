@@ -100,6 +100,49 @@ func TestKillUsesSIGKILL(t *testing.T) {
 	}
 }
 
+func TestKillSignalOverride(t *testing.T) {
+	// signal: SIGTERM turns kill into the "termination requested but maybe
+	// mishandled" fault, distinct from the default hard SIGKILL.
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "kill", map[string]any{"service": "worker-a", "signal": "SIGTERM"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorded(t, argsFile); !strings.Contains(got, "kill -s SIGTERM worker-a") {
+		t.Errorf("argv = %q", got)
+	}
+}
+
+func TestUpWaitTimeoutBoundsWait(t *testing.T) {
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "up", map[string]any{"services": "app", "waitTimeout": 30}); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorded(t, argsFile); !strings.Contains(got, "up -d --wait --wait-timeout 30 app") {
+		t.Errorf("argv = %q", got)
+	}
+}
+
+func TestStopAndRestartGracePeriod(t *testing.T) {
+	// -t bounds the SIGTERM grace before compose escalates to SIGKILL, so a
+	// wedged shutdown handler cannot stall the step.
+	p, argsFile := provider(t)
+	if _, err := p.Run(context.Background(), "stop", map[string]any{"service": "worker-a", "timeout": 5}); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorded(t, argsFile); !strings.Contains(got, "stop -t 5 worker-a") {
+		t.Errorf("argv = %q", got)
+	}
+
+	p2, argsFile2 := provider(t)
+	if _, err := p2.Run(context.Background(), "restart", map[string]any{"service": "worker-a", "timeout": 0}); err != nil {
+		t.Fatal(err)
+	}
+	// timeout: 0 is "no grace, kill now" — it must not be dropped as unset.
+	if got := recorded(t, argsFile2); !strings.Contains(got, "restart -t 0 worker-a") {
+		t.Errorf("argv = %q", got)
+	}
+}
+
 func TestDownRemovesVolumesAndOrphans(t *testing.T) {
 	p, argsFile := provider(t)
 	if _, err := p.Run(context.Background(), "down", nil); err != nil {

@@ -20,6 +20,12 @@ providers:
       dsn: "postgres://user:pass@localhost:5432/app?sslmode=disable"   # alias: url
 ```
 
+`maxOpenConns` (count) and `connMaxLifetime` (seconds) bound the pool, so
+recovery probes observe the database rather than the pool: an unlimited pool
+piles up dial attempts against a downed server, and a connection that survives
+the whole fault window can mask the recovery edge. Dial timeouts are driver
+territory — declare them in the DSN.
+
 `driver` selects the SQL dialect; the `dsn` (alias `url`) format follows it:
 
 | driver | dsn example |

@@ -38,6 +38,7 @@ Pass `wait: false` to drop `--wait` (see below). Select compose profiles with
 |---|---|---|---|
 | `services` | list | no | services to start; all of them when omitted (primary) |
 | `wait` | bool | no | wait for health before returning (default `true`) |
+| `waitTimeout` | number | no | seconds `--wait` may block before the step fails (unbounded when omitted) |
 | `profiles` | list | no | compose profiles to activate |
 
 ```yaml
@@ -61,9 +62,17 @@ No args.
 Signals a running container: `kill` sends SIGKILL (abrupt), `stop` sends SIGTERM
 (the graceful shutdown path). Both inject an outage.
 
+`kill` takes a `signal:` override, so one verb also covers the "termination
+requested but mishandled" faults (`SIGTERM` to a service whose shutdown hook
+wedges, `SIGHUP`, …). `stop` takes a `timeout:` grace period (seconds) before
+compose escalates its SIGTERM to SIGKILL, bounding how long a wedged shutdown
+handler can stall the step.
+
 | arg | type | req | description |
 |---|---|---|---|
 | `service` | string | yes | the service to signal (primary) |
+| `signal` | string | no | `kill` only: the signal to send (default `SIGKILL`) |
+| `timeout` | number | no | `stop` only: seconds of SIGTERM grace before SIGKILL |
 
 ```yaml
 - run: docker.kill
@@ -93,6 +102,7 @@ observed during the bounce (retries, failover, no lost writes).
 | arg | type | req | description |
 |---|---|---|---|
 | `service` | string | yes | the service to bounce (primary) |
+| `timeout` | number | no | seconds of SIGTERM grace before SIGKILL |
 
 ```yaml
 - run: docker.restart

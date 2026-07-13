@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql" // registers the "mysql" driver
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver
@@ -56,6 +57,16 @@ func (p *Provider) Configure(cfg map[string]any) error {
 	db, err := sql.Open(name, dsn)
 	if err != nil {
 		return fmt.Errorf("sql: open %s: %w", drv, err)
+	}
+	// Pool knobs so recovery probes observe the database, not the pool: an
+	// unlimited pool piles up dial attempts against a downed server, and a
+	// connection surviving the whole fault window can mask the recovery edge.
+	// Dial timeouts are driver territory — declare them in the DSN.
+	if f, ok := conv.ToFloat(cfg["maxOpenConns"]); ok && f >= 1 {
+		db.SetMaxOpenConns(int(f))
+	}
+	if f, ok := conv.ToFloat(cfg["connMaxLifetime"]); ok && f > 0 {
+		db.SetConnMaxLifetime(time.Duration(f * float64(time.Second)))
 	}
 	p.db = db
 	return nil

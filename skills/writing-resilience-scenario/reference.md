@@ -131,8 +131,11 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
 
 ### docker — `config: {composeFiles, project}` (the lifecycle provider)
 - `up` (`with: [svc, ..]` primary `services`; `wait: false` to start a crash/hang
-  service without `--wait`; `profiles: [name]` selects a compose-profile variant),
-  `down`, `kill`/`stop`/`pause` (primary `service`, effect outage),
+  service without `--wait`; `waitTimeout: <sec>` bounds the wait; `profiles:
+  [name]` selects a compose-profile variant),
+  `down`, `kill`/`stop`/`pause` (primary `service`, effect outage; `kill` takes
+  `signal:` (default SIGKILL), `stop`/`restart` take `timeout:` seconds of
+  SIGTERM grace before SIGKILL),
   `start`/`unpause`, `logs` (`{service, tail, since}`), `ps` (probe, optional
   `service`; returns `.State`/`.ExitCode`/`.Health` for exit-state checks).
 
@@ -161,8 +164,10 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
 - `scrape` (probe): `{metric, path, labels}` -> `.value` is the sample float.
 
 ### load — `config: {baseUrl}`
-- `run` (action): `{target, rate, duration, method, headers, body}`. `rate>=1`.
-  `.value` is the same percentile stats as `sample`.
+- `run` (action): `{target, rate, duration, method, headers, body, expectStatus,
+  timeout, workers}`. `rate>=1`; `timeout:` (sec/request) keeps an attack on a
+  hung target inside its declared window. `.value` is the same percentile
+  stats as `sample`.
 
 ## Composed providers (kind: Provider)
 
@@ -201,7 +206,7 @@ surface earlier as parse errors, so the table starts at rule 2.
 
 | Rule | Checks |
 |---|---|
-| 2 | `with:` matches the verb's arg spec |
+| 2 | `with:` matches the verb's arg spec (unknown/missing args; literal values of the wrong declared type — `${...}` splices are judged after interpolation at run time) |
 | 3 | `run:` resolves to a configured instance/verb (skip with `onAbsent: skip`) |
 | 4 | composed-provider nesting is at most one level |
 | 5 | `finding:` only on assertion-kind checks |
