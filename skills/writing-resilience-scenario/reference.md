@@ -145,6 +145,13 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
 - `packet_loss` (`{proxy, toxicity}`, outage), `blackhole` (`proxy`, outage),
   `partition` (`proxy`, outage)
 - `reset` (no args) — clears all toxics; the "clear the fault" verb.
+- `inspect` (probe, `proxy`) — `{enabled, listen, upstream, toxics: [..]}`;
+  confirms a fault landed (or the path is clean) before asserting on effects.
+
+### tcp — L4 reachability, `config: {addr | host+port, timeout}`
+- `connect` (probe): `{addr | host+port, timeout, expect: open|closed}`.
+  `expect: closed` makes the outage the passing observation; `.meta.reason`
+  names the failure (`refused`|`timeout`|`dns`).
 
 ### net — DNS faults, `config: {confDir, reloadCmd}`
 - `set_dns` (`{host, ip and/or ips}`, none) — declares the full record set
@@ -154,6 +161,9 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
 - `nxdomain` (`host`, outage) — the empty set. `dns_blackhole` (`host`,
   outage) — a one-member unroutable set (`192.0.2.1`, TEST-NET-1;
   configurable via config `blackholeIp`).
+- `resolve` (probe): `{host, server?}` — the A records as a list; NXDOMAIN is
+  an observation (empty list, `.meta.nxdomain`), so `wait_until` on it
+  confirms a DNS fault or restore has converged before the next step.
 
 ### sql — `source: sql`, `config: {driver, dsn}`
 - `query` (probe, primary `sql`, `args: [..]`) -> `.value` is rows.

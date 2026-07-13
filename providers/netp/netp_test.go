@@ -5,10 +5,12 @@ package netp
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func provider(t *testing.T, cfg map[string]any) *Provider {
@@ -250,6 +252,139 @@ func TestSanitizedHostsDoNotShareSnippetFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(r2.Value.(string)); !os.IsNotExist(err) {
 		t.Error("clear did not remove a*b.test's own snippet")
+	}
+}
+
+// dnsStub serves a minimal DNS-over-UDP responder: A records for known names,
+// NXDOMAIN for everything else — just enough wire format for the pure-Go
+// resolver, so resolve tests stay hermetic.
+func dnsStub(t *testing.T, records map[string][]string) string {
+	t.Helper()
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, addr, err := pc.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			if resp := dnsAnswer(buf[:n], records); resp != nil {
+				_, _ = pc.WriteTo(resp, addr)
+			}
+		}
+	}()
+	return pc.LocalAddr().String()
+}
+
+// dnsAnswer builds the response for one query: header + echoed question +
+// one A answer per known address (compression pointer 0xC00C to the qname).
+func dnsAnswer(q []byte, records map[string][]string) []byte {
+	if len(q) < 12 {
+		return nil
+	}
+	i := 12
+	var labels []string
+	for i < len(q) && q[i] != 0 {
+		l := int(q[i])
+		if i+1+l > len(q) {
+			return nil
+		}
+		labels = append(labels, string(q[i+1:i+1+l]))
+		i += 1 + l
+	}
+	if i+5 > len(q) {
+		return nil
+	}
+	qtype := int(q[i+1])<<8 | int(q[i+2])
+	qEnd := i + 5
+	name := strings.ToLower(strings.Join(labels, "."))
+	ips, known := records[name]
+
+	rcode := byte(0)
+	if !known {
+		rcode = 3 // NXDOMAIN
+	}
+	var answers []byte
+	count := 0
+	if qtype == 1 { // A
+		for _, s := range ips {
+			ip := net.ParseIP(s).To4()
+			if ip == nil {
+				continue
+			}
+			answers = append(answers, 0xC0, 0x0C, 0, 1, 0, 1, 0, 0, 0, 30, 0, 4)
+			answers = append(answers, ip...)
+			count++
+		}
+	}
+	resp := make([]byte, 0, qEnd+len(answers))
+	resp = append(resp, q[0], q[1], 0x85, 0x80|rcode, 0, 1, byte(count>>8), byte(count), 0, 0, 0, 0)
+	resp = append(resp, q[12:qEnd]...)
+	resp = append(resp, answers...)
+	return resp
+}
+
+func TestResolveObservesOverride(t *testing.T) {
+	server := dnsStub(t, map[string][]string{"db.internal": {"10.0.0.9", "10.0.0.10"}})
+	p := provider(t, map[string]any{"confDir": t.TempDir()})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := p.Run(ctx, "resolve", map[string]any{"host": "db.internal", "server": server})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[any]bool{}
+	for _, v := range res.Value.([]any) {
+		got[v] = true
+	}
+	if len(got) != 2 || !got["10.0.0.9"] || !got["10.0.0.10"] {
+		t.Fatalf("value = %v, want both A records", res.Value)
+	}
+	if res.Meta["count"] != 2 || res.Meta["nxdomain"] != false {
+		t.Errorf("meta = %v", res.Meta)
+	}
+}
+
+func TestResolveNXDomainIsObservationNotError(t *testing.T) {
+	// The nxdomain fault being live is what the step came to see: an empty
+	// answer set, not a probe failure.
+	server := dnsStub(t, map[string][]string{})
+	p := provider(t, map[string]any{"confDir": t.TempDir()})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	res, err := p.Run(ctx, "resolve", map[string]any{"host": "gone.test", "server": server})
+	if err != nil {
+		t.Fatalf("NXDOMAIN must be an observation, got %v", err)
+	}
+	if list := res.Value.([]any); len(list) != 0 {
+		t.Errorf("value = %v, want an empty list", list)
+	}
+	if res.Meta["nxdomain"] != true || res.Output != "NXDOMAIN" {
+		t.Errorf("meta = %v output = %q", res.Meta, res.Output)
+	}
+}
+
+func TestResolveTransportFailureIsError(t *testing.T) {
+	// A DNS server that is not there at all is a transport failure, not a
+	// resolution observation.
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dead := pc.LocalAddr().String()
+	_ = pc.Close()
+
+	p := provider(t, map[string]any{"confDir": t.TempDir()})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := p.Run(ctx, "resolve", map[string]any{"host": "db.internal", "server": dead}); err == nil {
+		t.Fatal("an unreachable DNS server must surface as an error")
 	}
 }
 

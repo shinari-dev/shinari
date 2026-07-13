@@ -112,6 +112,36 @@ func TestStepDeadlineGovernsAdminCalls(t *testing.T) {
 	}
 }
 
+func TestInspectSeesInstalledToxics(t *testing.T) {
+	f := &fakeAdmin{}
+	s := f.server(t)
+	p := provider(t, s.URL)
+	ctx := context.Background()
+
+	if _, err := p.Run(ctx, "add_latency", map[string]any{"proxy": "app", "latencyMs": 150}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := p.Run(ctx, "inspect", map[string]any{"proxy": "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := res.Value.(map[string]any)
+	if v["enabled"] != true {
+		t.Errorf("enabled = %v, want true", v["enabled"])
+	}
+	toxics := v["toxics"].([]any)
+	if len(toxics) != 1 {
+		t.Fatalf("toxics = %v, want the one installed latency toxic", toxics)
+	}
+	tx := toxics[0].(map[string]any)
+	if tx["type"] != "latency" || tx["stream"] != "downstream" {
+		t.Errorf("toxic = %v", tx)
+	}
+	if res.Meta["toxics"] != 1 || res.Meta["enabled"] != true {
+		t.Errorf("meta = %v", res.Meta)
+	}
+}
+
 func TestAddLatency(t *testing.T) {
 	f := &fakeAdmin{}
 	p := provider(t, f.server(t).URL)

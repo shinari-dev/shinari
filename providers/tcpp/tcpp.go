@@ -10,9 +10,11 @@ package tcpp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/shinari-dev/shinari/sdk"
@@ -68,8 +70,28 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 			{Name: "host", Type: "string"},
 			{Name: "port", Type: "number"},
 			{Name: "timeout", Type: "number"},
+			// expect: closed inverts the probe: during a partition the port
+			// being unreachable is the expected observation, not an error.
+			{Name: "expect", Type: "string"},
 		},
 	}}
+}
+
+// classify names how a dial failed — dns (resolution), refused (RST), timeout
+// (no answer) — so an assertion can be precise about how the target is down.
+func classify(err error) string {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return "dns"
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return "refused"
+	}
+	var nerr net.Error
+	if errors.As(err, &nerr) && nerr.Timeout() || errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	return "error"
 }
 
 func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (sdk.VerbResult, error) {
@@ -97,16 +119,38 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		defer cancel()
 	}
 
+	expect, _ := args["expect"].(string)
+	if expect == "" {
+		expect = "open"
+	}
+	if expect != "open" && expect != "closed" {
+		return sdk.VerbResult{}, fmt.Errorf("tcp.connect: expect must be \"open\" or \"closed\", got %q", expect)
+	}
+
 	start := time.Now()
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	elapsed := time.Since(start).Milliseconds()
 	if err != nil {
-		return sdk.VerbResult{}, fmt.Errorf("tcp.connect %s: %w", addr, err)
+		reason := classify(err)
+		meta := map[string]any{"addr": addr, "reason": reason}
+		if expect == "closed" {
+			// The outage is what the step came to see: closed is a passing
+			// observation. Value is "is the port open", so it binds false.
+			return sdk.VerbResult{Value: false,
+				Output: fmt.Sprintf("%s is closed (%s)", addr, reason), Meta: meta}, nil
+		}
+		return sdk.VerbResult{Value: false, Meta: meta},
+			fmt.Errorf("tcp.connect %s: %s: %w", addr, reason, err)
 	}
 	_ = conn.Close()
+	meta := map[string]any{"addr": addr, "connectMs": elapsed}
+	if expect == "closed" {
+		return sdk.VerbResult{Value: true, Meta: meta},
+			fmt.Errorf("tcp.connect %s: expected closed, but the port accepted in %dms", addr, elapsed)
+	}
 	return sdk.VerbResult{
 		Value:  true,
 		Output: fmt.Sprintf("connected to %s in %dms", addr, elapsed),
-		Meta:   map[string]any{"addr": addr, "connectMs": elapsed},
+		Meta:   meta,
 	}, nil
 }

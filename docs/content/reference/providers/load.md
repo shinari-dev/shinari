@@ -30,7 +30,7 @@ Blocks for `duration` seconds while issuing `rate` requests per second, then
 returns the window statistics. Its `effect` is `none`: load is the workload, not
 a fault, so it does not trip the degradation-observation rule. A request counts
 as an error when the transport fails or the status is `>= 400`. With
-`expectStatus`, the listed codes are the exact set that counts as success —
+`expectStatus`, the listed codes are the exact set that counts as success:
 anything else is an error, including a healthy `200` when only the shed `503`
 is listed. List every status the window should see (`[200, 503]` for a
 load-shedder under fault).
@@ -44,7 +44,7 @@ load-shedder under fault).
 | `headers` | map | no | request headers |
 | `body` | any | no | request body |
 | `expectStatus` | list | no | the exact set of statuses counted as success (default: `< 400`) |
-| `timeout` | number | no | seconds one request may take (default: the engine's 30s) — set it below `duration` so an attack on a hung target cannot overrun its declared window |
+| `timeout` | number | no | seconds one request may take (default: the engine's 30s); set it below `duration` so an attack on a hung target cannot overrun its declared window |
 | `workers` | number | no | cap on concurrent workers (unbounded growth by default when the target stalls) |
 
 **Returns** the window stats as the value, `{ n, errors, errorRate, min, max,

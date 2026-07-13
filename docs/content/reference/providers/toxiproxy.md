@@ -169,3 +169,30 @@ No args.
 ```yaml
 - run: toxiproxy.reset
 ```
+
+### inspect (probe)
+
+Reads a proxy's state: enabled or disabled, and which toxics are installed.
+The eyes on the network layer: a steadyState gate can require the path to be
+clean, and a step after a fault can confirm the toxic actually landed before
+asserting on its effects.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `proxy` | string | yes | the configured proxy to inspect (primary) |
+
+**Returns** `{ enabled, listen, upstream, toxics: [{ name, type, stream,
+toxicity, attributes }] }` as the value. `meta.enabled` (bool) and
+`meta.toxics` (int) repeat the essentials. `output` is a one-line summary.
+
+```yaml
+- run: toxiproxy.add_latency
+  with: { proxy: db, latencyMs: 200 }
+- run: toxiproxy.inspect
+  with: db
+  read: ".toxics | length"
+  as: installed
+- run: assert
+  with: { of: "${.outputs.installed.value}", equals: 1 }
+  desc: "the latency toxic is in the path"
+```

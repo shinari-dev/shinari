@@ -82,6 +82,10 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 		withProxy("partition", sdk.EffectOutage),
 		withProxy("clear", sdk.EffectNone),
 		{Name: "reset", Kind: sdk.KindAction, SideEffects: true},
+		// inspect gives steadyState and verify eyes on the network layer: which
+		// toxics are installed and whether the proxy is enabled — so a scenario
+		// can confirm a fault actually landed before asserting on its effects.
+		{Name: "inspect", Kind: sdk.KindProbe, SideEffects: false, Primary: "proxy", Args: proxyArg()},
 	}
 }
 
@@ -117,6 +121,37 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		return perr
 	}); err != nil {
 		return sdk.VerbResult{}, fmt.Errorf("toxiproxy.%s: proxy %q: %w", verb, name, err)
+	}
+
+	if verb == "inspect" {
+		var toxics toxiproxy.Toxics
+		if err := call(ctx, func() error {
+			var terr error
+			toxics, terr = proxy.Toxics()
+			return terr
+		}); err != nil {
+			return sdk.VerbResult{}, fmt.Errorf("toxiproxy.inspect %q: %w", name, err)
+		}
+		list := make([]any, 0, len(toxics))
+		for _, tx := range toxics {
+			attrs := map[string]any{}
+			for k, v := range tx.Attributes {
+				attrs[k] = conv.Normalize(v)
+			}
+			list = append(list, map[string]any{
+				"name": tx.Name, "type": tx.Type, "stream": tx.Stream,
+				"toxicity": float64(tx.Toxicity), "attributes": attrs,
+			})
+		}
+		value := map[string]any{
+			"enabled": proxy.Enabled, "listen": proxy.Listen,
+			"upstream": proxy.Upstream, "toxics": list,
+		}
+		return sdk.VerbResult{
+			Value:  value,
+			Output: fmt.Sprintf("%s enabled=%v toxics=%d", name, proxy.Enabled, len(list)),
+			Meta:   map[string]any{"enabled": proxy.Enabled, "toxics": len(list)},
+		}, nil
 	}
 
 	// addToxic installs one toxic on each resolved stream, suffixing its name

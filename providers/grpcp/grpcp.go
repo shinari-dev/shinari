@@ -69,7 +69,13 @@ func (p *Provider) Close() error {
 func (p *Provider) Verbs() []sdk.VerbSpec {
 	return []sdk.VerbSpec{{
 		Name: "health", Kind: sdk.KindProbe, SideEffects: false, Primary: "service",
-		Args: []sdk.ArgSpec{{Name: "service", Type: "string"}},
+		Args: []sdk.ArgSpec{
+			{Name: "service", Type: "string"},
+			// expect: down inverts the probe: during the fault window the
+			// service reporting NOT_SERVING — or being unreachable at all —
+			// is the expected observation, not an error.
+			{Name: "expect", Type: "string"},
+		},
 	}}
 }
 
@@ -83,18 +89,40 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		defer cancel()
 	}
 	service, _ := args["service"].(string) // "" = the whole server
+	expect, _ := args["expect"].(string)
+	if expect == "" {
+		expect = "serving"
+	}
+	if expect != "serving" && expect != "down" {
+		return sdk.VerbResult{}, fmt.Errorf("grpc.health: expect must be \"serving\" or \"down\", got %q", expect)
+	}
 
 	start := time.Now()
 	resp, err := grpc_health_v1.NewHealthClient(p.conn).Check(ctx,
 		&grpc_health_v1.HealthCheckRequest{Service: service})
 	elapsed := time.Since(start).Milliseconds()
 	if err != nil {
+		if expect == "down" {
+			// Unreachable is down too: a killed or partitioned backend never
+			// answers the RPC, and that is exactly the expected observation.
+			status := "UNREACHABLE"
+			return sdk.VerbResult{Value: status, Output: err.Error(),
+				Meta: map[string]any{"status": status, "rpcMs": elapsed}}, nil
+		}
 		return sdk.VerbResult{}, fmt.Errorf("grpc.health %s: %w", p.target, err)
 	}
 
 	status := resp.GetStatus().String()
 	meta := map[string]any{"status": status, "rpcMs": elapsed}
-	if resp.GetStatus() == grpc_health_v1.HealthCheckResponse_SERVING {
+	serving := resp.GetStatus() == grpc_health_v1.HealthCheckResponse_SERVING
+	if expect == "down" {
+		if serving {
+			return sdk.VerbResult{Value: status, Output: status, Meta: meta},
+				fmt.Errorf("grpc.health %s: expected down, but it is SERVING", p.target)
+		}
+		return sdk.VerbResult{Value: status, Output: status, Meta: meta}, nil
+	}
+	if serving {
 		return sdk.VerbResult{Value: status, Output: status, Meta: meta}, nil
 	}
 	return sdk.VerbResult{Value: status, Output: status, Meta: meta},

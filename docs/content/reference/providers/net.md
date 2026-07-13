@@ -76,7 +76,7 @@ The empty set, the opposite of `set_dns`.
 ### dns_blackhole (action, outage)
 
 Resolves the name to an unroutable address: writes `address=/host/192.0.2.1`
-(TEST-NET-1, reserved and never routed — configurable via `blackholeIp`), so
+(TEST-NET-1, reserved and never routed; configurable via `blackholeIp`), so
 lookups succeed but connections hang or drop. A one-member unroutable set, in
 contrast to `nxdomain`'s empty set. `0.0.0.0` is deliberately not used: on
 Linux, connecting to it reaches the local host, so any local listener on the
@@ -129,4 +129,36 @@ output. `meta.removed` (int) is the count.
 ```yaml
 teardown:
   - run: net.reset
+```
+
+### resolve (probe)
+
+Queries the A records for a host, against `server` (`ip[:port]`, port 53 when
+omitted) or the system resolver. This closes the convergence loop: the fault
+verbs return once the snippet is written and `reloadCmd` ran, but the resolver
+(and client caches) converge asynchronously, so a `wait_until` on `resolve`
+observes the override actually being served before the scenario proceeds.
+
+NXDOMAIN is an observation, not an error: the value is the (possibly empty)
+address list, so a step can assert `nxdomain` took just as it asserts an
+override is live. Only a transport failure (server unreachable, timeout)
+errors.
+
+| arg | type | req | description |
+|---|---|---|---|
+| `host` | string | yes | the hostname to look up (primary) |
+| `server` | string | no | DNS server to query (`ip[:port]`); the system resolver when omitted |
+
+**Returns** the list of addresses (empty on NXDOMAIN). `meta.count` (int) and
+`meta.nxdomain` (bool) summarize it. `output` is the addresses, or `"NXDOMAIN"`.
+
+```yaml
+- run: net.nxdomain
+  with: api.partner.com
+- run: wait_until                    # the fault is live before load starts
+  with:
+    probe: { run: net.resolve, with: { host: api.partner.com, server: "127.0.0.1:5353" } }
+    read: "$meta.nxdomain"
+    equals: true
+    timeout: 10
 ```

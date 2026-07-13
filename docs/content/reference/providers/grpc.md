@@ -34,13 +34,20 @@ status (`NOT_SERVING`, `UNKNOWN`, `SERVICE_UNKNOWN`) is a probe failure that
 still surfaces the status, so `health` works as a steadyState gate and the
 assertion can read what it saw.
 
+`expect: down` inverts the probe for the fault window: `NOT_SERVING`, or the
+backend being unreachable at all (killed, partitioned), is then the *passing*
+observation, and a `SERVING` response fails the step. `wait_until` on it
+observes the outage actually taking effect before the scenario proceeds.
+
 | arg | type | req | description |
 |---|---|---|---|
 | `service` | string | no | the service name to check; `""` (the default) checks the whole server (primary) |
+| `expect` | string | no | `serving` (default) or `down` |
 
-**Returns** the status string as the value (`SERVING`, `NOT_SERVING`, …).
-`meta.status` (string) repeats it and `meta.rpcMs` (int) is the RPC latency.
-`output` is the status string.
+**Returns** the status string as the value (`SERVING`, `NOT_SERVING`, …, or
+`UNREACHABLE` when `expect: down` observed a dead backend). `meta.status`
+(string) repeats it and `meta.rpcMs` (int) is the RPC latency. `output` is the
+status string.
 
 ```yaml
 steadyState:

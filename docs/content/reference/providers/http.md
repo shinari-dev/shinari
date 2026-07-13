@@ -184,7 +184,7 @@ healthy and degraded alike:
 ```
 
 Because the set is exact, `expectStatus: 503` alone doubles as an assertion
-that the endpoint really is degraded during the fault window — a healthy `200`
+that the endpoint really is degraded during the fault window: a healthy `200`
 fails the step instead of passing silently.
 
 A request that never completes (connection refused, DNS failure, timeout) is a

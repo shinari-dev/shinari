@@ -9,6 +9,7 @@ package netp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"net"
@@ -78,6 +79,12 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 		// teardown after an early failure) is a no-op, not an error.
 		{Name: "clear", Kind: sdk.KindAction, SideEffects: true, Primary: "host", Args: hostArg()},
 		{Name: "reset", Kind: sdk.KindAction, SideEffects: true},
+		// resolve closes the convergence loop: the fault verbs return once the
+		// snippet is written and reloadCmd ran, but the resolver (and client
+		// caches) converge asynchronously — wait_until on resolve observes the
+		// override actually being served before the scenario proceeds.
+		{Name: "resolve", Kind: sdk.KindProbe, SideEffects: false, Primary: "host",
+			Args: append(hostArg(), sdk.ArgSpec{Name: "server", Type: "string"})},
 	}
 }
 
@@ -90,6 +97,8 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	}
 	var body string
 	switch verb {
+	case "resolve":
+		return p.resolve(ctx, host, args)
 	case "clear":
 		return p.removeConf(ctx, verb, []string{p.confFile(host)})
 	case "reset":
@@ -124,6 +133,47 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 		return sdk.VerbResult{}, fmt.Errorf("net has no verb %q", verb)
 	}
 	return p.writeConf(ctx, verb, host, body)
+}
+
+// resolve queries the A records for host — against server (ip[:port], port 53
+// when omitted) when given, the system resolver otherwise. NXDOMAIN is an
+// observation, not an error (the redis cache-miss contract): Value is the —
+// possibly empty — address list, so a step can assert an override is live, or
+// that nxdomain took, without treating the down state as a failure. Only a
+// transport-level failure (server unreachable, timeout) errors.
+func (p *Provider) resolve(ctx context.Context, host string, args map[string]any) (sdk.VerbResult, error) {
+	if host == "" {
+		return sdk.VerbResult{}, fmt.Errorf("net.resolve: host is required")
+	}
+	r := net.DefaultResolver
+	if server, _ := args["server"].(string); server != "" {
+		if _, _, err := net.SplitHostPort(server); err != nil {
+			server = net.JoinHostPort(server, "53")
+		}
+		// PreferGo so the query really goes to server, not through cgo/nsswitch.
+		r = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, server)
+		}}
+	}
+	ips, err := r.LookupIP(ctx, "ip4", host)
+	if err != nil {
+		var dnsErr *net.DNSError
+		if !errors.As(err, &dnsErr) || !dnsErr.IsNotFound {
+			return sdk.VerbResult{}, fmt.Errorf("net.resolve %s: %w", host, err)
+		}
+	}
+	list := make([]any, 0, len(ips))
+	strs := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		list = append(list, ip.String())
+		strs = append(strs, ip.String())
+	}
+	out := strings.Join(strs, " ")
+	if len(list) == 0 {
+		out = "NXDOMAIN"
+	}
+	return sdk.VerbResult{Value: list, Output: out,
+		Meta: map[string]any{"count": len(list), "nxdomain": len(list) == 0}}, nil
 }
 
 // addresses collects the set the name should resolve to, unioning the

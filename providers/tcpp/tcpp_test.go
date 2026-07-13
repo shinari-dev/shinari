@@ -62,6 +62,95 @@ func TestConnectRefused(t *testing.T) {
 	}
 }
 
+func TestExpectClosedPassesOnRefusal(t *testing.T) {
+	// Bind then close: nothing listens, the dial is refused — and that is
+	// exactly what the step came to observe during a partition.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	p := New()
+	res, err := p.Run(context.Background(), "connect", map[string]any{
+		"addr": addr, "timeout": 2, "expect": "closed",
+	})
+	if err != nil {
+		t.Fatalf("a closed port must be a passing observation under expect: closed, got %v", err)
+	}
+	if res.Value != false {
+		t.Errorf("value = %v, want false (the port is not open)", res.Value)
+	}
+	if res.Meta["reason"] != "refused" {
+		t.Errorf("reason = %v, want refused", res.Meta["reason"])
+	}
+}
+
+func TestExpectClosedFailsOnOpenPort(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+
+	p := New()
+	_, err = p.Run(context.Background(), "connect", map[string]any{
+		"addr": ln.Addr().String(), "expect": "closed",
+	})
+	if err == nil {
+		t.Fatal("an open port must fail a step that expects closed")
+	}
+}
+
+func TestRefusalCarriesReasonMeta(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	p := New()
+	res, err := p.Run(context.Background(), "connect", map[string]any{"addr": addr, "timeout": 2})
+	if err == nil {
+		t.Fatal("expected an error connecting to a closed port")
+	}
+	if res.Meta["reason"] != "refused" {
+		t.Errorf("reason = %v, want refused (even on the failing path)", res.Meta["reason"])
+	}
+}
+
+func TestDNSFailureClassified(t *testing.T) {
+	p := New()
+	res, _ := p.Run(context.Background(), "connect", map[string]any{
+		"addr": "definitely-not-a-real-host.invalid:80", "timeout": 2, "expect": "closed",
+	})
+	// .invalid never resolves (RFC 2606); whether the resolver answers NXDOMAIN
+	// or is itself unreachable, the failure is in the resolution phase.
+	if res.Meta["reason"] != "dns" {
+		t.Errorf("reason = %v, want dns", res.Meta["reason"])
+	}
+}
+
+func TestExpectRejectsUnknownValue(t *testing.T) {
+	p := New()
+	if _, err := p.Run(context.Background(), "connect", map[string]any{
+		"addr": "localhost:1", "expect": "sideways",
+	}); err == nil {
+		t.Fatal("an unknown expect value must be rejected before dialing")
+	}
+}
+
 func TestConnectNeedsAddr(t *testing.T) {
 	p := New()
 	if _, err := p.Run(context.Background(), "connect", map[string]any{}); err == nil {
