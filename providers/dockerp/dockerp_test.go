@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -22,6 +23,22 @@ func stubBin(t *testing.T) (bin string, argsFile string) {
 		t.Fatal(err)
 	}
 	return bin, argsFile
+}
+
+// failingProvider wires a stub that prints output and exits with code.
+func failingProvider(t *testing.T, code int) *Provider {
+	t.Helper()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "fake-docker")
+	script := "#!/bin/sh\necho stub-grep-miss\nexit " + strconv.Itoa(code) + "\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := New().(*Provider)
+	if err := p.Configure(map[string]any{"composeFiles": "stack.yml", "bin": bin}); err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
 
 func provider(t *testing.T) (*Provider, string) {
@@ -255,6 +272,44 @@ func TestExecRunsCommandInContainer(t *testing.T) {
 	}
 	if res.Value != "stub-ok" {
 		t.Errorf("value = %v, want trimmed stdout", res.Value)
+	}
+}
+
+func TestExecExitCodeInMeta(t *testing.T) {
+	p, _ := provider(t)
+	res, err := p.Run(context.Background(), "exec", map[string]any{"service": "worker", "command": "true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Meta["exitCode"] != 0 {
+		t.Errorf("exitCode = %v, want 0", res.Meta["exitCode"])
+	}
+
+	p2 := failingProvider(t, 137)
+	res, err = p2.Run(context.Background(), "exec", map[string]any{"service": "worker", "command": "sleep 100"})
+	if err == nil {
+		t.Fatal("a nonzero exit without allowNonZero must error")
+	}
+	if res.Meta["exitCode"] != 137 {
+		t.Errorf("exitCode = %v, want 137 (the code as data, even on the failing path)", res.Meta["exitCode"])
+	}
+}
+
+func TestExecAllowNonZeroMakesTheCodeTheObservation(t *testing.T) {
+	// "grep found no match" (exit 1) is the observation the step came for:
+	// with allowNonZero it passes and the code is assertable in meta.
+	p := failingProvider(t, 1)
+	res, err := p.Run(context.Background(), "exec", map[string]any{
+		"service": "worker", "command": "grep -q panic /var/log/app.log", "allowNonZero": true,
+	})
+	if err != nil {
+		t.Fatalf("allowNonZero must turn a nonzero exit into an observation, got %v", err)
+	}
+	if res.Meta["exitCode"] != 1 {
+		t.Errorf("exitCode = %v, want 1", res.Meta["exitCode"])
+	}
+	if res.Value != "stub-grep-miss" {
+		t.Errorf("value = %v (output must still bind on the tolerated path)", res.Value)
 	}
 }
 

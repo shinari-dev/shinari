@@ -225,12 +225,20 @@ reads internal runtime state (thread or fd counts, memory, an in-container
 metric) reclassifies itself with the per-step `kind: probe` override; a fault
 injected through `exec` adds an explicit `effect:` instead.
 
+`allowNonZero:` makes the exit code data instead of a verdict: "grep found
+nothing" or "the process died with 137" become assertable observations via
+`meta.exitCode` rather than step failures.
+
 | arg | type | req | description |
 |---|---|---|---|
 | `service` | string | yes | the service to run the command in |
 | `command` | string | yes | shell command line; pipes and globs work (primary) |
+| `allowNonZero` | bool | no | tolerate a nonzero exit; assert on `meta.exitCode` instead |
 
-**Returns** the trimmed stdout as the value.
+**Returns** the trimmed stdout as the value. `meta.exitCode` (int) is the exit
+code, on the passing and failing paths alike. `compose exec` propagates the
+container command's code, so a compose-level failure (service not running) is
+indistinguishable from the command's own nonzero exit; both surface there.
 
 ```yaml
 - run: docker.exec

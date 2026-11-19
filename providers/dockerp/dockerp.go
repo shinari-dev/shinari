@@ -9,6 +9,7 @@ package dockerp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -149,6 +150,10 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 		{Name: "exec", Kind: sdk.KindAction, SideEffects: true, Primary: "command", Args: []sdk.ArgSpec{
 			{Name: "service", Type: "string", Required: true},
 			{Name: "command", Type: "string", Required: true},
+			// allowNonZero makes the exit code data instead of a verdict:
+			// "grep found nothing" or "the process died with 137" become
+			// assertable observations via meta.exitCode.
+			{Name: "allowNonZero", Type: "bool"},
 		}},
 		// disconnect/connect partition a single container at the network layer:
 		// the process keeps running and co-located peers are untouched, so the
@@ -203,6 +208,13 @@ func parsePS(out string) ([]any, error) {
 }
 
 func (p *Provider) compose(ctx context.Context, args ...string) (string, error) {
+	out, _, err := p.composeExit(ctx, args...)
+	return out, err
+}
+
+// composeExit is compose plus the subprocess exit code: 0 on success, the
+// command's code on a clean nonzero exit, -1 when it never ran or was killed.
+func (p *Provider) composeExit(ctx context.Context, args ...string) (string, int, error) {
 	full := append([]string{}, p.binArgs...)
 	for _, f := range p.composeFiles {
 		full = append(full, "-f", f)
@@ -215,10 +227,15 @@ func (p *Provider) compose(ctx context.Context, args ...string) (string, error) 
 	cmd.Env = p.processEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(out), fmt.Errorf("docker compose %s: %w — %s",
+		code := -1
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			code = exitErr.ExitCode()
+		}
+		return string(out), code, fmt.Errorf("docker compose %s: %w — %s",
 			strings.Join(args, " "), err, conv.Truncate(strings.TrimSpace(string(out)), 300))
 	}
-	return string(out), nil
+	return string(out), 0, nil
 }
 
 // docker runs a raw docker command (not a compose subcommand): no `compose`
@@ -362,8 +379,20 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	case "exec":
 		// -T disables TTY allocation (no interactive terminal); sh -c runs the
 		// command string so pipes/globs (e.g. `ls /proc/1/task | wc -l`) work.
+		// compose exec propagates the command's exit code (a compose-level
+		// failure such as "service not running" is indistinguishable from the
+		// command's own nonzero exit; both surface in meta.exitCode).
 		command, _ := args["command"].(string)
-		out, err = p.compose(ctx, "exec", "-T", service, "sh", "-c", command)
+		out, code, xerr := p.composeExit(ctx, "exec", "-T", service, "sh", "-c", command)
+		meta := map[string]any{"exitCode": code}
+		if xerr != nil {
+			if allow, _ := args["allowNonZero"].(bool); allow && code > 0 {
+				// the command ran and exited nonzero: that is the observation
+				return sdk.VerbResult{Value: strings.TrimSpace(out), Output: out, Meta: meta}, nil
+			}
+			return sdk.VerbResult{Output: out, Meta: meta}, xerr
+		}
+		return sdk.VerbResult{Value: strings.TrimSpace(out), Output: out, Meta: meta}, nil
 	case "disconnect", "connect":
 		out, err = p.networkToggle(ctx, verb, service, args)
 	case "logs":

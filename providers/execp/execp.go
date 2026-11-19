@@ -7,7 +7,9 @@ package execp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"sort"
@@ -17,6 +19,7 @@ import (
 	"time"
 
 	"github.com/shinari-dev/shinari/sdk"
+	"github.com/shinari-dev/shinari/utils/conv"
 )
 
 // termGrace is how long a cancelled command's process group gets to handle
@@ -66,6 +69,11 @@ func (p *Provider) Verbs() []sdk.VerbSpec {
 			{Name: "cmd", Type: "string", Required: true},
 			{Name: "env", Type: "map"},
 			{Name: "dir", Type: "string"},
+			// expectExit makes an exit code the observation instead of a
+			// verdict: a diagnostic that exits 3 on the condition under test
+			// passes with expectExit: 3, and any other code (including 0)
+			// fails the step.
+			{Name: "expectExit", Type: "number"},
 		},
 	}}
 }
@@ -127,9 +135,37 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	}
 	killMu.Unlock()
 	combined := stdout.String() + stderr.String()
-	if err != nil {
+	// Anything but a command that ran to its own exit (start failure, step
+	// timeout or cancellation, death by signal) is an error no expectExit can
+	// bless: the command did not run to completion, so its code is not data.
+	stderrMsg := strings.TrimSpace(stderr.String())
+	var exitErr *exec.ExitError
+	if err != nil && !errors.As(err, &exitErr) {
 		return sdk.VerbResult{Output: combined},
-			fmt.Errorf("exec.run %q: %w — stderr: %s", cmdStr, err, strings.TrimSpace(stderr.String()))
+			fmt.Errorf("exec.run %q: %w, stderr: %s", cmdStr, err, stderrMsg)
+	}
+	code := cmd.ProcessState.ExitCode() // -1 when killed by a signal
+	meta := map[string]any{"exitCode": code}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return sdk.VerbResult{Output: combined, Meta: meta},
+			fmt.Errorf("exec.run %q: interrupted (%w), stderr: %s", cmdStr, ctxErr, stderrMsg)
+	}
+	if code < 0 {
+		return sdk.VerbResult{Output: combined, Meta: meta},
+			fmt.Errorf("exec.run %q: %w, stderr: %s", cmdStr, err, stderrMsg)
+	}
+	if want, ok := conv.ToFloat(args["expectExit"]); ok {
+		if want != math.Trunc(want) || want < 0 {
+			return sdk.VerbResult{Output: combined, Meta: meta},
+				fmt.Errorf("exec.run: expectExit must be a non-negative integer, got %v", args["expectExit"])
+		}
+		if code != int(want) {
+			return sdk.VerbResult{Output: combined, Meta: meta},
+				fmt.Errorf("exec.run %q: exit %d, expected %d, stderr: %s", cmdStr, code, int(want), stderrMsg)
+		}
+	} else if err != nil {
+		return sdk.VerbResult{Output: combined, Meta: meta},
+			fmt.Errorf("exec.run %q: %w, stderr: %s", cmdStr, err, stderrMsg)
 	}
 	out := strings.TrimSpace(stdout.String())
 	var value any = out
@@ -137,5 +173,5 @@ func (p *Provider) Run(ctx context.Context, verb string, args map[string]any) (s
 	if json.Unmarshal([]byte(out), &decoded) == nil && out != "" {
 		value = decoded
 	}
-	return sdk.VerbResult{Value: value, Output: combined}, nil
+	return sdk.VerbResult{Value: value, Output: combined, Meta: meta}, nil
 }

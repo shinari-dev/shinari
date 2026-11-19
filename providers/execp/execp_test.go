@@ -87,6 +87,85 @@ func TestRunFailureNamesStderr(t *testing.T) {
 	}
 }
 
+func TestRunExitCodeInMeta(t *testing.T) {
+	p := New()
+	res, err := p.Run(context.Background(), "run", map[string]any{"cmd": "true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Meta["exitCode"] != 0 {
+		t.Errorf("exitCode = %v, want 0", res.Meta["exitCode"])
+	}
+
+	res, err = p.Run(context.Background(), "run", map[string]any{"cmd": "exit 3"})
+	if err == nil {
+		t.Fatal("a nonzero exit without expectExit must still error")
+	}
+	if res.Meta["exitCode"] != 3 {
+		t.Errorf("exitCode = %v, want 3 (the code as data, even on the failing path)", res.Meta["exitCode"])
+	}
+}
+
+func TestRunExpectExitMakesTheCodeTheObservation(t *testing.T) {
+	p := New()
+	// A diagnostic that exits 3 on the condition under test: with
+	// expectExit: 3 that is a passing observation, not a failure.
+	res, err := p.Run(context.Background(), "run", map[string]any{
+		"cmd": "echo probe-output; exit 3", "expectExit": 3,
+	})
+	if err != nil {
+		t.Fatalf("exit 3 must pass under expectExit: 3, got %v", err)
+	}
+	if res.Value != "probe-output" || res.Meta["exitCode"] != 3 {
+		t.Errorf("value = %v meta = %v", res.Value, res.Meta)
+	}
+
+	// The set is exact both ways: a clean 0 fails a step that expected 3.
+	if _, err := p.Run(context.Background(), "run", map[string]any{
+		"cmd": "true", "expectExit": 3,
+	}); err == nil {
+		t.Fatal("exit 0 must fail under expectExit: 3")
+	}
+}
+
+func TestRunExpectExitCannotBlessAStartFailure(t *testing.T) {
+	p := New()
+	// A command that never ran (bad working dir) is an error no expectExit
+	// can turn into a pass.
+	if _, err := p.Run(context.Background(), "run", map[string]any{
+		"cmd": "true", "dir": "/does/not/exist", "expectExit": -1,
+	}); err == nil {
+		t.Fatal("a start failure must error regardless of expectExit")
+	}
+}
+
+func TestRunExpectExitCannotBlessATimeoutKill(t *testing.T) {
+	p := New()
+	// A step timeout kills the command (exit code -1): that is an
+	// interruption, not an observation, even when expectExit names -1.
+	for _, want := range []any{nil, -1, 143} {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		args := map[string]any{"cmd": "sleep 5"}
+		if want != nil {
+			args["expectExit"] = want
+		}
+		_, err := p.Run(ctx, "run", args)
+		cancel()
+		if err == nil {
+			t.Errorf("expectExit=%v: a timeout kill must error", want)
+		}
+	}
+}
+
+func TestRunExpectExitRejectsNonInteger(t *testing.T) {
+	p := New()
+	if _, err := p.Run(context.Background(), "run", map[string]any{
+		"cmd": "exit 3", "expectExit": 3.7,
+	}); err == nil {
+		t.Fatal("expectExit: 3.7 must not silently match exit 3")
+	}
+}
+
 func TestRunEnv(t *testing.T) {
 	p := New()
 	res, err := p.Run(context.Background(), "run", map[string]any{

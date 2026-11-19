@@ -119,8 +119,10 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
 
 ### exec — shell escape hatch
 - `run` (action, polymorphic): `with:` is the command string (primary `cmd`), or
-  `{cmd, env, dir}`. JSON stdout is decoded into `.value`. Override its kind per
-  step: `kind: probe` / `kind: assertion`. Declare faults via `effect:`.
+  `{cmd, env, dir, expectExit}`. JSON stdout is decoded into `.value`;
+  `.meta.exitCode` always carries the exit code, and `expectExit: N` makes
+  exactly that code the passing observation. Override its kind per step:
+  `kind: probe` / `kind: assertion`. Declare faults via `effect:`.
 
 ### http — `config: {baseUrl}`
 - `get` (probe), `post`/`put`/`delete` (action). `with: {path, body, form,
@@ -137,7 +139,9 @@ allowlist: only declared names may be referenced as `${.env.NAME}`.
   `signal:` (default SIGKILL), `stop`/`restart` take `timeout:` seconds of
   SIGTERM grace before SIGKILL),
   `start`/`unpause`, `logs` (`{service, tail, since}`), `ps` (probe, optional
-  `service`; returns `.State`/`.ExitCode`/`.Health` for exit-state checks).
+  `service`; returns `.State`/`.ExitCode`/`.Health` for exit-state checks),
+  `exec` (`{service, command, allowNonZero}`; `.meta.exitCode` carries the
+  command's exit code, `allowNonZero: true` tolerates a nonzero one).
 
 ### toxiproxy — `config: {baseUrl}` (Toxiproxy admin API)
 - `add_latency` (`{proxy, latencyMs, jitterMs}`, degradation)
